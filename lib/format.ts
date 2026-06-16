@@ -20,7 +20,8 @@ export function formatCurrency(value: number | ExtractedField<number> | null | u
   return new Intl.NumberFormat("de-DE", {
     style: "currency",
     currency: "EUR",
-    maximumFractionDigits: 0
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
   }).format(Number(unwrapped));
 }
 
@@ -49,5 +50,6 @@ export function sourceLabel(field: ExtractedField<unknown> | null | undefined): 
     : source.page
       ? `Seite ${source.page}`
       : "Dokument";
-  return `${source.fileName} · ${location}`;
+  const method = source.method ? ` - ${source.method}` : "";
+  return `${source.fileName} - ${location}${method}`;
 }

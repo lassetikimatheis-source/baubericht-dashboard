@@ -1,12 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { UploadPanel } from "./upload-panel";
 import { ObjectTable } from "./object-table";
 import { ObjectDetail } from "./object-detail";
 import { emptyAnalysisState } from "../lib/analysis-state";
-import { formatCurrency, formatNumber, fieldOrUnknown } from "../lib/format";
-import type { PortfolioAnalysisState } from "../types/analysis";
+import { formatCurrency, formatNumber, unwrap } from "../lib/format";
+import type { ObjectAnalysis, PortfolioAnalysisState } from "../types/analysis";
 
 interface ParsedPreview {
   id: string;
@@ -17,16 +18,63 @@ interface ParsedPreview {
   issues: string[];
 }
 
+interface Filters {
+  year: string;
+  fund: string;
+  object: string;
+  address: string;
+  documentType: string;
+  cluster: string;
+  dataQuality: string;
+}
+
+const emptyFilters: Filters = {
+  year: "",
+  fund: "",
+  object: "",
+  address: "",
+  documentType: "",
+  cluster: "",
+  dataQuality: ""
+};
+
 export function AnalysisDashboard() {
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
+  const [filters, setFilters] = useState<Filters>(emptyFilters);
+
+  const filteredObjects = useMemo(() => {
+    return analysis.objects.filter((object) => matchesFilters(object, filters));
+  }, [analysis.objects, filters]);
 
   const selectedObject = useMemo(() => {
-    return analysis.objects.find((object) => object.id === selectedObjectId) ?? analysis.objects[0] ?? null;
-  }, [analysis.objects, selectedObjectId]);
+    return filteredObjects.find((object) => object.id === selectedObjectId) ?? filteredObjects[0] ?? null;
+  }, [filteredObjects, selectedObjectId]);
+
+  const kpis = useMemo(() => {
+    const gross = sumValues(filteredObjects.map((object) => object.totalCost.value));
+    const net = sumValues(filteredObjects.map((object) => object.netCost.value));
+    const renovatedApartments = sumValues(filteredObjects.map((object) => object.renovatedApartmentCount.value));
+    const renovatedArea = sumValues(filteredObjects.map((object) => object.renovatedAreaSqm.value));
+    const unknownFields = countUnknownFields(filteredObjects);
+    const reviewCases = filteredObjects.filter((object) =>
+      /pruefung|prüfung|k\.a\.|unsicher/i.test(String(object.dataQuality.value ?? ""))
+    ).length;
+
+    return {
+      gross,
+      net,
+      objects: new Set(filteredObjects.map((object) => object.objectNumber.value || object.objectAddress.value || object.id)).size,
+      documents: analysis.sourceDocuments.length,
+      renovatedApartments,
+      costPerApartment: gross !== null && renovatedApartments ? gross / renovatedApartments : null,
+      costPerSqm: gross !== null && renovatedArea ? gross / renovatedArea : null,
+      reviewCount: unknownFields + reviewCases
+    };
+  }, [analysis.sourceDocuments.length, filteredObjects]);
 
   async function handleAnalyze(files: File[]) {
     setIsAnalyzing(true);
@@ -113,52 +161,45 @@ export function AnalysisDashboard() {
         </nav>
         <div className="sideNote">
           <span>Datenbasis</span>
-          <strong>Nur Dokumentwerte</strong>
-          <p>Fehlende Werte werden als k.A. angezeigt.</p>
+          <strong>Dokumente</strong>
+          <p>Keine Fantasiewerte. Nicht erkannte Werte bleiben k.A.</p>
         </div>
       </aside>
 
       <section className="content">
         <header className="pageHeader" id="dashboard">
           <div>
-            <p className="eyebrow">OCR · PDF · Excel · KI</p>
-            <h1>PARIBUS Baukosten Analyse</h1>
-            <p className="muted">
-              Upload von Rechnungen, Angeboten und Excel-Dateien. Die Extraktion uebernimmt nur
-              Werte, die aus den Dokumenten gelesen wurden.
-            </p>
+            <p className="eyebrow">PARIBUS | Baukosten Analyse</p>
+            <h1>Objekt-Dashboard</h1>
+            <p className="muted">Dokumentenbasierte Kostenanalyse fuer internes Fondsmanagement.</p>
           </div>
           <div className="headerActions">
-            <button type="button" onClick={() => exportFile("excel")}>Excel Export</button>
-            <button type="button" onClick={() => exportFile("pdf")}>PDF Export</button>
+            <a className="button buttonPrimary" href="#upload">Upload</a>
+            <button type="button" onClick={() => exportFile("excel")}>Export Excel</button>
+            <button type="button" onClick={() => exportFile("pdf")}>Export PDF</button>
           </div>
         </header>
 
         <section className="kpiGrid" aria-label="Kennzahlen">
-          <article className="kpi">
-            <span>Jahr</span>
-            <strong>{fieldOrUnknown(analysis.year)}</strong>
-          </article>
-          <article className="kpi">
-            <span>Fonds</span>
-            <strong>{fieldOrUnknown(analysis.fund)}</strong>
-          </article>
-          <article className="kpi">
-            <span>Objekte erkannt</span>
-            <strong>{analysis.objects.length}</strong>
-          </article>
-          <article className="kpi">
-            <span>Gesamtkosten</span>
-            <strong>{formatCurrency(analysis.totalCost)}</strong>
-          </article>
-          <article className="kpi">
-            <span>Kosten pro Wohnung</span>
-            <strong>{formatCurrency(analysis.averageCostPerApartment)}</strong>
-          </article>
-          <article className="kpi">
-            <span>Kosten pro qm</span>
-            <strong>{formatCurrency(analysis.averageCostPerSqm)}</strong>
-          </article>
+          <Kpi label="Gesamtkosten brutto" value={formatNullableCurrency(kpis.gross)} accent />
+          <Kpi label="Gesamtkosten netto" value={formatNullableCurrency(kpis.net)} />
+          <Kpi label="Anzahl Objekte" value={formatNumber(kpis.objects)} />
+          <Kpi label="Anzahl Dokumente" value={formatNumber(kpis.documents)} />
+          <Kpi label="Sanierte Wohnungen" value={formatNullableNumber(kpis.renovatedApartments)} />
+          <Kpi label="Ø Kosten pro Wohnung" value={formatNullableCurrency(kpis.costPerApartment)} />
+          <Kpi label="Ø Kosten pro qm" value={formatNullableCurrency(kpis.costPerSqm)} />
+          <Kpi label="k.A.-Felder / Prüffälle" value={formatNumber(kpis.reviewCount)} warning />
+        </section>
+
+        <section className="filterBar" aria-label="Filter">
+          <FilterInput label="Jahr" value={filters.year} onChange={(value) => setFilter("year", value, setFilters)} />
+          <FilterInput label="Fonds" value={filters.fund} onChange={(value) => setFilter("fund", value, setFilters)} />
+          <FilterInput label="Objekt" value={filters.object} onChange={(value) => setFilter("object", value, setFilters)} />
+          <FilterInput label="Adresse" value={filters.address} onChange={(value) => setFilter("address", value, setFilters)} />
+          <FilterInput label="Dokumenttyp" value={filters.documentType} onChange={(value) => setFilter("documentType", value, setFilters)} />
+          <FilterInput label="Maßnahmencluster" value={filters.cluster} onChange={(value) => setFilter("cluster", value, setFilters)} />
+          <FilterInput label="Datenqualität" value={filters.dataQuality} onChange={(value) => setFilter("dataQuality", value, setFilters)} />
+          <button type="button" onClick={() => setFilters(emptyFilters)}>Filter zurücksetzen</button>
         </section>
 
         <UploadPanel
@@ -173,7 +214,7 @@ export function AnalysisDashboard() {
             <div className="panelHeader">
               <div>
                 <h2>Textvorschau aus Dokumenten</h2>
-                <p>Pruefe hier zuerst, ob Adresse, Elektroarbeiten und Preise korrekt gelesen wurden.</p>
+                <p>Pruefe hier zuerst, ob Adresse, Leistungsbereich und Summen korrekt gelesen wurden.</p>
               </div>
             </div>
             <div className="previewList">
@@ -195,42 +236,11 @@ export function AnalysisDashboard() {
           </section>
         ) : null}
 
-        <section className="gridTwo">
-          <ObjectTable
-            objects={analysis.objects}
-            selectedObjectId={selectedObject?.id ?? null}
-            onSelectObject={setSelectedObjectId}
-          />
-          <section className="panel">
-            <div className="panelHeader">
-              <div>
-                <h2>Analyse Status</h2>
-                <p>Dokumente, Dubletten und offene Pruefpunkte.</p>
-              </div>
-            </div>
-            <div className="layoutPreview">
-              <div>
-                <span>Dokumente</span>
-                <strong>{formatNumber(analysis.sourceDocuments.length)}</strong>
-              </div>
-              <div>
-                <span>Dubletten</span>
-                <strong>{formatNumber(analysis.duplicates.length)}</strong>
-              </div>
-              <div>
-                <span>Pruefung offen</span>
-                <strong>{formatNumber(analysis.reviewRequiredCount)}</strong>
-              </div>
-            </div>
-            <div className="issueList">
-              {analysis.issues.length === 0 ? (
-                <p className="muted">Keine Hinweise vorhanden.</p>
-              ) : (
-                analysis.issues.map((issue) => <p key={issue}>{issue}</p>)
-              )}
-            </div>
-          </section>
-        </section>
+        <ObjectTable
+          objects={filteredObjects}
+          selectedObjectId={selectedObject?.id ?? null}
+          onSelectObject={setSelectedObjectId}
+        />
 
         <ObjectDetail object={selectedObject} />
 
@@ -240,13 +250,93 @@ export function AnalysisDashboard() {
               <h2>Export</h2>
               <p>Exportiert den aktuellen Analysezustand inklusive Quellenangaben.</p>
             </div>
-          </div>
-          <div className="headerActions">
-            <button type="button" onClick={() => exportFile("excel")}>Als Excel herunterladen</button>
-            <button type="button" onClick={() => exportFile("pdf")}>Als PDF herunterladen</button>
+            <div className="headerActions">
+              <button type="button" onClick={() => exportFile("excel")}>Als Excel herunterladen</button>
+              <button type="button" onClick={() => exportFile("pdf")}>Als PDF herunterladen</button>
+            </div>
           </div>
         </section>
       </section>
     </main>
+  );
+}
+
+function matchesFilters(object: ObjectAnalysis, filters: Filters): boolean {
+  const haystacks = {
+    year: String(unwrap(object.year) ?? ""),
+    fund: String(unwrap(object.fund) ?? ""),
+    object: String(unwrap(object.objectNumber) ?? ""),
+    address: String(unwrap(object.objectAddress) ?? ""),
+    documentType: String(unwrap(object.documentType) ?? ""),
+    cluster: object.clusters.map((cluster) => unwrap(cluster.cluster) ?? "").join(" "),
+    dataQuality: String(unwrap(object.dataQuality) ?? "")
+  };
+
+  return Object.entries(filters).every(([key, value]) => {
+    if (!value.trim()) return true;
+    return haystacks[key as keyof Filters].toLowerCase().includes(value.trim().toLowerCase());
+  });
+}
+
+function setFilter(
+  key: keyof Filters,
+  value: string,
+  setFilters: Dispatch<SetStateAction<Filters>>
+) {
+  setFilters((current) => ({ ...current, [key]: value }));
+}
+
+function sumValues(values: Array<number | null>): number | null {
+  const numericValues = values.filter((value): value is number => typeof value === "number");
+  if (numericValues.length === 0) return null;
+  return numericValues.reduce((sum, value) => sum + value, 0);
+}
+
+function countUnknownFields(objects: ObjectAnalysis[]): number {
+  return objects.reduce((count, object) => {
+    const fields = [
+      object.year,
+      object.fund,
+      object.objectNumber,
+      object.objectAddress,
+      object.apartmentNumber,
+      object.documentType,
+      object.provider,
+      object.documentDate,
+      object.documentNumber,
+      object.netCost,
+      object.vatCost,
+      object.totalCost,
+      object.costPerApartment,
+      object.costPerSqm,
+      object.dataQuality
+    ];
+    return count + fields.filter((field) => field.value === null).length;
+  }, 0);
+}
+
+function formatNullableCurrency(value: number | null): string {
+  return value === null ? "k.A." : formatCurrency(value);
+}
+
+function formatNullableNumber(value: number | null): string {
+  return value === null ? "k.A." : formatNumber(value);
+}
+
+function Kpi({ label, value, accent, warning }: { label: string; value: string; accent?: boolean; warning?: boolean }) {
+  return (
+    <article className={`kpi${accent ? " kpiAccent" : ""}${warning ? " kpiWarning" : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function FilterInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="filterInput">
+      <span>{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="Alle" />
+    </label>
   );
 }

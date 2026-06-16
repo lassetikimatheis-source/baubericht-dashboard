@@ -29,6 +29,7 @@ export type ProcessingStatus =
 export interface FieldSource {
   documentId: string;
   fileName: string;
+  method?: "Regex" | "KI" | "Berechnung" | "Manuell";
   page?: number | null;
   sheet?: string | null;
   cell?: string | null;
@@ -97,8 +98,27 @@ export interface ObjectAnalysis {
   measureDescription: ExtractedField<string>;
   dataQuality: ExtractedField<string>;
   missingInformation: ExtractedField<string[]>;
+  costDebug: CostDebugInfo | null;
   clusters: MeasureItem[];
   sourceDocumentIds: string[];
+}
+
+export interface RegexMatchDebug {
+  label: string;
+  value: number | null;
+  raw: string;
+  source: "Regex" | "KI" | "Berechnung" | "Manuell";
+}
+
+export interface CostDebugInfo {
+  summaryBlock: string | null;
+  matches: RegexMatchDebug[];
+  finalValues: {
+    net: RegexMatchDebug;
+    vat: RegexMatchDebug;
+    gross: RegexMatchDebug;
+  };
+  notes: string[];
 }
 
 export interface DuplicateFinding {

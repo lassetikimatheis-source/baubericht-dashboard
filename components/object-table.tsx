@@ -2,9 +2,6 @@ import type { ObjectAnalysis } from "../types/analysis";
 import {
   fieldOrUnknown,
   formatCurrency,
-  formatList,
-  formatNumber,
-  formatSqm,
   sourceLabel,
   valueOrUnknown
 } from "../lib/format";
@@ -17,12 +14,13 @@ interface ObjectTableProps {
 
 export function ObjectTable({ objects, selectedObjectId, onSelectObject }: ObjectTableProps) {
   return (
-    <section className="panel" id="objects">
-      <div className="panelHeader">
+    <section className="panel panelFlush" id="objects">
+      <div className="panelHeader tableHeader">
         <div>
-          <h2>Objektuebersicht Tabelle</h2>
-          <p>Die Tabelle zeigt nur extrahierte Werte. Fehlende Felder bleiben k.A.</p>
+          <h2>Objektübersicht</h2>
+          <p>Eine Zeile je erkanntem Dokument/Objekt. Fehlende Werte bleiben k.A.</p>
         </div>
+        <span className="status statusNeutral">{objects.length} Datensätze</span>
       </div>
 
       {objects.length === 0 ? (
@@ -34,25 +32,26 @@ export function ObjectTable({ objects, selectedObjectId, onSelectObject }: Objec
         </div>
       ) : (
         <div className="tableWrap">
-          <table>
+          <table className="dataTable">
             <thead>
               <tr>
                 <th>Jahr</th>
-                <th>Dokumenttyp</th>
-                <th>Anbieter</th>
                 <th>Fonds</th>
                 <th>Objektnummer</th>
-                <th>Wohnung</th>
-                <th>Objektadresse</th>
-                <th>Lage</th>
-                <th>Sanierte Wohnungen</th>
-                <th>Welche Wohnungen</th>
-                <th>Gesamtflaeche</th>
-                <th>Sanierte Flaeche</th>
-                <th>Gesamtkosten</th>
-                <th>Kosten/WE</th>
-                <th>Kosten/qm</th>
-                <th>Quelle Kosten</th>
+                <th>Adresse</th>
+                <th>Wohnung / Lage</th>
+                <th>Dokumenttyp</th>
+                <th>Anbieter</th>
+                <th>Datum</th>
+                <th>Dokumentnummer</th>
+                <th>Maßnahmencluster</th>
+                <th>Kosten netto</th>
+                <th>MwSt.</th>
+                <th>Kosten brutto</th>
+                <th>Kosten pro Wohnung</th>
+                <th>Kosten pro qm</th>
+                <th>Datenqualität</th>
+                <th>Quelle</th>
               </tr>
             </thead>
             <tbody>
@@ -63,21 +62,22 @@ export function ObjectTable({ objects, selectedObjectId, onSelectObject }: Objec
                   onClick={() => onSelectObject(object.id)}
                 >
                   <td>{fieldOrUnknown(object.year)}</td>
-                  <td>{fieldOrUnknown(object.documentType)}</td>
-                  <td>{fieldOrUnknown(object.provider)}</td>
                   <td>{fieldOrUnknown(object.fund)}</td>
                   <td>{fieldOrUnknown(object.objectNumber)}</td>
-                  <td>{fieldOrUnknown(object.apartmentNumber)}</td>
-                  <td>{fieldOrUnknown(object.objectAddress)}</td>
-                  <td>{fieldOrUnknown(object.location)}</td>
-                  <td>{formatNumber(object.renovatedApartmentCount)}</td>
-                  <td>{formatList(object.renovatedApartments)}</td>
-                  <td>{formatSqm(object.totalAreaSqm)}</td>
-                  <td>{formatSqm(object.renovatedAreaSqm)}</td>
-                  <td>{formatCurrency(object.totalCost)}</td>
+                  <td className="wideCell">{fieldOrUnknown(object.objectAddress)}</td>
+                  <td>{formatApartment(object)}</td>
+                  <td>{fieldOrUnknown(object.documentType)}</td>
+                  <td>{fieldOrUnknown(object.provider)}</td>
+                  <td>{fieldOrUnknown(object.documentDate)}</td>
+                  <td>{fieldOrUnknown(object.documentNumber)}</td>
+                  <td className="clusterCell">{formatClusters(object)}</td>
+                  <td>{formatCurrency(object.netCost)}</td>
+                  <td>{formatCurrency(object.vatCost)}</td>
+                  <td className="moneyStrong">{formatCurrency(object.totalCost)}</td>
                   <td>{formatCurrency(object.costPerApartment)}</td>
                   <td>{formatCurrency(object.costPerSqm)}</td>
-                  <td>{valueOrUnknown(sourceLabel(object.totalCost))}</td>
+                  <td>{fieldOrUnknown(object.dataQuality)}</td>
+                  <td className="sourceCell">{valueOrUnknown(sourceLabel(object.totalCost))}</td>
                 </tr>
               ))}
             </tbody>
@@ -86,4 +86,18 @@ export function ObjectTable({ objects, selectedObjectId, onSelectObject }: Objec
       )}
     </section>
   );
+}
+
+function formatApartment(object: ObjectAnalysis): string {
+  const apartment = fieldOrUnknown(object.apartmentNumber);
+  const location = fieldOrUnknown(object.location);
+  if (apartment === "k.A." && location === "k.A.") return "k.A.";
+  if (location === "k.A.") return apartment;
+  if (apartment === "k.A.") return location;
+  return `${apartment} / ${location}`;
+}
+
+function formatClusters(object: ObjectAnalysis): string {
+  const clusters = Array.from(new Set(object.clusters.map((cluster) => cluster.cluster.value).filter(Boolean)));
+  return clusters.length === 0 ? "k.A." : clusters.join(", ");
 }

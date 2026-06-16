@@ -1,12 +1,14 @@
 import OpenAI from "openai";
 import type {
   CostAllocation,
+  CostDebugInfo,
   ExtractedField,
   FieldSource,
   MeasureCluster,
   MeasureItem,
   ObjectAnalysis,
   PortfolioAnalysisState,
+  RegexMatchDebug,
   LineItem
 } from "../../types/analysis";
 import { emptyAnalysisState, emptyField } from "../analysis-state";
@@ -194,9 +196,25 @@ function normalizeObjects(
   const sourceObjects = standardOffer ? [mergeAiObject(standardOffer, objects[0] ?? {})] : objects;
 
   return sourceObjects.map((object, objectIndex) => {
+    const costDebug = extractCostSummary(document);
     const objectNumber = verifiedField(object.objectNumber, document, "Objektnummer", issues);
     const objectAddress = verifiedField(object.objectAddress, document, "Objektadresse", issues);
     const id = objectNumber.value || objectAddress.value || `${document.id}-object-${objectIndex + 1}`;
+    const renovatedApartmentCount = verifiedField(
+      object.renovatedApartmentCount,
+      document,
+      "Anzahl sanierter Wohnungen",
+      issues
+    );
+    const netCost = costFieldFromDebug(costDebug.finalValues.net, document)
+      ?? verifiedField(object.kosten_netto, document, "Nettosumme", issues);
+    const vatCost = costFieldFromDebug(costDebug.finalValues.vat, document)
+      ?? verifiedField(object.mwst, document, "Umsatzsteuer", issues);
+    const totalCost = costFieldFromDebug(costDebug.finalValues.gross, document)
+      ?? verifiedField(object.kosten_brutto ?? object.totalCost, document, "Gesamtkosten", issues);
+    const costPerApartment = totalCost.value !== null && renovatedApartmentCount.value === 1
+      ? calculatedField(totalCost.value, document, "Kosten pro Wohnung aus Bruttosumme und 1 sanierter Wohnung")
+      : verifiedField(object.costPerApartment, document, "Kosten pro Wohnung", issues);
 
     return {
       id: String(id),
@@ -210,12 +228,7 @@ function normalizeObjects(
       apartmentNumber: verifiedField(object.wohnungsnummer, document, "Wohnungsnummer", issues),
       objectAddress,
       location: verifiedField(object.lage, document, "Lage", issues),
-      renovatedApartmentCount: verifiedField(
-        object.renovatedApartmentCount,
-        document,
-        "Anzahl sanierter Wohnungen",
-        issues
-      ),
+      renovatedApartmentCount,
       renovatedApartments: verifiedField(
         object.renovatedApartments,
         document,
@@ -224,14 +237,15 @@ function normalizeObjects(
       ),
       totalAreaSqm: verifiedField(object.totalAreaSqm, document, "Gesamtflaeche", issues),
       renovatedAreaSqm: verifiedField(object.renovatedAreaSqm, document, "Sanierte Flaeche", issues),
-      netCost: verifiedField(object.kosten_netto, document, "Nettosumme", issues),
-      vatCost: verifiedField(object.mwst, document, "Umsatzsteuer", issues),
-      totalCost: verifiedField(object.kosten_brutto ?? object.totalCost, document, "Gesamtkosten", issues),
-      costPerApartment: verifiedField(object.costPerApartment, document, "Kosten pro Wohnung", issues),
+      netCost,
+      vatCost,
+      totalCost,
+      costPerApartment,
       costPerSqm: verifiedField(object.costPerSqm, document, "Kosten pro qm", issues),
       measureDescription: verifiedField(object.beschreibung_massnahmen, document, "Beschreibung Massnahmen", issues),
       dataQuality: verifiedField(object.datenqualitaet, document, "Datenqualitaet", issues),
       missingInformation: verifiedField(object.fehlende_angaben, document, "Fehlende Angaben", issues),
+      costDebug,
       clusters: (object.measures ?? []).map((measure, measureIndex) =>
         normalizeMeasure(measure, document, `${id}-measure-${measureIndex + 1}`, issues)
       ),
@@ -332,6 +346,7 @@ function sourceFromEvidence(document: ParsedDocument, evidence: string, confiden
   return {
     documentId: document.id,
     fileName: document.fileName,
+    method: "KI",
     page: document.fileType === "pdf" ? 1 : null,
     textSnippet: evidence,
     confidence
@@ -373,6 +388,7 @@ function mergeObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
       measureDescription: preferField(existing.measureDescription, object.measureDescription),
       dataQuality: preferField(existing.dataQuality, object.dataQuality),
       missingInformation: preferField(existing.missingInformation, object.missingInformation),
+      costDebug: existing.costDebug ?? object.costDebug,
       clusters: [...existing.clusters, ...object.clusters],
       sourceDocumentIds: Array.from(new Set([...existing.sourceDocumentIds, ...object.sourceDocumentIds]))
     });
@@ -399,6 +415,189 @@ function combineNumberFields(
   };
 }
 
+const moneyValuePattern = "([0-9]{1,3}(?:\\.[0-9]{3})*,[0-9]{2}|[0-9]+,[0-9]{2})\\s*(?:€|EUR|Euro)?";
+
+const costPatterns: Array<{ key: "net" | "vat" | "gross"; label: string; pattern: RegExp }> = [
+  {
+    key: "net",
+    label: "Netto",
+    pattern: new RegExp(`(?:Nettosumme|\\bNetto\\b|Zwischensumme)[^\\n\\r]{0,80}?${moneyValuePattern}`, "gi")
+  },
+  {
+    key: "vat",
+    label: "MwSt.",
+    pattern: new RegExp(`(?:Umsatzsteuer|MwSt\\.?|Mehrwertsteuer)(?:\\s*\\d{1,2}\\s*%)?[^\\n\\r]{0,80}?${moneyValuePattern}`, "gi")
+  },
+  {
+    key: "gross",
+    label: "Brutto",
+    pattern: new RegExp(`(?:Gesamtsumme|Gesamtbetrag|Bruttosumme|Rechnungsbetrag|Angebotssumme)[^\\n\\r]{0,80}?${moneyValuePattern}`, "gi")
+  }
+];
+
+function extractCostSummary(document: ParsedDocument): CostDebugInfo {
+  const text = document.text;
+  const summaryBlock = findSummaryBlock(text);
+  const searchableText = summaryBlock ?? text;
+  const matches = findCostMatches(searchableText);
+  const fallbackMatches = summaryBlock ? findCostMatches(text) : [];
+  const allMatches = mergeCostMatches(matches, fallbackMatches);
+  const net = pickLastMatch(allMatches, "net") ?? emptyCostMatch("Netto");
+  let vat = pickLastMatch(allMatches, "vat") ?? emptyCostMatch("MwSt.");
+  let gross = pickLastMatch(allMatches, "gross") ?? emptyCostMatch("Brutto");
+  const notes: string[] = [];
+
+  if (vat.value === null && net.value !== null && /(?:Umsatzsteuer|MwSt\.?|Mehrwertsteuer)\s*19\s*%/i.test(text)) {
+    vat = {
+      label: "MwSt.",
+      value: roundMoney(net.value * 0.19),
+      raw: "Berechnet aus Nettosumme und Umsatzsteuer 19 %",
+      source: "Berechnung"
+    };
+    notes.push("MwSt. wurde berechnet, weil Umsatzsteuer 19 % erkannt wurde.");
+  }
+
+  if (gross.value === null && net.value !== null && vat.value !== null) {
+    gross = {
+      label: "Brutto",
+      value: roundMoney(net.value + vat.value),
+      raw: "Berechnet aus Nettosumme + MwSt.",
+      source: "Berechnung"
+    };
+    notes.push("Bruttosumme wurde berechnet, weil Netto und MwSt. sicher erkannt wurden.");
+  }
+
+  if (gross.value !== null && net.value === null && vat.value === null) {
+    notes.push("Nur Bruttosumme erkannt. Netto und MwSt. bleiben k.A.");
+  }
+
+  if (allMatches.length === 0) {
+    notes.push("Kein Summenbegriff mit Betrag im Rohtext gefunden.");
+  }
+
+  return {
+    summaryBlock,
+    matches: allMatches,
+    finalValues: { net, vat, gross },
+    notes
+  };
+}
+
+function findSummaryBlock(text: string): string | null {
+  const terms = [
+    "Nettosumme",
+    "Netto",
+    "Zwischensumme",
+    "Umsatzsteuer",
+    "MwSt",
+    "Mehrwertsteuer",
+    "Gesamtsumme",
+    "Gesamtbetrag",
+    "Bruttosumme",
+    "Rechnungsbetrag",
+    "Angebotssumme"
+  ];
+  const normalized = text.replace(/\r/g, "");
+  const lower = normalized.toLowerCase();
+  const indexes = terms
+    .map((term) => lower.lastIndexOf(term.toLowerCase()))
+    .filter((index) => index >= 0);
+  if (indexes.length === 0) return null;
+  const start = Math.max(0, Math.min(...indexes) - 700);
+  const end = Math.min(normalized.length, Math.max(...indexes) + 900);
+  return normalized.slice(start, end).trim();
+}
+
+function findCostMatches(text: string): Array<RegexMatchDebug & { key: "net" | "vat" | "gross" }> {
+  const matches: Array<RegexMatchDebug & { key: "net" | "vat" | "gross" }> = [];
+  for (const costPattern of costPatterns) {
+    costPattern.pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = costPattern.pattern.exec(text)) && matches.length < 80) {
+      const value = parseGermanMoney(match[1]);
+      const raw = match[0].replace(/\s+/g, " ").trim();
+      matches.push({
+        key: costPattern.key,
+        label: costPattern.label,
+        value,
+        raw,
+        source: "Regex"
+      });
+    }
+  }
+  return matches;
+}
+
+function mergeCostMatches(
+  primary: Array<RegexMatchDebug & { key: "net" | "vat" | "gross" }>,
+  fallback: Array<RegexMatchDebug & { key: "net" | "vat" | "gross" }>
+): Array<RegexMatchDebug & { key: "net" | "vat" | "gross" }> {
+  const seen = new Set(primary.map((match) => `${match.key}:${match.raw}:${match.value}`));
+  return [
+    ...primary,
+    ...fallback.filter((match) => {
+      const key = `${match.key}:${match.raw}:${match.value}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+  ];
+}
+
+function pickLastMatch(
+  matches: Array<RegexMatchDebug & { key: "net" | "vat" | "gross" }>,
+  key: "net" | "vat" | "gross"
+): RegexMatchDebug | null {
+  const found = matches.filter((match) => match.key === key && match.value !== null);
+  if (found.length === 0) return null;
+  const match = found[found.length - 1];
+  return {
+    label: match.label,
+    value: match.value,
+    raw: match.raw,
+    source: match.source
+  };
+}
+
+function emptyCostMatch(label: string): RegexMatchDebug {
+  return { label, value: null, raw: "", source: "Regex" };
+}
+
+function costFieldFromDebug(match: RegexMatchDebug, document: ParsedDocument): ExtractedField<number> | null {
+  if (match.value === null) return null;
+  return {
+    value: match.value,
+    sources: [{
+      documentId: document.id,
+      fileName: document.fileName,
+      method: match.source,
+      page: document.fileType === "pdf" ? 1 : null,
+      textSnippet: match.raw,
+      confidence: match.source === "Regex" ? 0.96 : 0.9
+    }],
+    confidence: match.source === "Regex" ? 0.96 : 0.9
+  };
+}
+
+function calculatedField(value: number, document: ParsedDocument, note: string): ExtractedField<number> {
+  return {
+    value: roundMoney(value),
+    sources: [{
+      documentId: document.id,
+      fileName: document.fileName,
+      method: "Berechnung",
+      page: document.fileType === "pdf" ? 1 : null,
+      textSnippet: note,
+      confidence: 0.9
+    }],
+    confidence: 0.9
+  };
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjectResult | null {
   const text = document.text;
   if (!/Angebot/i.test(text) || !/Beleg-Nr\./i.test(text)) return null;
@@ -408,9 +607,10 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
   const documentNumber = text.match(/Beleg-Nr\.:\s*([A-Z]\d{4}\/\d{4})/i);
   const fund = text.match(/(Ampega Investment GmbH[^\n]+)/i);
   const provider = text.match(/^(Artis Projekte GmbH)/im);
-  const net = text.match(/Nettosumme\s+([\d.]+,\d{2})\s*€/i);
-  const vat = text.match(/Umsatzsteuer\s+19\s*%\s+([\d.]+,\d{2})\s*€/i);
-  const gross = text.match(/Gesamtsumme\s+([\d.]+,\d{2})\s*€/i);
+  const costSummary = extractCostSummary(document);
+  const net = costSummary.finalValues.net;
+  const vat = costSummary.finalValues.vat;
+  const gross = costSummary.finalValues.gross;
 
   if (!subject) {
     issues.push(`${document.fileName}: Angebotsformat erkannt, aber Betreff mit Objektnummer-Wohnung wurde nicht gefunden.`);
@@ -421,7 +621,7 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
   const locationAndAddress = parseSubject(subject[1]);
   const objectNumber = subject[2];
   const apartmentNumber = subject[3];
-  const grossValue = parseGermanMoney(gross?.[1] ?? null);
+  const grossValue = gross.value;
   const year = date ? Number(date[1].slice(-4)) : null;
   const measures = parseOfferMeasures(text);
   const missing: string[] = [];
@@ -445,11 +645,11 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
     renovatedApartments: aiField([apartmentNumber], subjectEvidence),
     totalAreaSqm: aiField(null, null),
     renovatedAreaSqm: aiField(null, null),
-    kosten_netto: aiField(parseGermanMoney(net?.[1] ?? null), net?.[0] ?? null),
-    mwst: aiField(parseGermanMoney(vat?.[1] ?? null), vat?.[0] ?? null),
-    kosten_brutto: aiField(grossValue, gross?.[0] ?? null),
-    totalCost: aiField(grossValue, gross?.[0] ?? null),
-    costPerApartment: aiField(grossValue, gross?.[0] ?? null),
+    kosten_netto: aiField(net.value, net.raw || null),
+    mwst: aiField(vat.value, vat.raw || null),
+    kosten_brutto: aiField(grossValue, gross.raw || null),
+    totalCost: aiField(grossValue, gross.raw || null),
+    costPerApartment: aiField(grossValue, gross.raw || null),
     costPerSqm: aiField(null, null),
     beschreibung_massnahmen: aiField(
       "Wohnungssanierung mit Bodenbelagsarbeiten, Malerarbeiten, Bad-/Fliesenarbeiten, Sanitaer-/Heizungsarbeiten, Elektroarbeiten, Tischlerarbeiten, Reinigung und Zusatzarbeiten.",
@@ -504,7 +704,7 @@ function parseOfferMeasures(text: string): AiMeasureResult[] {
     { section: 9, heading: /Summe\s+9\.\s+(?:Stundenlohn\s+)?Zusatzarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Zusatzarbeiten" }
   ];
 
-  return mappings.flatMap((mapping, index) => {
+  return mappings.flatMap((mapping) => {
     const match = text.match(mapping.heading);
     if (!match) return [];
     return [{
@@ -561,8 +761,12 @@ function aiField<T>(value: T | null, evidence: string | null): AiField<T> {
 
 function parseGermanMoney(value: string | null): number | null {
   if (!value) return null;
-  const parsed = Number(value.replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
+  const numeric = value.replace(/[^\d,.-]/g, "");
+  const cleaned = numeric.includes(",")
+    ? numeric.replace(/\./g, "").replace(",", ".")
+    : numeric;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? roundMoney(parsed) : null;
 }
 
 function calculatePortfolioTotals(objects: ObjectAnalysis[]): Pick<
