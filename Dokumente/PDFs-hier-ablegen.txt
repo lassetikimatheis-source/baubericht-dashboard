@@ -1,0 +1,7 @@
+Lege PDF-Rechnungen, Angebote, Bauberichte und sonstige Dokumente in diesen Ordner.
+
+Starte danach die App mit:
+npm install
+npm start
+
+In der Web-App kannst du dann im Bereich "Dokumente" auf "Dokumente analysieren" klicken.

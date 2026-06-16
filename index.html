@@ -1,0 +1,1179 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Baubericht Portfolio</title>
+    <style>
+      :root {
+        --navy: #061b32;
+        --navy-soft: #0e2b4a;
+        --blue: #0b70d5;
+        --blue-soft: #e8f3ff;
+        --green: #58a63c;
+        --green-soft: #ecf8ea;
+        --ink: #1f2937;
+        --muted: #667085;
+        --line: #d9e2ec;
+        --bg: #f5f7fa;
+        --panel: #ffffff;
+        --warning: #a15c00;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--bg);
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      button,
+      select,
+      input {
+        font: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 280px 1fr;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+        padding: 28px 20px;
+        background: linear-gradient(180deg, var(--navy), #03101f);
+        color: #fff;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-mark {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        border-radius: 8px;
+        font-size: 24px;
+        font-weight: 800;
+      }
+
+      .brand strong,
+      .brand span {
+        display: block;
+      }
+
+      .brand strong {
+        font-size: 24px;
+        letter-spacing: 1px;
+      }
+
+      .brand span {
+        margin-top: 4px;
+        color: #b8d8f2;
+        font-size: 14px;
+      }
+
+      .side-nav {
+        display: grid;
+        gap: 8px;
+      }
+
+      .side-nav a {
+        display: block;
+        padding: 12px 14px;
+        border-radius: 8px;
+        color: #d8e7f3;
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .side-nav a:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .side-summary {
+        margin-top: auto;
+        display: grid;
+        gap: 12px;
+        color: #c5d9eb;
+      }
+
+      .side-summary strong {
+        display: block;
+        color: #fff;
+        font-size: 24px;
+      }
+
+      main {
+        padding: 28px;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-start;
+        margin-bottom: 22px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 6px;
+        font-size: 32px;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin-bottom: 6px;
+        font-size: 21px;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 17px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      select,
+      input {
+        min-height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 8px 12px;
+      }
+
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(150px, 1fr));
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      .kpi,
+      .panel,
+      .detail-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.045);
+      }
+
+      .kpi {
+        padding: 16px;
+        min-height: 112px;
+      }
+
+      .kpi span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 10px;
+      }
+
+      .kpi strong {
+        display: block;
+        font-size: 24px;
+        line-height: 1.1;
+      }
+
+      .kpi small {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+      }
+
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: minmax(560px, 1.35fr) minmax(360px, 0.65fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .panel {
+        padding: 18px;
+        margin-bottom: 18px;
+      }
+
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        align-items: flex-start;
+        margin-bottom: 16px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        min-width: 1040px;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 12px 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      tbody tr {
+        cursor: pointer;
+      }
+
+      tbody tr:hover {
+        background: #f8fbff;
+      }
+
+      .object-id {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 42px;
+        height: 28px;
+        border-radius: 999px;
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-weight: 800;
+      }
+
+      .status {
+        display: inline-flex;
+        min-height: 28px;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0 10px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status.blue {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .bar-list {
+        display: grid;
+        gap: 11px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 150px 1fr 96px;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .bar-track {
+        height: 13px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #edf1f5;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--blue), var(--green));
+      }
+
+      .cluster-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 12px;
+      }
+
+      .cluster {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        background: #fff;
+      }
+
+      .cluster-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .cluster strong {
+        display: block;
+        font-size: 18px;
+      }
+
+      .cluster-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .cluster-metrics div {
+        border-radius: 7px;
+        background: #f7f9fc;
+        padding: 9px;
+      }
+
+      .cluster-metrics small {
+        display: block;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: 16px;
+      }
+
+      .detail-card {
+        padding: 16px;
+      }
+
+      .detail-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin: 14px 0;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+        background: #fff;
+      }
+
+      .metric small {
+        display: block;
+        color: var(--muted);
+        margin-bottom: 5px;
+      }
+
+      .metric strong {
+        font-size: 17px;
+      }
+
+      .mini-table {
+        min-width: 100%;
+        font-size: 13px;
+      }
+
+      .mini-table th,
+      .mini-table td {
+        padding: 9px 7px;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        border-radius: 999px;
+        padding: 0 9px;
+        background: #f0f4f8;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .quote {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 1280px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+          height: auto;
+        }
+
+        .dashboard-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .kpi-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        main {
+          padding: 16px;
+        }
+
+        .header,
+        .panel-head {
+          display: grid;
+        }
+
+        .toolbar {
+          justify-content: flex-start;
+        }
+
+        .kpi-grid,
+        .metric-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .bar-row {
+          grid-template-columns: 1fr;
+        }
+
+        .detail-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .kpi-grid,
+        .metric-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div>
+            <strong>PARIBUS</strong>
+            <span>Baubericht Prototype</span>
+          </div>
+        </div>
+
+        <nav class="side-nav">
+          <a href="#overview">Dashboard</a>
+          <a href="#objects">Objekte</a>
+          <a href="#costs">Kosten je Objekt</a>
+          <a href="#clusters">Cluster</a>
+          <a href="#details">Detailkarten</a>
+        </nav>
+
+        <div class="side-summary">
+          <div>
+            <span>Portfolio</span>
+            <strong id="sideTotal">0 EUR</strong>
+          </div>
+          <div>
+            <span>Sanierte Wohnungen</span>
+            <strong id="sideUnits">0 WE</strong>
+          </div>
+        </div>
+      </aside>
+
+      <main>
+        <header class="header" id="overview">
+          <div>
+            <h1>Baubericht Portfolio</h1>
+            <p class="muted">Visueller HTML-Prototyp fuer 21 Immobilienobjekte mit Objekt-, Kosten- und Massnahmen-Auswertung.</p>
+          </div>
+          <div class="toolbar">
+            <select id="clusterFilter" aria-label="Cluster Filter">
+              <option value="all">Alle Cluster</option>
+            </select>
+            <input id="searchInput" type="search" placeholder="Objekt suchen..." />
+          </div>
+        </header>
+
+        <section class="kpi-grid" aria-label="Kennzahlen">
+          <article class="kpi">
+            <span>Objekte</span>
+            <strong id="kpiObjects">0</strong>
+            <small>Gesamtportfolio</small>
+          </article>
+          <article class="kpi">
+            <span>Wohnungen gesamt</span>
+            <strong id="kpiUnits">0</strong>
+            <small>alle Objekte</small>
+          </article>
+          <article class="kpi">
+            <span>Sanierte Wohnungen</span>
+            <strong id="kpiRenovatedUnits">0</strong>
+            <small id="kpiRenovationRate">0% Quote</small>
+          </article>
+          <article class="kpi">
+            <span>Gesamtkosten</span>
+            <strong id="kpiTotalCost">0 EUR</strong>
+            <small>alle 21 Objekte</small>
+          </article>
+          <article class="kpi">
+            <span>Ø Kosten pro Objekt</span>
+            <strong id="kpiAverageObject">0 EUR</strong>
+            <small>Portfolio-Mittelwert</small>
+          </article>
+          <article class="kpi">
+            <span>Ø Kosten pro m&sup2;</span>
+            <strong id="kpiAverageSqm">0 EUR</strong>
+            <small>sanierte Flaeche</small>
+          </article>
+        </section>
+
+        <div class="dashboard-grid">
+          <section class="panel" id="objects">
+            <div class="panel-head">
+              <div>
+                <h2>Objektuebersicht</h2>
+                <p class="muted">Alle 21 Objekte mit sanierten Wohnungen, Flaechen und Gesamtkosten.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Objekt</th>
+                    <th>Adresse</th>
+                    <th>WE gesamt</th>
+                    <th>Sanierte WE</th>
+                    <th>Stueckzahl</th>
+                    <th>Gesamtflaeche</th>
+                    <th>Sanierte Flaeche</th>
+                    <th>Gesamtkosten</th>
+                    <th>Kosten/WE</th>
+                    <th>Kosten/m&sup2;</th>
+                  </tr>
+                </thead>
+                <tbody id="objectTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside>
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Kosten-Spanne</h2>
+                  <p class="muted">Teuerstes und guenstigstes Objekt.</p>
+                </div>
+              </div>
+              <div class="metric-grid" style="grid-template-columns:1fr 1fr">
+                <div class="metric">
+                  <small>Teuerstes Objekt</small>
+                  <strong id="mostExpensiveName">-</strong>
+                  <p class="quote" id="mostExpensiveCost">-</p>
+                </div>
+                <div class="metric">
+                  <small>Guenstigstes Objekt</small>
+                  <strong id="cheapestName">-</strong>
+                  <p class="quote" id="cheapestCost">-</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Kosten je Objekt</h2>
+                  <p class="muted">Diagramm-aehnliche Balken.</p>
+                </div>
+              </div>
+              <div id="costBars" class="bar-list"></div>
+            </section>
+          </aside>
+        </div>
+
+        <section class="panel" id="clusters">
+          <div class="panel-head">
+            <div>
+              <h2>Cluster-Auswertung</h2>
+              <p class="muted">Massnahmen nach Bad, Kueche, Boden, Elektro, Malerarbeiten, Tueren, Fenster, Heizung und Sonstiges.</p>
+            </div>
+          </div>
+          <div id="clusterGrid" class="cluster-grid"></div>
+        </section>
+
+        <section class="panel" id="costs">
+          <div class="panel-head">
+            <div>
+              <h2>Kostenuebersicht Portfolio</h2>
+              <p class="muted">Gesamtkosten, Durchschnittskosten und Objektvergleiche.</p>
+            </div>
+          </div>
+          <div id="portfolioCostCards" class="metric-grid"></div>
+        </section>
+
+        <section id="details">
+          <div class="panel-head">
+            <div>
+              <h2>Objekt-Detailansicht</h2>
+              <p class="muted">Detailkarten fuer jedes Objekt mit Kennzahlen, Clustern und Beispielmassnahmen.</p>
+            </div>
+          </div>
+          <div id="detailCards" class="detail-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const objects = [
+        {
+          no: "OBJ-001",
+          address: "Mainz, Kaiserstrasse 15",
+          units: 12,
+          renovatedUnits: [1, 2, 4, 7, 9],
+          totalArea: 1280,
+          renovatedArea: 515,
+          costs: 215000,
+          clusters: { Bad: [3, 42000, "SE"], Kueche: [2, 26000, "SE"], Boden: [4, 31000, "SE"], Elektro: [5, 22000, "GE"], Malerarbeiten: [5, 18000, "SE"], Tueren: [2, 9000, "SE"], Fenster: [1, 38000, "GE"], Heizung: [1, 19000, "GE"], Sonstiges: [2, 10000, "GE"] }
+        },
+        {
+          no: "OBJ-002",
+          address: "Wiesbaden, Schillerplatz 4",
+          units: 9,
+          renovatedUnits: [2, 3, 6, 8],
+          totalArea: 980,
+          renovatedArea: 392,
+          costs: 182000,
+          clusters: { Bad: [2, 31000, "SE"], Kueche: [2, 23000, "SE"], Boden: [3, 24000, "SE"], Elektro: [4, 19000, "GE"], Malerarbeiten: [4, 15000, "SE"], Tueren: [1, 7000, "SE"], Fenster: [2, 42000, "GE"], Heizung: [1, 15000, "GE"], Sonstiges: [1, 6000, "GE"] }
+        },
+        {
+          no: "OBJ-003",
+          address: "Frankfurt, Berger Strasse 120",
+          units: 18,
+          renovatedUnits: [1, 3, 5, 8, 10, 12, 15],
+          totalArea: 1540,
+          renovatedArea: 610,
+          costs: 324000,
+          clusters: { Bad: [5, 69000, "SE"], Kueche: [4, 48000, "SE"], Boden: [6, 51000, "SE"], Elektro: [7, 36000, "GE"], Malerarbeiten: [7, 27000, "SE"], Tueren: [3, 16000, "SE"], Fenster: [3, 52000, "GE"], Heizung: [1, 18000, "GE"], Sonstiges: [3, 7000, "GE"] }
+        },
+        {
+          no: "OBJ-004",
+          address: "Bad Homburg, Louisenstrasse 8",
+          units: 7,
+          renovatedUnits: [1, 4, 5],
+          totalArea: 760,
+          renovatedArea: 296,
+          costs: 145000,
+          clusters: { Bad: [2, 26000, "SE"], Kueche: [1, 15000, "SE"], Boden: [3, 21000, "SE"], Elektro: [3, 16000, "GE"], Malerarbeiten: [3, 12000, "SE"], Tueren: [1, 5000, "SE"], Fenster: [1, 27000, "GE"], Heizung: [1, 17000, "GE"], Sonstiges: [1, 6000, "GE"] }
+        },
+        {
+          no: "OBJ-005",
+          address: "Offenbach, Kaiserstrasse 100",
+          units: 11,
+          renovatedUnits: [2, 5, 6, 9],
+          totalArea: 1120,
+          renovatedArea: 430,
+          costs: 210000,
+          clusters: { Bad: [3, 38000, "SE"], Kueche: [2, 25000, "SE"], Boden: [4, 30000, "SE"], Elektro: [4, 23000, "GE"], Malerarbeiten: [4, 16000, "SE"], Tueren: [2, 9000, "SE"], Fenster: [2, 41000, "GE"], Heizung: [1, 21000, "GE"], Sonstiges: [2, 7000, "GE"] }
+        },
+        {
+          no: "OBJ-006",
+          address: "Darmstadt, Rheinstrasse 42",
+          units: 14,
+          renovatedUnits: [1, 2, 7, 11, 13],
+          totalArea: 1180,
+          renovatedArea: 455,
+          costs: 168000,
+          clusters: { Bad: [2, 29000, "SE"], Kueche: [2, 20000, "SE"], Boden: [4, 27000, "SE"], Elektro: [5, 22000, "GE"], Malerarbeiten: [5, 17000, "SE"], Tueren: [2, 8000, "SE"], Fenster: [1, 25000, "GE"], Heizung: [1, 14000, "GE"], Sonstiges: [2, 6000, "GE"] }
+        },
+        {
+          no: "OBJ-007",
+          address: "Hamburg, Pamirweg 1-14",
+          units: 54,
+          renovatedUnits: [3, 4, 8, 9, 12, 15, 18, 24, 29, 31, 37, 42, 45, 51],
+          totalArea: 4200,
+          renovatedArea: 1080,
+          costs: 395000,
+          clusters: { Bad: [8, 84000, "SE"], Kueche: [7, 62000, "SE"], Boden: [10, 59000, "SE"], Elektro: [14, 45000, "GE"], Malerarbeiten: [14, 32000, "SE"], Tueren: [5, 19000, "SE"], Fenster: [4, 51000, "GE"], Heizung: [3, 31000, "GE"], Sonstiges: [6, 12000, "GE"] }
+        },
+        {
+          no: "OBJ-008",
+          address: "Mainz, Grosse Bleiche 22",
+          units: 10,
+          renovatedUnits: [1, 5, 6],
+          totalArea: 880,
+          renovatedArea: 265,
+          costs: 132000,
+          clusters: { Bad: [2, 24000, "SE"], Kueche: [1, 13000, "SE"], Boden: [3, 19000, "SE"], Elektro: [3, 14000, "GE"], Malerarbeiten: [3, 11000, "SE"], Tueren: [1, 5000, "SE"], Fenster: [1, 29000, "GE"], Heizung: [1, 12000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-009",
+          address: "Wiesbaden, Rheinstrasse 17",
+          units: 13,
+          renovatedUnits: [2, 4, 8, 10],
+          totalArea: 1030,
+          renovatedArea: 342,
+          costs: 158000,
+          clusters: { Bad: [2, 28000, "SE"], Kueche: [2, 19000, "SE"], Boden: [3, 23000, "SE"], Elektro: [4, 18000, "GE"], Malerarbeiten: [4, 13000, "SE"], Tueren: [1, 7000, "SE"], Fenster: [2, 32000, "GE"], Heizung: [1, 13000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-010",
+          address: "Frankfurt, Nordendstrasse 8",
+          units: 8,
+          renovatedUnits: [1, 2, 6],
+          totalArea: 920,
+          renovatedArea: 318,
+          costs: 121000,
+          clusters: { Bad: [2, 21000, "SE"], Kueche: [1, 12000, "SE"], Boden: [3, 17000, "SE"], Elektro: [3, 12000, "GE"], Malerarbeiten: [3, 10000, "SE"], Tueren: [1, 5000, "SE"], Fenster: [1, 24000, "GE"], Heizung: [1, 15000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-011",
+          address: "Hanau, Marktstrasse 9",
+          units: 8,
+          renovatedUnits: [3, 7],
+          totalArea: 740,
+          renovatedArea: 184,
+          costs: 94000,
+          clusters: { Bad: [1, 15000, "SE"], Kueche: [1, 10000, "SE"], Boden: [2, 13000, "SE"], Elektro: [2, 10000, "GE"], Malerarbeiten: [2, 8000, "SE"], Tueren: [1, 4000, "SE"], Fenster: [1, 18000, "GE"], Heizung: [1, 11000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-012",
+          address: "Ruesselsheim, Bahnhofstrasse 31",
+          units: 9,
+          renovatedUnits: [1, 3, 9],
+          totalArea: 860,
+          renovatedArea: 251,
+          costs: 108000,
+          clusters: { Bad: [1, 17000, "SE"], Kueche: [1, 11000, "SE"], Boden: [2, 15000, "SE"], Elektro: [3, 12000, "GE"], Malerarbeiten: [3, 9000, "SE"], Tueren: [1, 4000, "SE"], Fenster: [1, 22000, "GE"], Heizung: [1, 13000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-013",
+          address: "Aschaffenburg, Herstallstrasse 11",
+          units: 7,
+          renovatedUnits: [2, 6],
+          totalArea: 690,
+          renovatedArea: 172,
+          costs: 87000,
+          clusters: { Bad: [1, 14000, "SE"], Kueche: [1, 9000, "SE"], Boden: [2, 12000, "SE"], Elektro: [2, 9000, "GE"], Malerarbeiten: [2, 7000, "SE"], Tueren: [1, 4000, "SE"], Fenster: [1, 17000, "GE"], Heizung: [1, 10000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-014",
+          address: "Hamburg, Nessdeich 5",
+          units: 16,
+          renovatedUnits: [1, 2, 6, 10, 12],
+          totalArea: 1320,
+          renovatedArea: 410,
+          costs: 142000,
+          clusters: { Bad: [2, 24000, "SE"], Kueche: [2, 18000, "SE"], Boden: [4, 21000, "SE"], Elektro: [5, 17000, "GE"], Malerarbeiten: [5, 13000, "SE"], Tueren: [2, 7000, "SE"], Fenster: [1, 25000, "GE"], Heizung: [1, 12000, "GE"], Sonstiges: [2, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-015",
+          address: "Hamburg, Nesskatenweg 3",
+          units: 12,
+          renovatedUnits: [2, 4, 11],
+          totalArea: 980,
+          renovatedArea: 268,
+          costs: 118000,
+          clusters: { Bad: [1, 18000, "SE"], Kueche: [1, 12000, "SE"], Boden: [3, 16000, "SE"], Elektro: [3, 13000, "GE"], Malerarbeiten: [3, 9000, "SE"], Tueren: [1, 5000, "SE"], Fenster: [1, 24000, "GE"], Heizung: [1, 15000, "GE"], Sonstiges: [1, 6000, "GE"] }
+        },
+        {
+          no: "OBJ-016",
+          address: "Mainz, Neustadt 41",
+          units: 8,
+          renovatedUnits: [1, 8],
+          totalArea: 790,
+          renovatedArea: 180,
+          costs: 76000,
+          clusters: { Bad: [1, 12000, "SE"], Kueche: [1, 8000, "SE"], Boden: [2, 10000, "SE"], Elektro: [2, 8000, "GE"], Malerarbeiten: [2, 7000, "SE"], Tueren: [1, 3000, "SE"], Fenster: [1, 15000, "GE"], Heizung: [1, 9000, "GE"], Sonstiges: [1, 4000, "GE"] }
+        },
+        {
+          no: "OBJ-017",
+          address: "Frankfurt, Sachsenhausen 66",
+          units: 17,
+          renovatedUnits: [2, 3, 7, 8, 14, 16],
+          totalArea: 1420,
+          renovatedArea: 520,
+          costs: 222000,
+          clusters: { Bad: [3, 39000, "SE"], Kueche: [3, 29000, "SE"], Boden: [5, 31000, "SE"], Elektro: [6, 23000, "GE"], Malerarbeiten: [6, 18000, "SE"], Tueren: [2, 9000, "SE"], Fenster: [2, 44000, "GE"], Heizung: [1, 21000, "GE"], Sonstiges: [2, 8000, "GE"] }
+        },
+        {
+          no: "OBJ-018",
+          address: "Offenbach, Mainufer 12",
+          units: 10,
+          renovatedUnits: [5, 6, 10],
+          totalArea: 970,
+          renovatedArea: 286,
+          costs: 97000,
+          clusters: { Bad: [1, 15000, "SE"], Kueche: [1, 10000, "SE"], Boden: [2, 13000, "SE"], Elektro: [3, 10000, "GE"], Malerarbeiten: [3, 8000, "SE"], Tueren: [1, 4000, "SE"], Fenster: [1, 19000, "GE"], Heizung: [1, 13000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-019",
+          address: "Bad Homburg, Gartenstrasse 20",
+          units: 6,
+          renovatedUnits: [1, 4],
+          totalArea: 720,
+          renovatedArea: 210,
+          costs: 83000,
+          clusters: { Bad: [1, 13000, "SE"], Kueche: [1, 8000, "SE"], Boden: [2, 11000, "SE"], Elektro: [2, 8000, "GE"], Malerarbeiten: [2, 7000, "SE"], Tueren: [1, 3000, "SE"], Fenster: [1, 17000, "GE"], Heizung: [1, 11000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-020",
+          address: "Darmstadt, Bismarckstrasse 7",
+          units: 9,
+          renovatedUnits: [2, 5, 8],
+          totalArea: 840,
+          renovatedArea: 246,
+          costs: 101000,
+          clusters: { Bad: [1, 16000, "SE"], Kueche: [1, 10000, "SE"], Boden: [2, 14000, "SE"], Elektro: [3, 11000, "GE"], Malerarbeiten: [3, 8000, "SE"], Tueren: [1, 4000, "SE"], Fenster: [1, 21000, "GE"], Heizung: [1, 12000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        },
+        {
+          no: "OBJ-021",
+          address: "Hamburg, Pamirweg 15",
+          units: 8,
+          renovatedUnits: [1, 2],
+          totalArea: 650,
+          renovatedArea: 168,
+          costs: 84000,
+          clusters: { Bad: [1, 14000, "SE"], Kueche: [1, 9000, "SE"], Boden: [2, 11000, "SE"], Elektro: [2, 8000, "GE"], Malerarbeiten: [2, 7000, "SE"], Tueren: [1, 3000, "SE"], Fenster: [1, 17000, "GE"], Heizung: [1, 10000, "GE"], Sonstiges: [1, 5000, "GE"] }
+        }
+      ];
+
+      const clusterNames = ["Bad", "Kueche", "Boden", "Elektro", "Malerarbeiten", "Tueren", "Fenster", "Heizung", "Sonstiges"];
+      const formatMoney = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+      const formatNumber = new Intl.NumberFormat("de-DE");
+
+      const state = {
+        cluster: "all",
+        search: ""
+      };
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const clusterFilter = document.getElementById("clusterFilter");
+        clusterNames.forEach((name) => {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          clusterFilter.append(option);
+        });
+
+        clusterFilter.addEventListener("change", (event) => {
+          state.cluster = event.target.value;
+          render();
+        });
+
+        document.getElementById("searchInput").addEventListener("input", (event) => {
+          state.search = event.target.value.toLowerCase();
+          render();
+        });
+
+        render();
+      });
+
+      function filteredObjects() {
+        return objects.filter((object) => {
+          const matchesSearch = `${object.no} ${object.address}`.toLowerCase().includes(state.search);
+          const matchesCluster = state.cluster === "all" || object.clusters[state.cluster];
+          return matchesSearch && matchesCluster;
+        });
+      }
+
+      function render() {
+        const list = filteredObjects();
+        renderKpis(list);
+        renderObjectTable(list);
+        renderCostBars(list);
+        renderClusterGrid(list);
+        renderPortfolioCosts(list);
+        renderDetailCards(list);
+      }
+
+      function renderKpis(list) {
+        const totals = getTotals(list);
+        const mostExpensive = maxBy(list, "costs");
+        const cheapest = minBy(list, "costs");
+
+        document.getElementById("kpiObjects").textContent = list.length;
+        document.getElementById("kpiUnits").textContent = totals.units;
+        document.getElementById("kpiRenovatedUnits").textContent = totals.renovatedUnits;
+        document.getElementById("kpiRenovationRate").textContent = percent(totals.renovatedUnits, totals.units) + "% Quote";
+        document.getElementById("kpiTotalCost").textContent = formatMoney.format(totals.costs);
+        document.getElementById("kpiAverageObject").textContent = formatMoney.format(totals.costs / Math.max(list.length, 1));
+        document.getElementById("kpiAverageSqm").textContent = formatMoney.format(totals.costs / Math.max(totals.renovatedArea, 1));
+        document.getElementById("sideTotal").textContent = formatMoney.format(totals.costs);
+        document.getElementById("sideUnits").textContent = totals.renovatedUnits + " WE";
+
+        document.getElementById("mostExpensiveName").textContent = mostExpensive ? mostExpensive.no : "-";
+        document.getElementById("mostExpensiveCost").textContent = mostExpensive ? `${mostExpensive.address} · ${formatMoney.format(mostExpensive.costs)}` : "-";
+        document.getElementById("cheapestName").textContent = cheapest ? cheapest.no : "-";
+        document.getElementById("cheapestCost").textContent = cheapest ? `${cheapest.address} · ${formatMoney.format(cheapest.costs)}` : "-";
+      }
+
+      function renderObjectTable(list) {
+        document.getElementById("objectTable").innerHTML = list
+          .map((object) => {
+            const costPerUnit = object.costs / object.renovatedUnits.length;
+            const costPerSqm = object.costs / object.renovatedArea;
+            return `
+              <tr onclick="document.getElementById('detail-${object.no}').scrollIntoView({behavior:'smooth', block:'start'})">
+                <td><span class="object-id">${object.no.replace("OBJ-", "")}</span></td>
+                <td><strong>${object.address}</strong></td>
+                <td>${object.units}</td>
+                <td>${object.renovatedUnits.join(", ")}</td>
+                <td>${object.renovatedUnits.length}</td>
+                <td>${formatNumber.format(object.totalArea)} m&sup2;</td>
+                <td>${formatNumber.format(object.renovatedArea)} m&sup2;</td>
+                <td><strong>${formatMoney.format(object.costs)}</strong></td>
+                <td>${formatMoney.format(costPerUnit)}</td>
+                <td>${formatMoney.format(costPerSqm)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+
+      function renderCostBars(list) {
+        const maxCost = Math.max(...list.map((object) => object.costs), 1);
+        document.getElementById("costBars").innerHTML = list
+          .slice()
+          .sort((a, b) => b.costs - a.costs)
+          .map((object) => {
+            const width = Math.max(6, Math.round((object.costs / maxCost) * 100));
+            return `
+              <div class="bar-row">
+                <strong>${object.no}</strong>
+                <div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div>
+                <span>${formatMoney.format(object.costs)}</span>
+              </div>
+            `;
+          })
+          .join("");
+      }
+
+      function renderClusterGrid(list) {
+        const totals = getTotals(list);
+        const clusters = clusterNames.map((name) => {
+          return list.reduce(
+            (result, object) => {
+              const item = object.clusters[name];
+              if (!item) return result;
+              result.count += item[0];
+              result.cost += item[1];
+              result.ge += item[2] === "GE" ? item[1] : 0;
+              result.se += item[2] === "SE" ? item[1] : 0;
+              return result;
+            },
+            { name, count: 0, cost: 0, ge: 0, se: 0 }
+          );
+        });
+
+        document.getElementById("clusterGrid").innerHTML = clusters
+          .map((cluster) => {
+            const share = percent(cluster.cost, totals.costs);
+            const dominant = cluster.ge >= cluster.se ? "GE" : "SE";
+            return `
+              <article class="cluster">
+                <div class="cluster-top">
+                  <div>
+                    <span class="muted">Cluster</span>
+                    <strong>${cluster.name}</strong>
+                  </div>
+                  <span class="status ${dominant === "GE" ? "blue" : ""}">${dominant}</span>
+                </div>
+                <div class="bar-track"><div class="bar-fill" style="width:${share}%"></div></div>
+                <div class="cluster-metrics">
+                  <div><small>Anzahl</small><b>${cluster.count}</b></div>
+                  <div><small>Kosten</small><b>${formatMoney.format(cluster.cost)}</b></div>
+                  <div><small>Anteil</small><b>${share}%</b></div>
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+      }
+
+      function renderPortfolioCosts(list) {
+        const totals = getTotals(list);
+        const mostExpensive = maxBy(list, "costs");
+        const cheapest = minBy(list, "costs");
+        const cards = [
+          ["Gesamtkosten aller Objekte", formatMoney.format(totals.costs), "Summe ueber alle sichtbaren Objekte"],
+          ["Durchschnittskosten pro Objekt", formatMoney.format(totals.costs / Math.max(list.length, 1)), "Basis: sichtbare Objekte"],
+          ["Durchschnitt pro sanierter Wohnung", formatMoney.format(totals.costs / Math.max(totals.renovatedUnits, 1)), "Kosten je sanierter WE"],
+          ["Durchschnitt pro m²", formatMoney.format(totals.costs / Math.max(totals.renovatedArea, 1)), "Kosten je sanierter Flaeche"],
+          ["Teuerstes Objekt", mostExpensive ? mostExpensive.no : "-", mostExpensive ? mostExpensive.address : "-"],
+          ["Guenstigstes Objekt", cheapest ? cheapest.no : "-", cheapest ? cheapest.address : "-"],
+          ["Sanierte Flaeche", `${formatNumber.format(totals.renovatedArea)} m²`, "Summe aller sanierten Flaechen"],
+          ["Sanierungsquote", percent(totals.renovatedUnits, totals.units) + "%", "sanierte WE / WE gesamt"]
+        ];
+
+        document.getElementById("portfolioCostCards").innerHTML = cards
+          .map(([label, value, sub]) => `
+            <div class="metric">
+              <small>${label}</small>
+              <strong>${value}</strong>
+              <p class="quote">${sub}</p>
+            </div>
+          `)
+          .join("");
+      }
+
+      function renderDetailCards(list) {
+        document.getElementById("detailCards").innerHTML = list
+          .map((object) => {
+            const costPerUnit = object.costs / object.renovatedUnits.length;
+            const costPerSqm = object.costs / object.renovatedArea;
+            const renovationRate = percent(object.renovatedUnits.length, object.units);
+            const topClusters = Object.entries(object.clusters)
+              .sort((a, b) => b[1][1] - a[1][1])
+              .slice(0, 5);
+
+            const sampleMeasures = topClusters.slice(0, 4).map(([name, data], index) => ({
+              no: index + 1,
+              measure: sampleMeasureName(name),
+              cluster: name,
+              cost: data[1],
+              type: data[2]
+            }));
+
+            return `
+              <article class="detail-card" id="detail-${object.no}">
+                <div class="detail-title">
+                  <div>
+                    <h3>${object.no} · ${object.address}</h3>
+                    <p class="muted">${object.units} Wohnungen · ${object.totalArea} m&sup2; Gesamtflaeche</p>
+                  </div>
+                  <span class="status">${renovationRate}% saniert</span>
+                </div>
+
+                <div class="metric-grid">
+                  <div class="metric"><small>Anzahl Wohnungen</small><strong>${object.units}</strong></div>
+                  <div class="metric"><small>Sanierte Wohnungen</small><strong>${object.renovatedUnits.join(", ")}</strong></div>
+                  <div class="metric"><small>Gesamtkosten</small><strong>${formatMoney.format(object.costs)}</strong></div>
+                  <div class="metric"><small>Kosten pro WE</small><strong>${formatMoney.format(costPerUnit)}</strong></div>
+                  <div class="metric"><small>Kosten pro m&sup2;</small><strong>${formatMoney.format(costPerSqm)}</strong></div>
+                  <div class="metric"><small>Sanierte Flaeche</small><strong>${object.renovatedArea} m&sup2;</strong></div>
+                  <div class="metric"><small>Sanierungsquote</small><strong>${renovationRate}%</strong></div>
+                  <div class="metric"><small>Massnahmen</small><strong>${sumClusterMeasures(object)}</strong></div>
+                </div>
+
+                <div class="chips">
+                  ${topClusters.map(([name, data]) => `<span class="chip">${name}: ${formatMoney.format(data[1])} · ${data[2]}</span>`).join("")}
+                </div>
+
+                <div class="table-wrap" style="margin-top:14px">
+                  <table class="mini-table">
+                    <thead>
+                      <tr><th>Nr.</th><th>Beispielmassnahme</th><th>Cluster</th><th>Kosten</th><th>GE/SE</th></tr>
+                    </thead>
+                    <tbody>
+                      ${sampleMeasures.map((item) => `
+                        <tr>
+                          <td>${item.no}</td>
+                          <td>${item.measure}</td>
+                          <td>${item.cluster}</td>
+                          <td>${formatMoney.format(item.cost)}</td>
+                          <td><span class="status ${item.type === "GE" ? "blue" : ""}">${item.type}</span></td>
+                        </tr>
+                      `).join("")}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+      }
+
+      function getTotals(list) {
+        return list.reduce(
+          (total, object) => {
+            total.units += object.units;
+            total.renovatedUnits += object.renovatedUnits.length;
+            total.totalArea += object.totalArea;
+            total.renovatedArea += object.renovatedArea;
+            total.costs += object.costs;
+            return total;
+          },
+          { units: 0, renovatedUnits: 0, totalArea: 0, renovatedArea: 0, costs: 0 }
+        );
+      }
+
+      function sumClusterMeasures(object) {
+        return Object.values(object.clusters).reduce((sum, item) => sum + item[0], 0);
+      }
+
+      function sampleMeasureName(cluster) {
+        const names = {
+          Bad: "Badmodernisierung inkl. Sanitaerobjekte",
+          Kueche: "Kuechenanschluesse und Fliesenspiegel",
+          Boden: "Bodenaufbau und Oberbelag",
+          Elektro: "Elektroinstallation und Pruefung",
+          Malerarbeiten: "Wand- und Deckenbeschichtung",
+          Tueren: "Innentueren und Beschlaege",
+          Fenster: "Fensterinstandsetzung",
+          Heizung: "Heizkoerper und Thermostate",
+          Sonstiges: "Nebenarbeiten und Baustelleneinrichtung"
+        };
+        return names[cluster] || "Massnahme";
+      }
+
+      function percent(value, total) {
+        if (!total) return 0;
+        return Math.round((value / total) * 100);
+      }
+
+      function maxBy(list, key) {
+        return list.reduce((best, item) => (!best || item[key] > best[key] ? item : best), null);
+      }
+
+      function minBy(list, key) {
+        return list.reduce((best, item) => (!best || item[key] < best[key] ? item : best), null);
+      }
+    </script>
+  </body>
+</html>

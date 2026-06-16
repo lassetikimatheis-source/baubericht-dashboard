@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paribus Baubericht Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">P</div>
+        <div>
+          <strong>PARIBUS</strong>
+          <span>Baubericht 2024</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard">Übersicht</button>
+        <button class="nav-item" data-view="objects">Objekte</button>
+        <button class="nav-item" data-view="documents">Dokumente</button>
+      </nav>
+      <div class="sidebar-summary">
+        <span>Gesamtkosten</span>
+        <strong id="sidebarTotal">0 €</strong>
+        <span id="sidebarDocs">0 Dokumente</span>
+      </div>
+    </aside>
+
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Portfolio Rhein-Main / Hamburg</p>
+          <h1>Interaktiver Baubericht</h1>
+        </div>
+        <div class="topbar-actions">
+          <select id="objectFilter" aria-label="Objektfilter">
+            <option value="all">Alle Objekte</option>
+          </select>
+          <button id="refreshButton" type="button">Aktualisieren</button>
+        </div>
+      </header>
+
+      <section class="kpi-grid" aria-label="Kennzahlen">
+        <article>
+          <span>Objekte</span>
+          <strong id="kpiObjects">0</strong>
+        </article>
+        <article>
+          <span>Dokumente</span>
+          <strong id="kpiDocuments">0</strong>
+        </article>
+        <article>
+          <span>Kosten brutto</span>
+          <strong id="kpiGross">0 €</strong>
+        </article>
+        <article>
+          <span>Prüfung offen</span>
+          <strong id="kpiReview">0</strong>
+        </article>
+      </section>
+
+      <section id="dashboardView" class="view active">
+        <div class="panel map-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Karte</h2>
+              <p>Objekte mit zugeordneten Dokumenten und Kostenstatus.</p>
+            </div>
+          </div>
+          <div id="mapMock" class="map-mock"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Aktuelle Dokumente</h2>
+              <p>Neue PDFs fließen nach der Analyse automatisch in die Übersicht ein.</p>
+            </div>
+          </div>
+          <div id="recentDocuments" class="document-list"></div>
+        </div>
+      </section>
+
+      <section id="objectsView" class="view">
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Objektübersicht</h2>
+              <p>Alle Immobilien mit Kosten, Maßnahmen und Dokumentenstatus.</p>
+            </div>
+          </div>
+          <div id="objectCards" class="object-grid"></div>
+        </div>
+        <div id="objectDetail" class="panel detail-panel"></div>
+      </section>
+
+      <section id="documentsView" class="view">
+        <div class="panel upload-panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Dokumente</h2>
+              <p>PDFs hochladen oder direkt in den Ordner Dokumente legen.</p>
+            </div>
+            <button id="analyzeButton" type="button">Dokumente analysieren</button>
+          </div>
+          <div class="upload-box">
+            <input id="pdfUpload" type="file" accept="application/pdf" multiple />
+            <button id="uploadButton" type="button">PDFs hochladen</button>
+            <span id="uploadStatus">Bereit</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Maßnahmen-Tabelle</h2>
+              <p>Ausgelesene Rechnungsdaten mit Zuordnung und Prüfstatus.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Objekt</th>
+                  <th>Maßnahme</th>
+                  <th>Gewerk</th>
+                  <th>Netto</th>
+                  <th>MwSt.</th>
+                  <th>Brutto</th>
+                  <th>GE/SE</th>
+                  <th>Quelle</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="documentsTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-heading">
+            <div>
+              <h2>Nicht zugeordnet</h2>
+              <p>Diese Dateien brauchen eine manuelle Prüfung.</p>
+            </div>
+          </div>
+          <div id="unassignedDocuments" class="document-list"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
