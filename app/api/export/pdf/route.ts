@@ -67,7 +67,7 @@ export async function POST(request: Request) {
   }
 
   const arrayBuffer = pdf.output("arraybuffer");
-  return new NextResponse(arrayBuffer as BodyInit, {
+  return new NextResponse(Buffer.from(arrayBuffer), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": 'attachment; filename="paribus-baukosten-analyse.pdf"'

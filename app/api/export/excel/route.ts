@@ -85,7 +85,7 @@ export async function POST(request: Request) {
   });
 
   const buffer = await workbook.xlsx.writeBuffer();
-  return new NextResponse(buffer as BodyInit, {
+  return new NextResponse(Buffer.from(buffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": 'attachment; filename="paribus-baukosten-analyse.xlsx"'
