@@ -1,102 +1,129 @@
-# Baubericht Dashboard
+# PARIBUS Baukosten Analyse
 
-Lokale Fullstack-Web-App für den interaktiven Baubericht mit PDF-Upload, Dokumentenanalyse und objektbezogener Auswertung.
+Next.js Anwendung fuer Upload, Analyse und Export von Baukosten-Dokumenten.
+
+## Ziel
+
+Rechnungen, Angebote, Scans und Excel-Dateien werden hochgeladen. Die Anwendung liest Dokumentinhalte aus und bereitet sie fuer eine KI-Extraktion auf.
+
+Wichtig: Es werden nur Werte angezeigt, die aus den hochgeladenen Dokumenten extrahiert wurden. Wenn kein Wert gefunden wird, erscheint `k.A.`.
+
+## Aktueller Funktionsumfang
+
+- OCR fuer Bild-Scans (`png`, `jpg`, `jpeg`) via Tesseract
+- PDF-Textanalyse via `pdf-parse`
+- Excel-/CSV-Analyse via `xlsx`
+- KI-Extraktion via OpenAI API
+- Dublettenpruefung ueber Datei-Hash
+- Quellenangaben pro Feld
+- Strenge Feldvalidierung: Werte werden nur uebernommen, wenn ein Quellenbeleg im Dokumenttext gefunden wird
+- Textvorschau vor der KI-Analyse, damit PDF-/Excel-Auslesung kontrolliert werden kann
+- Export nach Excel
+- Export nach PDF
+- Dashboard, Upload-Bereich, Objektuebersicht und Objekt-Detailansicht
+
+## Start lokal
+
+```bash
+npm install
+npm run dev
+```
+
+Dann oeffnen:
+
+```text
+http://localhost:3000
+```
+
+## Environment
+
+Datei `.env.example` kopieren und als `.env` speichern:
+
+```env
+OPENAI_API_KEY=dein_api_key
+OPENAI_MODEL=gpt-4o-mini
+```
+
+Ohne `OPENAI_API_KEY` werden Dokumente zwar gelesen, aber keine KI-Extraktion ausgefuehrt. Die Oberflaeche zeigt dann `k.A.` und einen entsprechenden Hinweis.
+
+## Warum Werte verworfen werden koennen
+
+Die App uebernimmt keine KI-Antwort blind. Jedes Feld braucht:
+
+- einen Wert
+- einen Quellenbeleg (`evidence`)
+- einen passenden Originalausschnitt im Dokumenttext
+
+Wenn z. B. Elektroarbeiten im PDF stehen, aber die Adresse oder der Preis nicht eindeutig im gleichen Dokumentausschnitt belegbar ist, wird nur die belegte Information uebernommen. Adresse oder Preis bleiben dann `k.A.`.
+
+## Standardformat Angebot
+
+Die Analyse kennt jetzt das Angebotsformat von Artis Projekte GmbH als Standardfall.
+
+Erkannt werden u. a.:
+
+- Dokumenttyp `Angebot`
+- Anbieter
+- Fonds
+- Datum und Belegnummer
+- Betreff mit Objekt und Wohnung
+- Muster `760005-1008`: erster Teil = Objektnummer, zweiter Teil = Wohnungsnummer
+- Lage wie `2.OG 3.v.li`
+- Nettosumme, Umsatzsteuer und Gesamtsumme am Dokumentende
+- Massnahmencluster aus Abschnittsueberschriften
+
+Cluster-Mapping:
+
+- Erstbegehung -> Planung / Dokumentation
+- Bodenbelagsarbeiten -> Boden
+- Malerarbeiten -> Maler
+- Fliesenarbeiten und Estrich -> Bad / Fliesen
+- Sanitaer - Heizungsarbeiten -> Sanitaer / Heizung
+- Elektroarbeiten -> Elektro
+- Tischlerarbeiten -> Tueren / Fenster
+- Reinigung -> Reinigung
+- Zusatzarbeiten -> Sonstiges
+
+Die Haupttabelle wird je Dokument und Objekt zusammengefasst. Einzelpositionen werden optional je Cluster gespeichert, wenn sie eindeutig aus dem Text gelesen werden koennen.
 
 ## Projektstruktur
 
 ```text
-/frontend    Dashboard im Browser
-/backend     Node.js/Express API
-/Dokumente   Ablage für PDF-Rechnungen, Angebote und Bauberichte
-/data        gespeicherte Analyseergebnisse
+app/
+  api/analyze/route.ts
+  api/export/excel/route.ts
+  api/export/pdf/route.ts
+  layout.tsx
+  page.tsx
+  globals.css
+components/
+  analysis-dashboard.tsx
+  object-detail.tsx
+  object-table.tsx
+  upload-panel.tsx
+lib/
+  analysis-state.ts
+  format.ts
+  server/
+    ai-extraction.ts
+    document-ingestion.ts
+    duplicates.ts
+types/
+  analysis.ts
 ```
 
-## Start
+## Datenmodell
 
-1. Abhängigkeiten installieren:
-
-```bash
-npm install
-```
-
-2. App starten:
-
-```bash
-npm run dev
-```
-
-3. Im Browser öffnen:
+Das Datenmodell liegt in:
 
 ```text
-http://127.0.0.1:4173
+types/analysis.ts
 ```
 
-## PDFs hochladen
+Alle relevanten Werte sind als `ExtractedField<T>` modelliert. Dadurch hat jedes Feld:
 
-Du kannst PDFs auf zwei Arten hinzufügen:
+- `value`
+- `sources`
+- `confidence`
 
-- Im Dashboard den Bereich **Dokumente** öffnen und über **PDFs hochladen** Dateien auswählen.
-- PDF-Dateien direkt in den Ordner `Dokumente/` legen.
-
-Der Upload-Endpunkt ist:
-
-```text
-POST /api/upload
-```
-
-Das Formularfeld heißt `pdfs`.
-
-## Dokumente analysieren
-
-Im Bereich **Dokumente** auf **Dokumente analysieren** klicken.
-
-Der Button ruft diesen Endpunkt auf:
-
-```text
-POST /api/analyze-documents
-```
-
-Das Backend liest alle PDFs aus `Dokumente/`, extrahiert Text mit `pdf-parse` und speichert die strukturierten Daten hier:
-
-```text
-data/extracted-documents.json
-```
-
-Wenn keine PDFs vorhanden sind, lädt die App automatisch Beispieldaten, damit das Dashboard direkt testbar bleibt.
-
-## OpenAI API-Key eintragen
-
-1. Datei `.env.example` kopieren und als `.env` speichern.
-2. Deinen API-Key eintragen:
-
-```env
-OPENAI_API_KEY=dein_api_key
-PORT=4173
-```
-
-Wenn kein `OPENAI_API_KEY` vorhanden ist, nutzt das Backend den Mock/Testmodus. Dann werden Objekt, Adresse, Maßnahme, Gewerk, Kosten, GE/SE und Zuordnung mit einfachen Regeln erkannt. Mit API-Key ist die Analyse für eine spätere KI-Auswertung vorbereitet.
-
-## Ergebnis prüfen
-
-- Dashboard: Gesamtkosten und Dokumentenstatus
-- Objekte: zugeordnete Dokumente pro Immobilie
-- Dokumente: Maßnahmen-Tabelle mit Netto, MwSt., Brutto, GE/SE, Quelle und Status
-- Datei: `data/extracted-documents.json`
-
-## Deployment auf Vercel
-
-Das Projekt enthält `vercel.json` und `api/index.js`, damit Vercel die Express-API als Serverless Function ausführen kann.
-
-In Vercel:
-
-1. GitHub-Repository importieren.
-2. Framework Preset auf **Other** lassen.
-3. Environment Variable setzen:
-
-```text
-OPENAI_API_KEY=dein_api_key
-```
-
-4. Deploy starten.
-
-Hinweis: Auf Vercel ist der lokale Dateispeicher nicht dauerhaft. Uploads und Analyseergebnisse funktionieren im Prototyp über temporären Speicher. Für echte dauerhafte PDF-Ablage sollte später Vercel Blob, Supabase Storage oder ein ähnlicher Speicher angebunden werden.
+So kann die App spaeter bei jedem Wert zeigen, aus welcher Datei, Seite, Tabelle oder Textstelle er stammt.

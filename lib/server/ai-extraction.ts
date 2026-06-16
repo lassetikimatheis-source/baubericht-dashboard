@@ -1,0 +1,628 @@
+import OpenAI from "openai";
+import type {
+  CostAllocation,
+  ExtractedField,
+  FieldSource,
+  MeasureCluster,
+  MeasureItem,
+  ObjectAnalysis,
+  PortfolioAnalysisState,
+  LineItem
+} from "../../types/analysis";
+import { emptyAnalysisState, emptyField } from "../analysis-state";
+import type { ParsedDocument } from "./document-ingestion";
+import { detectDuplicates, toSourceDocuments } from "./duplicates";
+
+interface AiField<T> {
+  value?: T | null;
+  evidence?: string | null;
+  confidence?: number | null;
+}
+
+interface AiMeasureResult {
+  cluster?: AiField<MeasureCluster>;
+  description?: AiField<string>;
+  totalCost?: AiField<number>;
+  allocation?: AiField<CostAllocation>;
+  lineItems?: LineItem[];
+}
+
+interface AiObjectResult {
+  dokumenttyp?: AiField<string>;
+  anbieter?: AiField<string>;
+  dokumentnummer?: AiField<string>;
+  datum?: AiField<string>;
+  wohnungsnummer?: AiField<string>;
+  lage?: AiField<string>;
+  beschreibung_massnahmen?: AiField<string>;
+  kosten_netto?: AiField<number>;
+  mwst?: AiField<number>;
+  kosten_brutto?: AiField<number>;
+  datenqualitaet?: AiField<string>;
+  fehlende_angaben?: AiField<string[]>;
+  year?: AiField<number>;
+  fund?: AiField<string>;
+  objectNumber?: AiField<string>;
+  objectAddress?: AiField<string>;
+  renovatedApartmentCount?: AiField<number>;
+  renovatedApartments?: AiField<string[]>;
+  totalAreaSqm?: AiField<number>;
+  renovatedAreaSqm?: AiField<number>;
+  totalCost?: AiField<number>;
+  costPerApartment?: AiField<number>;
+  costPerSqm?: AiField<number>;
+  measures?: AiMeasureResult[];
+}
+
+interface AiExtractionResult {
+  objects?: AiObjectResult[];
+  issues?: string[];
+}
+
+export async function extractPortfolioData(
+  parsedDocuments: ParsedDocument[]
+): Promise<PortfolioAnalysisState> {
+  const duplicates = detectDuplicates(parsedDocuments);
+  const sourceDocuments = toSourceDocuments(parsedDocuments, duplicates);
+  const nonDuplicateDocuments = parsedDocuments.filter(
+    (document) => !duplicates.some((duplicate) => duplicate.documentId === document.id)
+  );
+  const readableDocuments = nonDuplicateDocuments.filter((document) => document.text.trim().length > 0);
+
+  if (readableDocuments.length === 0) {
+    return {
+      ...emptyAnalysisState,
+      sourceDocuments,
+      duplicates,
+      issues: ["Keine lesbaren Dokumentinhalte gefunden."]
+    };
+  }
+
+  const deterministicIssues: string[] = [];
+  const deterministicObjects = mergeObjects(
+    readableDocuments.flatMap((document) => normalizeObjects([], document, deterministicIssues))
+  );
+
+  if (!process.env.OPENAI_API_KEY) {
+    const totals = calculatePortfolioTotals(deterministicObjects);
+    return {
+      ...emptyAnalysisState,
+      ...totals,
+      objects: deterministicObjects,
+      clusterSummary: deterministicObjects.flatMap((object) => object.clusters),
+      sourceDocuments,
+      duplicates,
+      reviewRequiredCount:
+        sourceDocuments.filter((document) => document.status === "review_required").length +
+        deterministicIssues.length,
+      issues: [
+        "OPENAI_API_KEY fehlt. KI-Extraktion wurde nicht ausgefuehrt.",
+        ...deterministicIssues
+      ]
+    };
+  }
+
+  const extractionResults = await runOpenAiExtractionPerDocument(readableDocuments);
+  const validationIssues: string[] = [];
+  const objects = mergeObjects(
+    extractionResults.flatMap(({ result, document }) =>
+      normalizeObjects(result.objects ?? [], document, validationIssues)
+    )
+  );
+  const totals = calculatePortfolioTotals(objects);
+
+  return {
+    ...emptyAnalysisState,
+    ...totals,
+    objects,
+    sourceDocuments,
+    duplicates,
+    clusterSummary: objects.flatMap((object) => object.clusters),
+    reviewRequiredCount:
+      sourceDocuments.filter((document) => document.status === "review_required").length +
+      validationIssues.length,
+    issues: [
+      ...extractionResults.flatMap(({ result }) => result.issues ?? []),
+      ...validationIssues
+    ]
+  };
+}
+
+async function runOpenAiExtractionPerDocument(
+  documents: ParsedDocument[]
+): Promise<Array<{ document: ParsedDocument; result: AiExtractionResult }>> {
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const results: Array<{ document: ParsedDocument; result: AiExtractionResult }> = [];
+
+  for (const document of documents) {
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "Du extrahierst Baukosten- und Objektdaten aus genau EINEM Dokument.",
+            "Standardfall Angebot: Empfaenger/Fonds/Objekt/Datum/Belegnummer oben, Leistungspositionen in der Mitte, Nettosumme/Umsatzsteuer/Gesamtsumme am Ende.",
+            "Nutze ausschliesslich Werte, die wortwoertlich oder sehr eindeutig im Dokumenttext stehen.",
+            "Jedes Feld muss als Objekt mit value, evidence und confidence geliefert werden.",
+            "evidence muss ein kurzer Originalausschnitt aus dem Dokument sein, der den Wert belegt.",
+            "Wenn du keinen Originalausschnitt findest, setze value:null, evidence:null, confidence:null.",
+            "Vermische niemals Adresse, Massnahme oder Kosten aus anderen Objekten.",
+            "Antworte ausschliesslich als JSON."
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: [
+            "Extrahiere diese Struktur:",
+            "{ objects: [{ dokumenttyp:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
+            "Erlaubte cluster: Planung / Dokumentation, Boden, Maler, Bad / Fliesen, Sanitaer / Heizung, Elektro, Tueren / Fenster, Reinigung, Sonstiges.",
+            "Erlaubte allocation: GE, SE oder null.",
+            "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitaer - Heizungsarbeiten -> Sanitaer / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Tueren / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
+            "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
+            "Wenn im Betreff eine Lage wie 2.OG 3.v.li steht, als lage speichern.",
+            "Wenn Nettosumme, Umsatzsteuer und Gesamtsumme am Dokumentende stehen, diese Werte bevorzugt verwenden.",
+            "Wenn keine Wohnflaeche im Dokument steht, costPerSqm null und fehlende_angaben enthaelt Wohnflaeche in m2.",
+            "Nicht jede Einzelposition als Hauptobjekt uebernehmen. Die Haupttabelle fasst je Dokument und Objekt zusammen.",
+            "Rechnungsbetrag nur als totalCost uebernehmen, wenn er im selben Dokument eindeutig zu dieser Adresse oder Massnahme gehoert.",
+            "Wenn Elektroarbeiten genannt sind, aber keine passende Adresse oder kein passender Preis direkt belegbar ist: nur belegte Felder fuellen, Rest null.",
+            "",
+            `documentId: ${document.id}`,
+            `fileName: ${document.fileName}`,
+            "Dokumenttext:",
+            document.text.slice(0, 18000)
+          ].join("\n")
+        }
+      ]
+    });
+
+    const content = response.choices[0]?.message?.content || "{}";
+    results.push({ document, result: JSON.parse(content) as AiExtractionResult });
+  }
+
+  return results;
+}
+
+function normalizeObjects(
+  objects: AiObjectResult[],
+  document: ParsedDocument,
+  issues: string[]
+): ObjectAnalysis[] {
+  const standardOffer = parseStandardOffer(document, issues);
+  const sourceObjects = standardOffer ? [mergeAiObject(standardOffer, objects[0] ?? {})] : objects;
+
+  return sourceObjects.map((object, objectIndex) => {
+    const objectNumber = verifiedField(object.objectNumber, document, "Objektnummer", issues);
+    const objectAddress = verifiedField(object.objectAddress, document, "Objektadresse", issues);
+    const id = objectNumber.value || objectAddress.value || `${document.id}-object-${objectIndex + 1}`;
+
+    return {
+      id: String(id),
+      documentType: verifiedField(object.dokumenttyp, document, "Dokumenttyp", issues),
+      provider: verifiedField(object.anbieter, document, "Anbieter", issues),
+      year: verifiedField(object.year, document, "Jahr", issues),
+      documentDate: verifiedField(object.datum, document, "Datum", issues),
+      documentNumber: verifiedField(object.dokumentnummer, document, "Dokumentnummer", issues),
+      fund: verifiedField(object.fund, document, "Fonds", issues),
+      objectNumber,
+      apartmentNumber: verifiedField(object.wohnungsnummer, document, "Wohnungsnummer", issues),
+      objectAddress,
+      location: verifiedField(object.lage, document, "Lage", issues),
+      renovatedApartmentCount: verifiedField(
+        object.renovatedApartmentCount,
+        document,
+        "Anzahl sanierter Wohnungen",
+        issues
+      ),
+      renovatedApartments: verifiedField(
+        object.renovatedApartments,
+        document,
+        "Welche Wohnungen saniert wurden",
+        issues
+      ),
+      totalAreaSqm: verifiedField(object.totalAreaSqm, document, "Gesamtflaeche", issues),
+      renovatedAreaSqm: verifiedField(object.renovatedAreaSqm, document, "Sanierte Flaeche", issues),
+      netCost: verifiedField(object.kosten_netto, document, "Nettosumme", issues),
+      vatCost: verifiedField(object.mwst, document, "Umsatzsteuer", issues),
+      totalCost: verifiedField(object.kosten_brutto ?? object.totalCost, document, "Gesamtkosten", issues),
+      costPerApartment: verifiedField(object.costPerApartment, document, "Kosten pro Wohnung", issues),
+      costPerSqm: verifiedField(object.costPerSqm, document, "Kosten pro qm", issues),
+      measureDescription: verifiedField(object.beschreibung_massnahmen, document, "Beschreibung Massnahmen", issues),
+      dataQuality: verifiedField(object.datenqualitaet, document, "Datenqualitaet", issues),
+      missingInformation: verifiedField(object.fehlende_angaben, document, "Fehlende Angaben", issues),
+      clusters: (object.measures ?? []).map((measure, measureIndex) =>
+        normalizeMeasure(measure, document, `${id}-measure-${measureIndex + 1}`, issues)
+      ),
+      sourceDocumentIds: [document.id]
+    };
+  });
+}
+
+function normalizeMeasure(
+  measure: AiMeasureResult,
+  document: ParsedDocument,
+  id: string,
+  issues: string[]
+): MeasureItem {
+  return {
+    id,
+    cluster: verifiedField(measure.cluster, document, "Massnahmencluster", issues),
+    description: verifiedField(measure.description, document, "Massnahmenbeschreibung", issues),
+    totalCost: verifiedField(measure.totalCost, document, "Massnahmenkosten", issues),
+    allocation: verifiedField(measure.allocation, document, "GE/SE", issues),
+    sourceDocumentId: document.id,
+    lineItems: (measure.lineItems ?? []).map((item) => ({
+      ...item,
+      source: {
+        ...item.source,
+        documentId: document.id,
+        fileName: document.fileName,
+        page: document.fileType === "pdf" ? 1 : null
+      }
+    }))
+  };
+}
+
+function verifiedField<T>(
+  field: AiField<T> | undefined,
+  document: ParsedDocument,
+  label: string,
+  issues: string[]
+): ExtractedField<T> {
+  if (!field || field.value === null || field.value === undefined || field.value === "") {
+    return emptyField<T>();
+  }
+
+  const evidence = String(field.evidence || "").trim();
+  if (!evidence || !documentContainsEvidence(document.text, evidence)) {
+    issues.push(`${label} aus ${document.fileName} wurde verworfen: kein passender Quellenbeleg im Dokument.`);
+    return emptyField<T>();
+  }
+
+  if (typeof field.value === "number" && !evidenceSupportsNumber(field.value, evidence)) {
+    issues.push(`${label} aus ${document.fileName} wurde verworfen: Betrag/Zahl nicht im Quellenbeleg gefunden.`);
+    return emptyField<T>();
+  }
+
+  return {
+    value: field.value,
+    sources: [sourceFromEvidence(document, evidence, field.confidence ?? 0.8)],
+    confidence: field.confidence ?? 0.8
+  };
+}
+
+function documentContainsEvidence(text: string, evidence: string): boolean {
+  const normalizedText = normalizeText(text);
+  const normalizedEvidence = normalizeText(evidence);
+  if (normalizedEvidence.length < 4) return false;
+  return normalizedText.includes(normalizedEvidence);
+}
+
+function evidenceSupportsNumber(value: number, evidence: string): boolean {
+  const candidates = numberCandidates(value);
+  const normalizedEvidence = normalizeText(evidence);
+  return candidates.some((candidate) => normalizedEvidence.includes(normalizeText(candidate)));
+}
+
+function numberCandidates(value: number): string[] {
+  const rounded = Math.round(value * 100) / 100;
+  const noDecimals = Math.round(value);
+  return [
+    String(value),
+    String(rounded),
+    String(noDecimals),
+    rounded.toLocaleString("de-DE"),
+    rounded.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    noDecimals.toLocaleString("de-DE")
+  ];
+}
+
+function normalizeText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[€]/g, "eur")
+    .replace(/\u00a0/g, " ")
+    .trim();
+}
+
+function sourceFromEvidence(document: ParsedDocument, evidence: string, confidence: number): FieldSource {
+  return {
+    documentId: document.id,
+    fileName: document.fileName,
+    page: document.fileType === "pdf" ? 1 : null,
+    textSnippet: evidence,
+    confidence
+  };
+}
+
+function mergeObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
+  const byKey = new Map<string, ObjectAnalysis>();
+
+  for (const object of objects) {
+    const key = object.objectNumber.value || object.objectAddress.value || object.id;
+    const existing = byKey.get(String(key));
+    if (!existing) {
+      byKey.set(String(key), object);
+      continue;
+    }
+
+    byKey.set(String(key), {
+      ...existing,
+      year: preferField(existing.year, object.year),
+      documentType: preferField(existing.documentType, object.documentType),
+      provider: preferField(existing.provider, object.provider),
+      fund: preferField(existing.fund, object.fund),
+      documentDate: preferField(existing.documentDate, object.documentDate),
+      documentNumber: preferField(existing.documentNumber, object.documentNumber),
+      objectNumber: preferField(existing.objectNumber, object.objectNumber),
+      apartmentNumber: preferField(existing.apartmentNumber, object.apartmentNumber),
+      objectAddress: preferField(existing.objectAddress, object.objectAddress),
+      location: preferField(existing.location, object.location),
+      renovatedApartmentCount: preferField(existing.renovatedApartmentCount, object.renovatedApartmentCount),
+      renovatedApartments: preferField(existing.renovatedApartments, object.renovatedApartments),
+      totalAreaSqm: preferField(existing.totalAreaSqm, object.totalAreaSqm),
+      renovatedAreaSqm: preferField(existing.renovatedAreaSqm, object.renovatedAreaSqm),
+      netCost: combineNumberFields(existing.netCost, object.netCost),
+      vatCost: combineNumberFields(existing.vatCost, object.vatCost),
+      totalCost: combineNumberFields(existing.totalCost, object.totalCost),
+      costPerApartment: preferField(existing.costPerApartment, object.costPerApartment),
+      costPerSqm: preferField(existing.costPerSqm, object.costPerSqm),
+      measureDescription: preferField(existing.measureDescription, object.measureDescription),
+      dataQuality: preferField(existing.dataQuality, object.dataQuality),
+      missingInformation: preferField(existing.missingInformation, object.missingInformation),
+      clusters: [...existing.clusters, ...object.clusters],
+      sourceDocumentIds: Array.from(new Set([...existing.sourceDocumentIds, ...object.sourceDocumentIds]))
+    });
+  }
+
+  return Array.from(byKey.values());
+}
+
+function preferField<T>(current: ExtractedField<T>, next: ExtractedField<T>): ExtractedField<T> {
+  if (current.value !== null) return current;
+  return next;
+}
+
+function combineNumberFields(
+  current: ExtractedField<number>,
+  next: ExtractedField<number>
+): ExtractedField<number> {
+  if (current.value === null) return next;
+  if (next.value === null) return current;
+  return {
+    value: current.value + next.value,
+    sources: [...current.sources, ...next.sources],
+    confidence: Math.min(current.confidence ?? 0.7, next.confidence ?? 0.7)
+  };
+}
+
+function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjectResult | null {
+  const text = document.text;
+  if (!/Angebot/i.test(text) || !/Beleg-Nr\./i.test(text)) return null;
+
+  const subject = text.match(/Wohnungssanierung\s+(.+?)\s+(\d{6})-(\d{3,})/i);
+  const date = text.match(/Datum:\s*(\d{2}\.\d{2}\.\d{4})/i);
+  const documentNumber = text.match(/Beleg-Nr\.:\s*([A-Z]\d{4}\/\d{4})/i);
+  const fund = text.match(/(Ampega Investment GmbH[^\n]+)/i);
+  const provider = text.match(/^(Artis Projekte GmbH)/im);
+  const net = text.match(/Nettosumme\s+([\d.]+,\d{2})\s*€/i);
+  const vat = text.match(/Umsatzsteuer\s+19\s*%\s+([\d.]+,\d{2})\s*€/i);
+  const gross = text.match(/Gesamtsumme\s+([\d.]+,\d{2})\s*€/i);
+
+  if (!subject) {
+    issues.push(`${document.fileName}: Angebotsformat erkannt, aber Betreff mit Objektnummer-Wohnung wurde nicht gefunden.`);
+    return null;
+  }
+
+  const subjectEvidence = subject[0];
+  const locationAndAddress = parseSubject(subject[1]);
+  const objectNumber = subject[2];
+  const apartmentNumber = subject[3];
+  const grossValue = parseGermanMoney(gross?.[1] ?? null);
+  const year = date ? Number(date[1].slice(-4)) : null;
+  const measures = parseOfferMeasures(text);
+  const missing: string[] = [];
+
+  if (!/wohnfl[aä]che|m² wohnfl|m2 wohnfl/i.test(text)) {
+    missing.push("Wohnflaeche in m2");
+  }
+
+  return {
+    dokumenttyp: aiField("Angebot", "Angebot"),
+    anbieter: aiField(provider?.[1] ?? null, provider?.[0] ?? null),
+    year: aiField(year, date?.[0] ?? documentNumber?.[0] ?? null),
+    datum: aiField(date?.[1] ?? null, date?.[0] ?? null),
+    dokumentnummer: aiField(documentNumber?.[1] ?? null, documentNumber?.[0] ?? null),
+    fund: aiField(cleanFund(fund?.[1] ?? null), fund?.[0] ?? null),
+    objectNumber: aiField(objectNumber, subjectEvidence),
+    wohnungsnummer: aiField(apartmentNumber, subjectEvidence),
+    objectAddress: aiField(locationAndAddress.address, subjectEvidence),
+    lage: aiField(locationAndAddress.location, subjectEvidence),
+    renovatedApartmentCount: aiField(1, subjectEvidence),
+    renovatedApartments: aiField([apartmentNumber], subjectEvidence),
+    totalAreaSqm: aiField(null, null),
+    renovatedAreaSqm: aiField(null, null),
+    kosten_netto: aiField(parseGermanMoney(net?.[1] ?? null), net?.[0] ?? null),
+    mwst: aiField(parseGermanMoney(vat?.[1] ?? null), vat?.[0] ?? null),
+    kosten_brutto: aiField(grossValue, gross?.[0] ?? null),
+    totalCost: aiField(grossValue, gross?.[0] ?? null),
+    costPerApartment: aiField(grossValue, gross?.[0] ?? null),
+    costPerSqm: aiField(null, null),
+    beschreibung_massnahmen: aiField(
+      "Wohnungssanierung mit Bodenbelagsarbeiten, Malerarbeiten, Bad-/Fliesenarbeiten, Sanitaer-/Heizungsarbeiten, Elektroarbeiten, Tischlerarbeiten, Reinigung und Zusatzarbeiten.",
+      subjectEvidence
+    ),
+    datenqualitaet: aiField("Sicher erkannt", subjectEvidence),
+    fehlende_angaben: aiField(missing.length ? missing : null, subjectEvidence),
+    measures
+  };
+}
+
+function mergeAiObject(primary: AiObjectResult, secondary: AiObjectResult): AiObjectResult {
+  return {
+    ...secondary,
+    ...primary,
+    measures: primary.measures && primary.measures.length > 0 ? primary.measures : secondary.measures
+  };
+}
+
+function parseSubject(value: string): { address: string | null; location: string | null } {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const match = normalized.match(/(Pamirweg\s+\S+)\s+(.+?)\s+in\s+(Hamburg)/i);
+  if (!match) return { address: null, location: null };
+  return {
+    address: `${match[1]}, ${match[3]}`,
+    location: normalizeLocation(match[2])
+  };
+}
+
+function normalizeLocation(value: string): string {
+  return value
+    .replace(/\b3v\.li\b/i, "3.v.li")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanFund(value: string | null): string | null {
+  if (!value) return null;
+  return value.replace(/"/g, "").trim();
+}
+
+function parseOfferMeasures(text: string): AiMeasureResult[] {
+  const mappings: Array<{ section: number; heading: RegExp; cluster: MeasureCluster; description: string }> = [
+    { section: 1, heading: /Summe\s+1\.\s+Erstbegehung\s+([\d.]+,\d{2})\s*€/i, cluster: "Planung / Dokumentation", description: "Erstbegehung und Dokumentation" },
+    { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Boden", description: "Bodenbelagsarbeiten" },
+    { section: 3, heading: /Summe\s+3\.\s+Malerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Maler", description: "Malerarbeiten" },
+    { section: 4, heading: /Summe\s+4\.\s+Fliesenarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich" },
+    { section: 5, heading: /Summe\s+5\.\s+Sanit[aä]r\s*-\s*Heizungsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sanitaer / Heizung", description: "Sanitaer- und Heizungsarbeiten" },
+    { section: 6, heading: /Summe\s+6\.\s+Elektroarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Elektro", description: "Elektroarbeiten" },
+    { section: 7, heading: /Summe\s+7\.\s+Tischlerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Tueren / Fenster", description: "Tischlerarbeiten" },
+    { section: 8, heading: /Summe\s+8\.\s+Reinigung\s+([\d.]+,\d{2})\s*€/i, cluster: "Reinigung", description: "Reinigung" },
+    { section: 9, heading: /Summe\s+9\.\s+(?:Stundenlohn\s+)?Zusatzarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Zusatzarbeiten" }
+  ];
+
+  return mappings.flatMap((mapping, index) => {
+    const match = text.match(mapping.heading);
+    if (!match) return [];
+    return [{
+      cluster: aiField(mapping.cluster, match[0]),
+      description: aiField(mapping.description, match[0]),
+      totalCost: aiField(parseGermanMoney(match[1]), match[0]),
+      allocation: aiField(null, null),
+      lineItems: parseSectionLineItems(text, mapping.section)
+    } satisfies AiMeasureResult];
+  });
+}
+
+function parseSectionLineItems(text: string, section: number): LineItem[] {
+  const start = new RegExp(`\\n${section}\\.\\s+`, "i");
+  const end = new RegExp(`Summe\\s+${section}\\.`, "i");
+  const startIndex = text.search(start);
+  if (startIndex === -1) return [];
+  const sectionText = text.slice(startIndex);
+  const endMatch = sectionText.search(end);
+  const scoped = endMatch === -1 ? sectionText : sectionText.slice(0, endMatch);
+  const linePattern = new RegExp(`^${section}\\.\\d+\\s+(.+?)\\s+([\\d.]+,\\d{2})\\s*€\\s+([\\d.]+,\\d{2})\\s*€`, "gim");
+  const items: LineItem[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = linePattern.exec(scoped)) && items.length < 80) {
+    const rawLine = match[0].replace(/\s+/g, " ").trim();
+    const position = rawLine.match(new RegExp(`^(${section}\\.\\d+)`))?.[1] ?? "";
+    items.push({
+      position,
+      quantity: null,
+      unit: null,
+      description: match[1].replace(/\s+/g, " ").trim(),
+      unitPrice: parseGermanMoney(match[2]),
+      totalPrice: parseGermanMoney(match[3]),
+      source: {
+        documentId: "",
+        fileName: "",
+        textSnippet: rawLine,
+        confidence: 0.7
+      }
+    });
+  }
+
+  return items;
+}
+
+function aiField<T>(value: T | null, evidence: string | null): AiField<T> {
+  return {
+    value,
+    evidence,
+    confidence: value === null ? null : 0.95
+  };
+}
+
+function parseGermanMoney(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
+}
+
+function calculatePortfolioTotals(objects: ObjectAnalysis[]): Pick<
+  PortfolioAnalysisState,
+  "year" | "fund" | "totalCost" | "averageCostPerApartment" | "averageCostPerSqm"
+> {
+  const totalCost = sumField(objects.map((object) => object.totalCost));
+  const renovatedApartments = sumField(objects.map((object) => object.renovatedApartmentCount));
+  const renovatedArea = sumField(objects.map((object) => object.renovatedAreaSqm));
+  const source = firstSource(objects);
+
+  return {
+    year: firstField(objects.map((object) => object.year)),
+    fund: firstField(objects.map((object) => object.fund)),
+    totalCost: totalCost === null ? emptyField<number>() : field(totalCost, source),
+    averageCostPerApartment:
+      totalCost !== null && renovatedApartments
+        ? field(totalCost / renovatedApartments, source)
+        : emptyField<number>(),
+    averageCostPerSqm:
+      totalCost !== null && renovatedArea
+        ? field(totalCost / renovatedArea, source)
+        : emptyField<number>()
+  };
+}
+
+function field<T>(value: T | null, source: FieldSource): ExtractedField<T> {
+  return {
+    value,
+    sources: value === null ? [] : [source],
+    confidence: value === null ? null : source.confidence ?? 0.75
+  };
+}
+
+function firstSource(objects: ObjectAnalysis[]): FieldSource {
+  const source = objects
+    .flatMap((object) => [
+      ...object.totalCost.sources,
+      ...object.objectAddress.sources,
+      ...object.objectNumber.sources
+    ])
+    .find(Boolean);
+
+  return (
+    source ?? {
+      documentId: "k.A.",
+      fileName: "k.A.",
+      confidence: null
+    }
+  );
+}
+
+function firstField<T>(fields: ExtractedField<T>[]): ExtractedField<T> {
+  return fields.find((entry) => entry.value !== null) ?? emptyField<T>();
+}
+
+function sumField(fields: ExtractedField<number>[]): number | null {
+  const values = fields
+    .map((entry) => entry.value)
+    .filter((value): value is number => typeof value === "number");
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0);
+}
