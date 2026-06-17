@@ -76,6 +76,10 @@ export interface LineItem {
 
 export interface ObjectAnalysis {
   id: string;
+  aiAgentName: ExtractedField<string>;
+  confidenceScore: ExtractedField<number>;
+  projectSuggestion: ExtractedField<string>;
+  assignmentSuggestion: ExtractedField<string>;
   documentType: ExtractedField<string>;
   projectType: ExtractedField<string>;
   provider: ExtractedField<string>;

@@ -30,6 +30,9 @@ interface AiMeasureResult {
 }
 
 interface AiObjectResult {
+  confidenceScore?: AiField<number>;
+  projektvorschlag?: AiField<string>;
+  zuordnungsvorschlag?: AiField<string>;
   dokumenttyp?: AiField<string>;
   projektart?: AiField<string>;
   anbieter?: AiField<string>;
@@ -62,6 +65,8 @@ interface AiExtractionResult {
   objects?: AiObjectResult[];
   issues?: string[];
 }
+
+const PARIBUS_AI_AGENT_NAME = "PARIBUS Baukosten KI";
 
 export async function extractPortfolioData(
   parsedDocuments: ParsedDocument[]
@@ -147,36 +152,48 @@ async function runOpenAiExtractionPerDocument(
         {
           role: "system",
           content: [
-            "Du extrahierst Baukosten- und Objektdaten aus genau EINEM Dokument.",
-            "Standardfall Angebot: Empfaenger/Fonds/Objekt/Datum/Belegnummer oben, Leistungspositionen in der Mitte, Nettosumme/Umsatzsteuer/Gesamtsumme am Ende.",
-            "Nutze ausschliesslich Werte, die wortwoertlich oder sehr eindeutig im Dokumenttext stehen.",
+            `Du bist ${PARIBUS_AI_AGENT_NAME}.`,
+            "Du bist das Herzstueck eines professionellen Baukosten-, CapEx- und Sanierungsmanagement-Systems fuer Wohnimmobilienportfolios.",
+            "Du unterstuetzt den Nutzer, ersetzt ihn aber nicht. Die manuelle Eingabe des Nutzers hat immer Vorrang vor KI-Ergebnissen.",
+            "Arbeite in 4 Schritten: 1 Dokument verstehen, 2 Stammdatenabgleich vorbereiten, 3 Confidence Score vergeben, 4 Nutzerentscheidung offen lassen.",
+            "Analysiere genau EIN Dokument. Verwende ausschliesslich Informationen, die tatsaechlich im Dokument stehen.",
+            "Keine Schaetzungen. Keine Fantasiedaten. Wenn etwas fehlt: value:null und spaeter in der UI k.A.",
             "Jedes Feld muss als Objekt mit value, evidence und confidence geliefert werden.",
             "evidence muss ein kurzer Originalausschnitt aus dem Dokument sein, der den Wert belegt.",
             "Wenn du keinen Originalausschnitt findest, setze value:null, evidence:null, confidence:null.",
-            "Vermische niemals Adresse, Massnahme oder Kosten aus anderen Objekten.",
-            "Antworte ausschliesslich als JSON."
+            "Vermische niemals Adresse, Wohnung, Massnahme oder Kosten aus anderen Objekten.",
+            "Confidence-Regel: 0.95-1.00 Sicher erkannt, 0.80-0.94 Wahrscheinlich erkannt, 0.60-0.79 Pruefung empfohlen, unter 0.60 Manuelle Zuordnung erforderlich.",
+            "Lieber Pruefung erforderlich als einen falschen Wert speichern.",
+            "Antworte ausschliesslich als valides JSON."
           ].join(" ")
         },
         {
           role: "user",
           content: [
-            "Extrahiere diese Struktur:",
-            "{ objects: [{ dokumenttyp:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
-            "Erlaubte cluster: Planung / Dokumentation, Boden, Maler, Bad / Fliesen, Sanitaer / Heizung, Elektro, Tueren / Fenster, Reinigung, Sonstiges.",
+            "Extrahiere diese JSON-Struktur:",
+            "{ objects: [{ confidenceScore:{value,evidence,confidence}, projektvorschlag:{value,evidence,confidence}, zuordnungsvorschlag:{value,evidence,confidence}, dokumenttyp:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
+            "Erlaubte dokumenttyp-Werte: Angebot, Rechnung, Teilrechnung, Schlussrechnung, Nachtrag, Gutschrift, Auftrag, Freigabe, Sonstiges.",
+            "Erlaubte cluster: Boden, Maler, Bad / Fliesen, Sanitaer / Heizung, Elektro, Tueren / Fenster, Reinigung, Planung / Dokumentation, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
             "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitaer - Heizungsarbeiten -> Sanitaer / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Tueren / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
             "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
             "Wenn im Betreff eine Lage wie 2.OG 3.v.li steht, als lage speichern.",
             "Projektart aus dem Dokument ableiten, z.B. Wohnungssanierung, Fassadensanierung, Dacharbeiten oder Elektroarbeiten, aber nur bei belegbarer Quelle.",
             "Wohnflaeche m2 nur fuellen, wenn eine Wohnflaeche im Dokument ausdruecklich genannt wird.",
-            "Wenn Nettosumme, Umsatzsteuer und Gesamtsumme am Dokumentende stehen, diese Werte bevorzugt verwenden.",
+            "Summenlogik: Regex-Erkennung und Backend-Validierung haben Vorrang. Wenn du Summen erkennst, belege sie mit Originalausschnitt. Erklaere in issues, wenn mehrere Summen gefunden wurden und welche du fachlich verwenden wuerdest.",
+            "Erkenne: Nettosumme, Umsatzsteuer, MwSt, Gesamtsumme, Bruttosumme, Rechnungsbetrag.",
             "Wenn keine Wohnflaeche im Dokument steht, costPerSqm null und fehlende_angaben enthaelt Wohnflaeche in m2.",
             "Nicht jede Einzelposition als Hauptobjekt uebernehmen. Die Haupttabelle fasst je Dokument und Objekt zusammen.",
             "Rechnungsbetrag nur als totalCost uebernehmen, wenn er im selben Dokument eindeutig zu dieser Adresse oder Massnahme gehoert.",
             "Wenn Elektroarbeiten genannt sind, aber keine passende Adresse oder kein passender Preis direkt belegbar ist: nur belegte Felder fuellen, Rest null.",
+            "Stammdatenabgleich vorbereiten: pruefe gedanklich Objektnummer, Adresse, Fonds, Wohnungsnummer und Projektart. Erzeuge nur einen zuordnungsvorschlag, keine endgueltige Entscheidung.",
+            "Wenn kein passendes Projekt erkennbar ist, erzeuge einen projektvorschlag, z.B. Wohnungssanierung WE 1008. Der Nutzer entscheidet spaeter.",
+            "datenqualitaet muss eines dieser Labels sein: Sicher erkannt, Wahrscheinlich erkannt, Pruefung empfohlen, Manuelle Zuordnung erforderlich.",
             "",
             `documentId: ${document.id}`,
             `fileName: ${document.fileName}`,
+            "Vorhandene Objekte: [Objektdatenbank wird in dieser lokalen Version im Frontend gepflegt und vom Nutzer bestaetigt.]",
+            "Vorhandene Projekte: [Projektdatenbank wird in dieser lokalen Version im Frontend gepflegt und vom Nutzer bestaetigt.]",
             "Dokumenttext:",
             document.text.slice(0, 18000)
           ].join("\n")
@@ -220,8 +237,33 @@ function normalizeObjects(
       ? calculatedField(totalCost.value, document, "Kosten pro Wohnung aus Bruttosumme und 1 sanierter Wohnung")
       : verifiedField(object.costPerApartment, document, "Kosten pro Wohnung", issues);
 
+    const projectSuggestion = metaStringField(
+      object.projektvorschlag,
+      document,
+      generatedProjectSuggestion(object, objectNumber.value, objectAddress.value)
+    );
+    const assignmentSuggestion = metaStringField(
+      object.zuordnungsvorschlag,
+      document,
+      generatedAssignmentSuggestion(objectNumber.value, objectAddress.value, object.fund?.value ?? null)
+    );
+    const confidenceScore = metaNumberField(
+      object.confidenceScore,
+      document,
+      estimateConfidenceScore([objectNumber, objectAddress, renovatedApartmentCount, totalCost])
+    );
+    const dataQuality = metaStringField(
+      object.datenqualitaet,
+      document,
+      qualityFromScore(confidenceScore.value)
+    );
+
     return {
       id: String(id),
+      aiAgentName: agentField(document),
+      confidenceScore,
+      projectSuggestion,
+      assignmentSuggestion,
       documentType: verifiedField(object.dokumenttyp, document, "Dokumenttyp", issues),
       projectType: verifiedField(object.projektart, document, "Projektart", issues),
       provider: verifiedField(object.anbieter, document, "Anbieter", issues),
@@ -249,7 +291,7 @@ function normalizeObjects(
       costPerApartment,
       costPerSqm: verifiedField(object.costPerSqm, document, "Kosten pro qm", issues),
       measureDescription: verifiedField(object.beschreibung_massnahmen, document, "Beschreibung Massnahmen", issues),
-      dataQuality: verifiedField(object.datenqualitaet, document, "Datenqualitaet", issues),
+      dataQuality,
       missingInformation: verifiedField(object.fehlende_angaben, document, "Fehlende Angaben", issues),
       costDebug,
       clusters: (object.measures ?? []).map((measure, measureIndex) =>
@@ -372,6 +414,10 @@ function mergeObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
 
     byKey.set(String(key), {
       ...existing,
+      aiAgentName: preferField(existing.aiAgentName, object.aiAgentName),
+      confidenceScore: preferField(existing.confidenceScore, object.confidenceScore),
+      projectSuggestion: preferField(existing.projectSuggestion, object.projectSuggestion),
+      assignmentSuggestion: preferField(existing.assignmentSuggestion, object.assignmentSuggestion),
       year: preferField(existing.year, object.year),
       documentType: preferField(existing.documentType, object.documentType),
       projectType: preferField(existing.projectType, object.projectType),
@@ -421,6 +467,105 @@ function combineNumberFields(
     sources: [...current.sources, ...next.sources],
     confidence: Math.min(current.confidence ?? 0.7, next.confidence ?? 0.7)
   };
+}
+
+function agentField(document: ParsedDocument): ExtractedField<string> {
+  return {
+    value: PARIBUS_AI_AGENT_NAME,
+    sources: [{
+      documentId: document.id,
+      fileName: document.fileName,
+      method: "KI",
+      page: document.fileType === "pdf" ? 1 : null,
+      textSnippet: "Analyse-Agent",
+      confidence: 1
+    }],
+    confidence: 1
+  };
+}
+
+function metaStringField(
+  field: AiField<string> | undefined,
+  document: ParsedDocument,
+  fallback: string | null
+): ExtractedField<string> {
+  const value = field?.value ?? fallback;
+  if (!value) return emptyField<string>();
+  return {
+    value,
+    sources: [{
+      documentId: document.id,
+      fileName: document.fileName,
+      method: "KI",
+      page: document.fileType === "pdf" ? 1 : null,
+      textSnippet: field?.evidence ?? "Aus erkannten Dokumentfeldern abgeleitet",
+      confidence: field?.confidence ?? 0.75
+    }],
+    confidence: field?.confidence ?? 0.75
+  };
+}
+
+function metaNumberField(
+  field: AiField<number> | undefined,
+  document: ParsedDocument,
+  fallback: number | null
+): ExtractedField<number> {
+  const value = field?.value ?? fallback;
+  if (value === null || value === undefined) return emptyField<number>();
+  const normalized = value > 1 ? value : Math.round(value * 100);
+  return {
+    value: normalized,
+    sources: [{
+      documentId: document.id,
+      fileName: document.fileName,
+      method: "KI",
+      page: document.fileType === "pdf" ? 1 : null,
+      textSnippet: field?.evidence ?? "Aus Feld-Confidence berechnet",
+      confidence: field?.confidence ?? normalized / 100
+    }],
+    confidence: field?.confidence ?? normalized / 100
+  };
+}
+
+function estimateConfidenceScore(fields: Array<ExtractedField<unknown>>): number | null {
+  const present = fields.filter((field) => field.value !== null);
+  if (present.length === 0) return null;
+  const average = present.reduce((sum, field) => sum + (field.confidence ?? 0.7), 0) / present.length;
+  return Math.round(average * 100);
+}
+
+function generatedProjectSuggestion(
+  object: AiObjectResult,
+  objectNumber: string | null,
+  objectAddress: string | null
+): string | null {
+  const projectType = object.projektart?.value ?? null;
+  const apartment = object.wohnungsnummer?.value ?? null;
+  const objectLabel = objectNumber ?? objectAddress;
+  if (!projectType && !apartment && !objectLabel) return null;
+  return [projectType, apartment ? `WE ${apartment}` : null, objectLabel].filter(Boolean).join(" ");
+}
+
+function generatedAssignmentSuggestion(
+  objectNumber: string | null,
+  objectAddress: string | null,
+  fund: string | null
+): string | null {
+  const parts = [
+    objectNumber ? `Objektnummer ${objectNumber}` : null,
+    objectAddress ? `Adresse ${objectAddress}` : null,
+    fund ? `Fonds ${fund}` : null
+  ].filter(Boolean);
+  if (parts.length === 0) return null;
+  return `Zuordnung pruefen anhand: ${parts.join(", ")}`;
+}
+
+function qualityFromScore(score: number | null): string | null {
+  if (score === null) return null;
+  if (score >= 95) return "Sicher erkannt";
+  if (score >= 80) return "Wahrscheinlich erkannt";
+  if (score >= 60) return "Pruefung empfohlen";
+  return "Manuelle Zuordnung erforderlich";
 }
 
 const moneyValuePattern = "([0-9]{1,3}(?:\\.[0-9]{3})*,[0-9]{2}|[0-9]+,[0-9]{2})\\s*(?:€|EUR|Euro)?";

@@ -20,14 +20,17 @@ type TextFieldKey =
   | "apartmentNumber"
   | "location"
   | "measureDescription"
-  | "dataQuality";
+  | "dataQuality"
+  | "projectSuggestion"
+  | "assignmentSuggestion";
 type NumberFieldKey =
   | "year"
   | "renovatedApartmentCount"
   | "livingAreaSqm"
   | "netCost"
   | "vatCost"
-  | "totalCost";
+  | "totalCost"
+  | "confidenceScore";
 
 interface ParsedPreview {
   id: string;
@@ -642,7 +645,7 @@ function DocumentTable({
                 <td>{formatCurrency(document.netCost)}</td>
                 <td>{formatCurrency(document.vatCost)}</td>
                 <td className="moneyStrong">{formatCurrency(document.totalCost)}</td>
-                <td>{fieldOrUnknown(document.dataQuality)}</td>
+                <td>{formatKiStatus(document)}</td>
                 <td>
                   <div className="rowActions">
                     <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(document.id); }}>Ansehen</button>
@@ -907,7 +910,7 @@ function ProjectDocumentsTab({
               <td>{formatCurrency(document.netCost)}</td>
               <td>{formatCurrency(document.vatCost)}</td>
               <td>{formatCurrency(document.totalCost)}</td>
-              <td>{fieldOrUnknown(document.dataQuality)}</td>
+              <td>{formatKiStatus(document)}</td>
               <td>
                 <div className="rowActions">
                   <button type="button" onClick={() => onSelect(document.id)}>Ansehen</button>
@@ -981,9 +984,18 @@ function ProjectAiTab({ documents }: { documents: ObjectAnalysis[] }) {
         <article className="previewItem" key={document.id}>
           <div className="previewHeader">
             <strong>{fieldOrUnknown(document.documentType)} - {fieldOrUnknown(document.documentNumber)}</strong>
-            <span className="status statusNeutral">{fieldOrUnknown(document.dataQuality)}</span>
+            <span className="status statusNeutral">{formatKiStatus(document)}</span>
           </div>
           <div className="debugGrid">
+            <div className="debugBlock">
+              <h4>Agent</h4>
+              <p>{fieldOrUnknown(document.aiAgentName)}</p>
+              <p>{fieldOrUnknown(document.assignmentSuggestion)}</p>
+            </div>
+            <div className="debugBlock">
+              <h4>Projektvorschlag</h4>
+              <p>{fieldOrUnknown(document.projectSuggestion)}</p>
+            </div>
             <div className="debugBlock">
               <h4>Fehlende Angaben</h4>
               <p>{document.missingInformation.value?.join(", ") || "k.A."}</p>
@@ -1103,8 +1115,10 @@ function SettingsView() {
         </div>
       </div>
       <div className="settingsGrid">
+        <div className="metric"><span>KI-Agent</span><strong>PARIBUS Baukosten KI</strong><small>Dokument verstehen, Stammdatenabgleich vorbereiten, Confidence bewerten, Nutzerentscheidung offen lassen.</small></div>
         <div className="metric"><span>KI-Modus</span><strong>Dokumentbasierte Extraktion</strong><small>Keine Fantasiewerte, k.A. bei fehlenden Angaben.</small></div>
-        <div className="metric"><span>Zuordnung</span><strong>Projekt oder Unzugeordnet</strong><small>Automatisch nur bei sicherem Treffer.</small></div>
+        <div className="metric"><span>Zuordnung</span><strong>Vorschlag statt Entscheidung</strong><small>Der Nutzer entscheidet. Manuelle Eingaben haben Vorrang.</small></div>
+        <div className="metric"><span>Summen</span><strong>Regex, Tabellenanalyse, KI-Pruefung</strong><small>Mehrere Summen werden im Debug erklaert.</small></div>
       </div>
     </section>
   );
@@ -1166,6 +1180,10 @@ function DocumentEditor({
       </div>
 
       <div className="editForm">
+        <EditInput label="KI-Agent" value={fieldOrUnknown(document.aiAgentName)} onChange={() => undefined} readOnly />
+        <EditInput label="Confidence Score" value={fieldOrUnknown(document.confidenceScore)} onChange={(value) => setNumber("confidenceScore", value)} />
+        <EditInput label="Projektvorschlag" value={fieldOrUnknown(document.projectSuggestion)} onChange={(value) => setText("projectSuggestion", value)} />
+        <EditInput label="Zuordnungsvorschlag" value={fieldOrUnknown(document.assignmentSuggestion)} onChange={(value) => setText("assignmentSuggestion", value)} />
         <EditInput label="Fonds" value={fieldOrUnknown(document.fund)} onChange={(value) => setText("fund", value)} />
         <EditInput label="Objektnummer" value={fieldOrUnknown(document.objectNumber)} onChange={(value) => setText("objectNumber", value)} />
         <EditInput label="Objektadresse" value={fieldOrUnknown(document.objectAddress)} onChange={(value) => setText("objectAddress", value)} />
@@ -1255,11 +1273,16 @@ function ProjectForm({
   );
 }
 
-function EditInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function EditInput({ label, value, onChange, readOnly }: { label: string; value: string; onChange: (value: string) => void; readOnly?: boolean }) {
   return (
     <label className="filterInput">
       <span>{label}</span>
-      <input value={value === "k.A." ? "" : value} onChange={(event) => onChange(event.target.value)} placeholder="k.A." />
+      <input
+        value={value === "k.A." ? "" : value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="k.A."
+        readOnly={readOnly}
+      />
     </label>
   );
 }
@@ -1318,9 +1341,10 @@ function projectFromDocument(document?: ObjectAnalysis, objects: ObjectRecord[] 
   );
   const objectText = matchedObject ? objectLabel(matchedObject) : firstKnown(objectNumber, address);
   const projectType = document ? emptyIfUnknown(fieldOrUnknown(document.projectType)) : "";
+  const suggestion = document ? emptyIfUnknown(fieldOrUnknown(document.projectSuggestion)) : "";
   return {
     id: `project-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    projectName: document ? `${projectType} ${objectText}`.trim() : "",
+    projectName: suggestion || (document ? `${projectType} ${objectText}`.trim() : ""),
     projectType,
     fund: document ? emptyIfUnknown(fieldOrUnknown(document.fund)) : "",
     objectId: matchedObject?.id ?? "",
@@ -1548,6 +1572,13 @@ function formatClusters(document: ObjectAnalysis): string {
   return clusters.length === 0 ? "k.A." : clusters.join(", ");
 }
 
+function formatKiStatus(document: ObjectAnalysis): string {
+  const quality = fieldOrUnknown(document.dataQuality);
+  const score = document.confidenceScore.value;
+  if (score === null) return quality;
+  return `${quality} (${Math.round(score)} %)`;
+}
+
 function sumValues(values: Array<number | null>): number | null {
   const numericValues = values.filter((value): value is number => typeof value === "number");
   if (numericValues.length === 0) return null;
@@ -1556,7 +1587,7 @@ function sumValues(values: Array<number | null>): number | null {
 
 function countReviewCases(documents: ObjectAnalysis[]): number {
   return documents.filter((document) =>
-    /pruefung|prüfung|unsicher|k\.a\./i.test(String(document.dataQuality.value ?? "")) ||
+    /pruefung|unsicher|k\.a\.|manuelle/i.test(String(document.dataQuality.value ?? "")) ||
     document.missingInformation.value?.length
   ).length;
 }

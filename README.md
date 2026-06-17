@@ -20,7 +20,29 @@ Wichtig: Es werden nur Werte angezeigt, die aus den hochgeladenen Dokumenten ext
 - Textvorschau vor der KI-Analyse, damit PDF-/Excel-Auslesung kontrolliert werden kann
 - Export nach Excel
 - Export nach PDF
-- Dashboard, Upload-Bereich, Objektuebersicht und Objekt-Detailansicht
+- Dashboard, Upload-Bereich, Objektbereich, Projekte, unzugeordnete Dokumente und Auswertungen
+
+## PARIBUS Baukosten KI
+
+Die Anwendung nutzt einen eigenen Analyse-Agenten namens `PARIBUS Baukosten KI`.
+
+Arbeitsweise:
+
+- Schritt 1: Dokument verstehen
+- Schritt 2: Stammdatenabgleich gegen vorhandene Objekte und Projekte vorbereiten
+- Schritt 3: Confidence Score vergeben
+- Schritt 4: Nutzerentscheidung offen lassen
+
+Die KI darf keine endgueltigen Entscheidungen treffen. Sie erzeugt Vorschlaege fuer Objekte, Projekte, Massnahmencluster, Kosten und Zuordnung. Der Nutzer kann alle erkannten Werte nachtraeglich korrigieren. Manuelle Eingaben haben immer Vorrang.
+
+Confidence:
+
+- 95-100 Prozent: Sicher erkannt
+- 80-94 Prozent: Wahrscheinlich erkannt
+- 60-79 Prozent: Pruefung empfohlen
+- unter 60 Prozent: Manuelle Zuordnung erforderlich
+
+Wenn ein Wert nicht sicher im Dokument steht, bleibt er `k.A.`.
 
 ## Start lokal
 
