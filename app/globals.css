@@ -663,12 +663,6 @@ h4 {
   text-align: center;
 }
 
-.dashboardUtilityGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-}
-
 .kpiWarning strong {
   color: #b84520;
 }
@@ -732,6 +726,19 @@ h4 {
   gap: 14px;
 }
 
+.uploadWorkspace {
+  display: grid;
+  gap: 16px;
+}
+
+.uploadTitle {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px;
+  margin-bottom: 0;
+}
+
 .dropzone {
   display: grid;
   place-items: center;
@@ -762,6 +769,11 @@ h4 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.compactHeader {
+  align-items: center;
+  margin-bottom: 12px;
 }
 
 .pill {
@@ -1218,6 +1230,101 @@ select {
 .objectCard strong {
   color: var(--navy);
   font-size: 20px;
+}
+
+.objectImagesPanel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  margin-top: 14px;
+  padding: 16px;
+}
+
+.imageUploadButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.imageUploadButton input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.smallUploadButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #f8fafc;
+  color: var(--navy);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.smallUploadButton input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.imageEmpty {
+  border: 1px dashed #cbd3dc;
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 22px;
+  text-align: center;
+}
+
+.objectImageGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.objectImageGrid img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
+.detectedImages {
+  display: grid;
+  gap: 8px;
+}
+
+.miniImageStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.miniImageStrip img {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  object-fit: cover;
 }
 
 @media (max-width: 1420px) {

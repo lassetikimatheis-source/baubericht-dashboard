@@ -6,7 +6,7 @@ import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
 import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState } from "../types/analysis";
 
-type ViewKey = "dashboard" | "objects" | "projects" | "unassigned" | "reports" | "settings";
+type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
 type TextFieldKey =
   | "fund"
@@ -140,6 +140,7 @@ const emptyFilters: Filters = {
 
 const navItems: Array<{ key: ViewKey; label: string }> = [
   { key: "dashboard", label: "Dashboard" },
+  { key: "upload", label: "Dokument Upload / KI" },
   { key: "objects", label: "Objekte" },
   { key: "projects", label: "Projekte" },
   { key: "unassigned", label: "Unzugeordnete Dokumente" },
@@ -160,6 +161,7 @@ export function AnalysisDashboard() {
   const [view, setView] = useState<ViewKey>("dashboard");
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [objectImages, setObjectImages] = useState<Record<string, string[]>>({});
   const [assignments, setAssignments] = useState<Record<string, string | null>>({});
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -390,10 +392,10 @@ export function AnalysisDashboard() {
           <div>
             <p className="eyebrow">KI als Hauptarbeit</p>
             <h1>PARIBUS | Baukosten Analyse</h1>
-            <p className="muted">Dokument hochladen, KI auslesen lassen, Projekt zuordnen und falsche Werte manuell korrigieren.</p>
+            <p className="muted">Objekte, Projekte, Dokumente und Baukosten strukturiert auswerten.</p>
           </div>
           <div className="headerActions">
-            <button className="buttonPrimary" type="button" onClick={() => setView("dashboard")}>Upload</button>
+            <button className="buttonPrimary" type="button" onClick={() => setView("upload")}>Upload</button>
             <button type="button" onClick={() => exportFile("excel")}>Export Excel</button>
             <button type="button" onClick={() => exportFile("pdf")}>Export PDF</button>
           </div>
@@ -406,11 +408,6 @@ export function AnalysisDashboard() {
             selectedDocument={selectedDocument}
             filters={filters}
             setFilters={setFilters}
-            previews={previews}
-            isAnalyzing={isAnalyzing}
-            message={message}
-            onAnalyze={handleAnalyze}
-            onPreview={handlePreview}
             onSelectDocument={setSelectedDocumentId}
             onOpenProjects={() => setView("projects")}
             onOpenObjects={() => setView("objects")}
@@ -423,12 +420,27 @@ export function AnalysisDashboard() {
                 objects={objects}
                 documents={filteredDocuments}
                 selectedObject={selectedObject}
+                objectImages={objectImages}
                 onCreate={() => createObject()}
                 onCreateFromDocument={createObject}
                 onDelete={deleteObject}
                 onSelectObject={setSelectedObjectId}
                 onUpdateObject={updateObject}
+                onAddObjectImages={(objectId, files) => {
+                  const urls = Array.from(files).map((file) => URL.createObjectURL(file));
+                  setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
+                }}
                 onSelectDocument={setSelectedDocumentId}
+              />
+              ) : null}
+
+              {view === "upload" ? (
+              <DocumentUploadView
+                previews={previews}
+                isAnalyzing={isAnalyzing}
+                message={message}
+                onAnalyze={handleAnalyze}
+                onPreview={handlePreview}
               />
               ) : null}
 
@@ -494,11 +506,6 @@ function DashboardView({
   selectedDocument,
   filters,
   setFilters,
-  previews,
-  isAnalyzing,
-  message,
-  onAnalyze,
-  onPreview,
   onSelectDocument,
   onOpenProjects,
   onOpenObjects
@@ -508,11 +515,6 @@ function DashboardView({
   selectedDocument: ObjectAnalysis | null;
   filters: Filters;
   setFilters: (value: Filters) => void;
-  previews: ParsedPreview[];
-  isAnalyzing: boolean;
-  message: string | null;
-  onAnalyze: (files: File[]) => Promise<void>;
-  onPreview: (files: File[]) => Promise<void>;
   onSelectDocument: (id: string) => void;
   onOpenProjects: () => void;
   onOpenObjects: () => void;
@@ -547,11 +549,34 @@ function DashboardView({
       </section>
 
       <SelectedPortfolioDetail document={selectedDocument} />
+    </section>
+  );
+}
 
-      <section className="dashboardUtilityGrid">
-        <UploadPanel isAnalyzing={isAnalyzing} message={message} onAnalyze={onAnalyze} onPreview={onPreview} />
-        <PreviewPanel previews={previews} />
-      </section>
+function DocumentUploadView({
+  previews,
+  isAnalyzing,
+  message,
+  onAnalyze,
+  onPreview
+}: {
+  previews: ParsedPreview[];
+  isAnalyzing: boolean;
+  message: string | null;
+  onAnalyze: (files: File[]) => Promise<void>;
+  onPreview: (files: File[]) => Promise<void>;
+}) {
+  return (
+    <section className="uploadWorkspace">
+      <div className="panelHeader uploadTitle">
+        <div>
+          <h2>Dokument Upload / KI</h2>
+          <p>Hier landen Upload, Textpruefung und die Analyse mit der PARIBUS Baukosten KI. Das Dashboard bleibt nur fuer Objekte und Portfolio-Kennzahlen.</p>
+        </div>
+        <span className="status statusNeutral">KI Arbeitsbereich</span>
+      </div>
+      <UploadPanel isAnalyzing={isAnalyzing} message={message} onAnalyze={onAnalyze} onPreview={onPreview} />
+      <PreviewPanel previews={previews} />
     </section>
   );
 }
@@ -915,21 +940,25 @@ function ObjectsView({
   objects,
   documents,
   selectedObject,
+  objectImages,
   onCreate,
   onCreateFromDocument,
   onDelete,
   onSelectObject,
   onUpdateObject,
+  onAddObjectImages,
   onSelectDocument
 }: {
   objects: ObjectRecord[];
   documents: ObjectAnalysis[];
   selectedObject: ObjectRecord | null;
+  objectImages: Record<string, string[]>;
   onCreate: () => void;
   onCreateFromDocument: (document: ObjectAnalysis) => void;
   onDelete: (id: string) => void;
   onSelectObject: (id: string) => void;
   onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
+  onAddObjectImages: (id: string, files: FileList) => void;
   onSelectDocument: (id: string) => void;
 }) {
   const detectedGroups = groupByObject(documents);
@@ -962,6 +991,10 @@ function ObjectsView({
           {selectedObject ? (
             <>
               <ObjectForm object={selectedObject} onChange={(field, value) => onUpdateObject(selectedObject.id, field, value)} />
+              <ObjectImageUpload
+                images={objectImages[selectedObject.id] ?? []}
+                onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
+              />
               <div className="headerActions projectActions">
                 <button type="button" onClick={() => onDelete(selectedObject.id)}>Objekt loeschen</button>
               </div>
@@ -983,6 +1016,10 @@ function ObjectsView({
               <span>Brutto</span>
               <strong>{formatNullableCurrency(sumValues(group.documents.map((document) => document.totalCost.value)))}</strong>
             </div>
+            <DetectedObjectImages
+              images={objectImages[group.key] ?? []}
+              onAdd={(files) => onAddObjectImages(group.key, files)}
+            />
             <div className="headerActions">
               <button type="button" onClick={() => onSelectDocument(group.documents[0].id)}>Dokument oeffnen</button>
               <button type="button" onClick={() => onCreateFromDocument(group.documents[0])}>Objekt daraus erstellen</button>
@@ -990,6 +1027,72 @@ function ObjectsView({
           </article>
         ))}
       </div>
+    </section>
+  );
+}
+
+function DetectedObjectImages({ images, onAdd }: { images: string[]; onAdd: (files: FileList) => void }) {
+  return (
+    <div className="detectedImages">
+      <label className="smallUploadButton">
+        Bilder
+        <input
+          type="file"
+          accept=".png,.jpg,.jpeg,.webp"
+          multiple
+          onChange={(event) => {
+            if (event.target.files && event.target.files.length > 0) {
+              onAdd(event.target.files);
+              event.currentTarget.value = "";
+            }
+          }}
+        />
+      </label>
+      {images.length > 0 ? (
+        <div className="miniImageStrip">
+          {images.slice(0, 4).map((image, index) => (
+            <img key={`${image}-${index}`} src={image} alt={`Objektbild ${index + 1}`} />
+          ))}
+        </div>
+      ) : (
+        <span className="muted">Keine Bilder</span>
+      )}
+    </div>
+  );
+}
+
+function ObjectImageUpload({ images, onAdd }: { images: string[]; onAdd: (files: FileList) => void }) {
+  return (
+    <section className="objectImagesPanel">
+      <div className="panelHeader compactHeader">
+        <div>
+          <h3>Objektbilder</h3>
+          <p>Bilder lokal auswaehlen und als Vorschau am Objekt anzeigen.</p>
+        </div>
+        <label className="imageUploadButton">
+          Bilder hochladen
+          <input
+            type="file"
+            accept=".png,.jpg,.jpeg,.webp"
+            multiple
+            onChange={(event) => {
+              if (event.target.files && event.target.files.length > 0) {
+                onAdd(event.target.files);
+                event.currentTarget.value = "";
+              }
+            }}
+          />
+        </label>
+      </div>
+      {images.length === 0 ? (
+        <div className="imageEmpty">Noch keine Bilder fuer dieses Objekt ausgewaehlt.</div>
+      ) : (
+        <div className="objectImageGrid">
+          {images.map((image, index) => (
+            <img key={`${image}-${index}`} src={image} alt={`Objektbild ${index + 1}`} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
