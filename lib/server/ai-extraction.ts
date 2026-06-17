@@ -4,7 +4,9 @@ import type {
   CostDebugInfo,
   ExtractedField,
   FieldSource,
+  MeasureDebugInfo,
   MeasureCluster,
+  MeasureDetail,
   MeasureItem,
   ObjectAnalysis,
   PortfolioAnalysisState,
@@ -59,6 +61,8 @@ interface AiObjectResult {
   costPerApartment?: AiField<number>;
   costPerSqm?: AiField<number>;
   measures?: AiMeasureResult[];
+  massnahmen_details?: MeasureDetail[];
+  measureDebug?: MeasureDebugInfo | null;
 }
 
 interface AiExtractionResult {
@@ -294,6 +298,8 @@ function normalizeObjects(
       dataQuality,
       missingInformation: verifiedField(object.fehlende_angaben, document, "Fehlende Angaben", issues),
       costDebug,
+      measureDetails: object.massnahmen_details ?? [],
+      measureDebug: object.measureDebug ?? null,
       clusters: (object.measures ?? []).map((measure, measureIndex) =>
         normalizeMeasure(measure, document, `${id}-measure-${measureIndex + 1}`, issues)
       ),
@@ -443,6 +449,8 @@ function mergeObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
       dataQuality: preferField(existing.dataQuality, object.dataQuality),
       missingInformation: preferField(existing.missingInformation, object.missingInformation),
       costDebug: existing.costDebug ?? object.costDebug,
+      measureDetails: [...(existing.measureDetails ?? []), ...(object.measureDetails ?? [])],
+      measureDebug: existing.measureDebug ?? object.measureDebug ?? null,
       clusters: [...existing.clusters, ...object.clusters],
       sourceDocumentIds: Array.from(new Set([...existing.sourceDocumentIds, ...object.sourceDocumentIds]))
     });
@@ -776,7 +784,7 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
   const apartmentNumber = subject[3];
   const grossValue = gross.value;
   const year = date ? Number(date[1].slice(-4)) : null;
-  const measures = parseOfferMeasures(text);
+  const measureAnalysis = parseOfferMeasures(text);
   const missing: string[] = [];
 
   if (!/wohnfl[aä]che|m² wohnfl|m2 wohnfl/i.test(text)) {
@@ -806,13 +814,12 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
     totalCost: aiField(grossValue, gross.raw || null),
     costPerApartment: aiField(grossValue, gross.raw || null),
     costPerSqm: aiField(null, null),
-    beschreibung_massnahmen: aiField(
-      "Wohnungssanierung mit Bodenbelagsarbeiten, Malerarbeiten, Bad-/Fliesenarbeiten, Sanitaer-/Heizungsarbeiten, Elektroarbeiten, Tischlerarbeiten, Reinigung und Zusatzarbeiten.",
-      subjectEvidence
-    ),
+    beschreibung_massnahmen: aiField(buildOfferMeasureSummary(measureAnalysis.details), measureAnalysis.details[0]?.quelle ?? null),
     datenqualitaet: aiField("Sicher erkannt", subjectEvidence),
     fehlende_angaben: aiField(missing.length ? missing : null, subjectEvidence),
-    measures
+    measures: measureAnalysis.measures,
+    massnahmen_details: measureAnalysis.details,
+    measureDebug: measureAnalysis.debug
   };
 }
 
@@ -820,7 +827,11 @@ function mergeAiObject(primary: AiObjectResult, secondary: AiObjectResult): AiOb
   return {
     ...secondary,
     ...primary,
-    measures: primary.measures && primary.measures.length > 0 ? primary.measures : secondary.measures
+    measures: primary.measures && primary.measures.length > 0 ? primary.measures : secondary.measures,
+    massnahmen_details: primary.massnahmen_details && primary.massnahmen_details.length > 0
+      ? primary.massnahmen_details
+      : secondary.massnahmen_details,
+    measureDebug: primary.measureDebug ?? secondary.measureDebug
   };
 }
 
@@ -846,7 +857,147 @@ function cleanFund(value: string | null): string | null {
   return value.replace(/"/g, "").trim();
 }
 
-function parseOfferMeasures(text: string): AiMeasureResult[] {
+function parseOfferMeasures(text: string): {
+  measures: AiMeasureResult[];
+  details: MeasureDetail[];
+  debug: MeasureDebugInfo;
+} {
+  const definitions = offerMeasureDefinitions();
+  const headings = findOfferSectionHeadings(text, definitions);
+  const sumLines = findOfferSectionSums(text, definitions);
+  const notes: string[] = [];
+  if (headings.length === 0) notes.push("Keine nummerierten Massnahmen-Abschnittsueberschriften gefunden.");
+  if (sumLines.length === 0) notes.push("Keine Abschnitts-Summenzeilen gefunden.");
+
+  const measures: AiMeasureResult[] = [];
+  const details: MeasureDetail[] = [];
+  const mappings: MeasureDebugInfo["mappings"] = [];
+
+  definitions.forEach((definition) => {
+    const heading = headings.find((entry) => entry.section === definition.section);
+    const sumLine = sumLines.find((entry) => entry.section === definition.section);
+    if (!heading && !sumLine) return;
+
+    const lineItems = parseSectionLineItems(text, definition.section);
+    const description = buildMeasureDescription(definition.description, lineItems);
+    const evidence = sumLine?.raw ?? heading?.raw ?? null;
+    const value = sumLine?.value ?? null;
+
+    mappings.push({
+      section: definition.section,
+      heading: heading?.heading ?? sumLine?.heading ?? definition.heading,
+      cluster: definition.cluster,
+      value,
+      description
+    });
+
+    details.push({
+      abschnitt: heading?.heading ?? sumLine?.heading ?? definition.heading,
+      cluster: definition.cluster,
+      summe: value,
+      beschreibung: description,
+      quelle: evidence ?? "k.A."
+    });
+
+    measures.push({
+      cluster: aiField(definition.cluster, evidence),
+      description: aiField(description, evidence),
+      totalCost: aiField(value, sumLine?.raw ?? null),
+      allocation: aiField(null, null),
+      lineItems
+    });
+  });
+
+  return { measures, details, debug: { headings, sumLines, mappings, notes } };
+}
+
+function offerMeasureDefinitions(): Array<{
+  section: number;
+  heading: string;
+  aliases: RegExp[];
+  cluster: MeasureCluster;
+  description: string;
+}> {
+  return [
+    { section: 1, heading: "Erstbegehung", aliases: [/Erstbegehung/i], cluster: "Planung / Dokumentation", description: "Erstbegehung und Dokumentation" },
+    { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelagsarbeiten/i], cluster: "Boden", description: "Bodenbelagsarbeiten" },
+    { section: 3, heading: "Malerarbeiten", aliases: [/Malerarbeiten/i], cluster: "Maler", description: "Malerarbeiten" },
+    { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesenarbeiten(?:\s+und\s+Estrich)?/i, /Estrich/i], cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich" },
+    { section: 5, heading: "Sanitaer - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i], cluster: "Sanitaer / Heizung", description: "Sanitaer- und Heizungsarbeiten" },
+    { section: 6, heading: "Elektroarbeiten", aliases: [/Elektroarbeiten/i], cluster: "Elektro", description: "Elektroarbeiten" },
+    { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Tueren / Fenster", description: "Tischlerarbeiten" },
+    { section: 8, heading: "Reinigung", aliases: [/Reinigung/i], cluster: "Reinigung", description: "Reinigung" },
+    { section: 9, heading: "Zusatzarbeiten", aliases: [/(?:Stundenlohn\s+)?Zusatzarbeiten/i], cluster: "Sonstiges", description: "Zusatzarbeiten" }
+  ];
+}
+
+function findOfferSectionHeadings(
+  text: string,
+  definitions: ReturnType<typeof offerMeasureDefinitions>
+): MeasureDebugInfo["headings"] {
+  const headings: MeasureDebugInfo["headings"] = [];
+  text.split(/\r?\n/).forEach((line) => {
+    const normalizedLine = line.replace(/\s+/g, " ").trim();
+    const match = normalizedLine.match(/^(\d{1,2})\.\s+(.{3,90})$/);
+    if (!match) return;
+    const section = Number(match[1]);
+    const title = cleanupSectionHeading(match[2]);
+    const definition = definitions.find((entry) =>
+      entry.section === section && entry.aliases.some((alias) => alias.test(title))
+    );
+    if (!definition || headings.some((entry) => entry.section === section)) return;
+    headings.push({ section, heading: title, raw: normalizedLine });
+  });
+  return headings;
+}
+
+function findOfferSectionSums(
+  text: string,
+  definitions: ReturnType<typeof offerMeasureDefinitions>
+): MeasureDebugInfo["sumLines"] {
+  const sumLines: MeasureDebugInfo["sumLines"] = [];
+  const moneyPattern = /([\d.]+,\d{2})\s*(?:\u20ac|EUR|Euro|â‚¬)?/i;
+  text.split(/\r?\n/).forEach((line) => {
+    const normalizedLine = line.replace(/\s+/g, " ").trim();
+    const sectionMatch = normalizedLine.match(/^Summe\s+(\d{1,2})\.\s+(.+)$/i);
+    if (!sectionMatch) return;
+    const section = Number(sectionMatch[1]);
+    const definition = definitions.find((entry) => entry.section === section);
+    if (!definition || !definition.aliases.some((alias) => alias.test(normalizedLine))) return;
+    const moneyMatch = normalizedLine.match(moneyPattern);
+    const headingPart = cleanupSectionHeading(sectionMatch[2].replace(moneyPattern, ""));
+    sumLines.push({
+      section,
+      heading: headingPart || definition.heading,
+      value: parseGermanMoney(moneyMatch?.[1] ?? null),
+      raw: normalizedLine
+    });
+  });
+  return sumLines;
+}
+
+function cleanupSectionHeading(value: string): string {
+  return value
+    .replace(/([\d.]+,\d{2})\s*(?:\u20ac|EUR|Euro|â‚¬)?/ig, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildMeasureDescription(fallback: string, lineItems: LineItem[]): string {
+  const descriptions = lineItems
+    .map((item) => item.description)
+    .filter((description): description is string => Boolean(description))
+    .slice(0, 6);
+  return descriptions.length > 0 ? descriptions.join(", ") : fallback;
+}
+
+function buildOfferMeasureSummary(details: MeasureDetail[]): string | null {
+  if (details.length === 0) return null;
+  const sections = details.map((detail) => detail.abschnitt).filter(Boolean);
+  return sections.length > 0 ? `Wohnungssanierung mit ${sections.join(", ")}.` : null;
+}
+
+function parseOfferMeasuresLegacy(text: string): AiMeasureResult[] {
   const mappings: Array<{ section: number; heading: RegExp; cluster: MeasureCluster; description: string }> = [
     { section: 1, heading: /Summe\s+1\.\s+Erstbegehung\s+([\d.]+,\d{2})\s*€/i, cluster: "Planung / Dokumentation", description: "Erstbegehung und Dokumentation" },
     { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Boden", description: "Bodenbelagsarbeiten" },
@@ -873,18 +1024,19 @@ function parseOfferMeasures(text: string): AiMeasureResult[] {
 }
 
 function parseSectionLineItems(text: string, section: number): LineItem[] {
-  const start = new RegExp(`\\n${section}\\.\\s+`, "i");
-  const end = new RegExp(`Summe\\s+${section}\\.`, "i");
+  const start = new RegExp(`(?:^|\\n)${section}\\.\\s+`, "i");
+  const end = new RegExp(`(?:Summe\\s+${section}\\.|\\n${section + 1}\\.\\s+)`, "i");
   const startIndex = text.search(start);
   if (startIndex === -1) return [];
   const sectionText = text.slice(startIndex);
   const endMatch = sectionText.search(end);
   const scoped = endMatch === -1 ? sectionText : sectionText.slice(0, endMatch);
+  const robustLinePattern = new RegExp(`^${section}\\.\\d+\\s+(.+?)\\s+([\\d.]+,\\d{2})\\s*(?:\\u20ac|EUR|Euro|â‚¬)?\\s+([\\d.]+,\\d{2})\\s*(?:\\u20ac|EUR|Euro|â‚¬)?`, "gim");
   const linePattern = new RegExp(`^${section}\\.\\d+\\s+(.+?)\\s+([\\d.]+,\\d{2})\\s*€\\s+([\\d.]+,\\d{2})\\s*€`, "gim");
   const items: LineItem[] = [];
   let match: RegExpExecArray | null;
 
-  while ((match = linePattern.exec(scoped)) && items.length < 80) {
+  while ((match = robustLinePattern.exec(scoped) ?? linePattern.exec(scoped)) && items.length < 80) {
     const rawLine = match[0].replace(/\s+/g, " ").trim();
     const position = rawLine.match(new RegExp(`^(${section}\\.\\d+)`))?.[1] ?? "";
     items.push({

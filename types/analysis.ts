@@ -64,6 +64,36 @@ export interface MeasureItem {
   lineItems?: LineItem[];
 }
 
+export interface MeasureDetail {
+  abschnitt: string;
+  cluster: MeasureCluster;
+  summe: number | null;
+  beschreibung: string;
+  quelle: string;
+}
+
+export interface MeasureDebugInfo {
+  headings: Array<{
+    section: number;
+    heading: string;
+    raw: string;
+  }>;
+  sumLines: Array<{
+    section: number;
+    heading: string;
+    value: number | null;
+    raw: string;
+  }>;
+  mappings: Array<{
+    section: number;
+    heading: string;
+    cluster: MeasureCluster;
+    value: number | null;
+    description: string;
+  }>;
+  notes: string[];
+}
+
 export interface LineItem {
   position: string;
   quantity: ExtractedValue<number>;
@@ -105,6 +135,8 @@ export interface ObjectAnalysis {
   dataQuality: ExtractedField<string>;
   missingInformation: ExtractedField<string[]>;
   costDebug: CostDebugInfo | null;
+  measureDetails?: MeasureDetail[];
+  measureDebug?: MeasureDebugInfo | null;
   clusters: MeasureItem[];
   sourceDocumentIds: string[];
 }

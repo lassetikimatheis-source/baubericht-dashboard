@@ -1725,6 +1725,7 @@ function ProjectAiTab({ documents }: { documents: ObjectAnalysis[] }) {
               <h4>Summenblock</h4>
               <pre>{document.costDebug?.summaryBlock || "k.A."}</pre>
             </div>
+            <MeasureDebugBlock document={document} />
           </div>
         </article>
       ))}
@@ -1931,7 +1932,55 @@ function DocumentEditor({
         <p className="muted">{sourceLabel(document.totalCost)}</p>
         <pre>{document.costDebug?.summaryBlock || "k.A."}</pre>
       </div>
+      <MeasureDebugBlock document={document} />
     </aside>
+  );
+}
+
+function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
+  const debug = document.measureDebug;
+  const details = document.measureDetails ?? [];
+  if (!debug && details.length === 0) return null;
+
+  return (
+    <div className="debugBlock">
+      <h4>Massnahmen-Erkennung</h4>
+      <div className="measureDebugGrid">
+        <div>
+          <strong>Abschnittsueberschriften</strong>
+          <ul>
+            {debug?.headings.length ? debug.headings.map((entry) => (
+              <li key={`heading-${entry.section}`}>{entry.section}. {entry.heading}</li>
+            )) : <li>k.A.</li>}
+          </ul>
+        </div>
+        <div>
+          <strong>Summenzeilen</strong>
+          <ul>
+            {debug?.sumLines.length ? debug.sumLines.map((entry) => (
+              <li key={`sum-${entry.section}`}>{entry.raw}</li>
+            )) : <li>k.A.</li>}
+          </ul>
+        </div>
+        <div>
+          <strong>Cluster-Mapping</strong>
+          <ul>
+            {debug?.mappings.length ? debug.mappings.map((entry) => (
+              <li key={`mapping-${entry.section}`}>{entry.heading} - {entry.cluster} - {formatNullableCurrency(entry.value)}</li>
+            )) : <li>k.A.</li>}
+          </ul>
+        </div>
+        <div>
+          <strong>Beschreibung</strong>
+          <ul>
+            {details.length ? details.map((entry) => (
+              <li key={`${entry.abschnitt}-${entry.cluster}`}>{entry.abschnitt}: {entry.beschreibung}</li>
+            )) : <li>k.A.</li>}
+          </ul>
+        </div>
+      </div>
+      {debug?.notes.length ? <p className="muted">{debug.notes.join(" ")}</p> : null}
+    </div>
   );
 }
 
@@ -2217,6 +2266,8 @@ function mergeDocumentPreferManual(existing: ObjectAnalysis, incoming: ObjectAna
     clusters: existing.clusters.some((cluster) => hasManualSource(cluster.cluster) || hasManualSource(cluster.totalCost))
       ? existing.clusters
       : incoming.clusters,
+    measureDetails: incoming.measureDetails ?? existing.measureDetails,
+    measureDebug: incoming.measureDebug ?? existing.measureDebug ?? null,
     costDebug: incoming.costDebug ?? existing.costDebug,
     sourceDocumentIds: Array.from(new Set([...(existing.sourceDocumentIds ?? []), ...(incoming.sourceDocumentIds ?? [])]))
   };
