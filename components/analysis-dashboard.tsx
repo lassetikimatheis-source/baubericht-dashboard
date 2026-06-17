@@ -1,9 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { UploadPanel } from "./upload-panel";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
+import {
+  deleteDocument as deleteStoredDocument,
+  deleteObject as deleteStoredObject,
+  deleteProject as deleteStoredProject,
+  getAssignments,
+  getDocuments,
+  getObjects,
+  getProjects,
+  saveAssignments,
+  saveDocument,
+  saveObject,
+  saveProject,
+  updateDocument as updateStoredDocument,
+  updateObject as updateStoredObject,
+  updateProject as updateStoredProject,
+  type StoredObjectRecord,
+  type StoredProjectRecord
+} from "../lib/storage";
 import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState } from "../types/analysis";
 
 type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
@@ -41,40 +59,8 @@ interface ParsedPreview {
   issues: string[];
 }
 
-interface ObjectRecord {
-  id: string;
-  fund: string;
-  objectNumber: string;
-  objectName: string;
-  address: string;
-  postalCode: string;
-  city: string;
-  federalState: string;
-  constructionYear: string;
-  unitCount: string;
-  totalLivingAreaSqm: string;
-  assetManager: string;
-  portfolioManager: string;
-}
-
-interface ProjectRecord {
-  id: string;
-  projectName: string;
-  projectType: string;
-  fund: string;
-  objectId: string;
-  object: string;
-  status: string;
-  budgetNet: string;
-  budgetGross: string;
-  startDate: string;
-  endDate: string;
-  description: string;
-  apartmentNumber: string;
-  location: string;
-  renovatedApartmentCount: string;
-  livingAreaSqm: string;
-}
+type ObjectRecord = StoredObjectRecord;
+type ProjectRecord = StoredProjectRecord;
 
 interface Filters {
   year: string;
@@ -172,6 +158,21 @@ export function AnalysisDashboard() {
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
 
+  useEffect(() => {
+    const storedObjects = getObjects();
+    const storedProjects = getProjects();
+    const storedDocuments = getDocuments();
+    const storedAssignments = getAssignments();
+
+    setObjects(storedObjects);
+    setProjects(storedProjects);
+    setAssignments(storedAssignments);
+    setAnalysis(buildAnalysisFromDocuments(storedDocuments));
+    setSelectedObjectId(storedObjects[0]?.id ?? null);
+    setSelectedProjectId(storedProjects[0]?.id ?? null);
+    setSelectedDocumentId(storedDocuments[0]?.id ?? null);
+  }, []);
+
   const filteredDocuments = useMemo(() => {
     return analysis.objects.filter((document) => matchesFilters(document, filters, projects, assignments));
   }, [analysis.objects, assignments, filters, projects]);
@@ -235,9 +236,15 @@ export function AnalysisDashboard() {
         throw new Error(data.message || "Analyse fehlgeschlagen.");
       }
 
-      setAnalysis(data.analysis);
-      setSelectedDocumentId(data.analysis.objects[0]?.id ?? null);
-      setAssignments((current) => autoAssignDocuments(data.analysis.objects, projects, current));
+      const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), data.analysis.objects);
+      mergedDocuments.forEach(saveDocument);
+      setAnalysis(buildAnalysisFromDocuments(mergedDocuments, data.analysis));
+      setSelectedDocumentId(data.analysis.objects[0]?.id ?? mergedDocuments[0]?.id ?? null);
+      setAssignments((current) => {
+        const next = autoAssignDocuments(mergedDocuments, projects, current);
+        saveAssignments(next);
+        return next;
+      });
       setMessage("Analyse abgeschlossen. Fehlende Werte bleiben k.A. und koennen rechts korrigiert werden.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Analyse fehlgeschlagen.");
@@ -285,41 +292,54 @@ export function AnalysisDashboard() {
   }
 
   function createObject(seed?: ObjectAnalysis) {
-    const object = objectFromDocument(seed);
-    setObjects((current) => [...current, object]);
+    const object = saveObject(objectFromDocument(seed));
+    setObjects((current) => [...current.filter((entry) => entry.id !== object.id), object]);
     setSelectedObjectId(object.id);
     setView("objects");
   }
 
   function updateObject(objectId: string, field: keyof ObjectRecord, value: string) {
-    setObjects((current) => current.map((object) => object.id === objectId ? { ...object, [field]: value } : object));
+    setObjects((current) => current.map((object) => {
+      if (object.id !== objectId) return object;
+      return updateStoredObject({ ...object, [field]: value });
+    }));
   }
 
   function deleteObject(objectId: string) {
+    deleteStoredObject(objectId);
     setObjects((current) => current.filter((object) => object.id !== objectId));
-    setProjects((current) => current.map((project) => project.objectId === objectId ? { ...project, objectId: "", object: "" } : project));
+    setProjects((current) => current.map((project) => {
+      if (project.objectId !== objectId) return project;
+      return updateStoredProject({ ...project, objectId: "", object: "" });
+    }));
     setSelectedObjectId(null);
   }
 
   function createProject(seed?: ObjectAnalysis) {
-    const project = projectFromDocument(seed, objects);
-    setProjects((current) => [...current, project]);
+    const project = saveProject(projectFromDocument(seed, objects));
+    setProjects((current) => [...current.filter((entry) => entry.id !== project.id), project]);
     setSelectedProjectId(project.id);
     setProjectTab("overview");
     if (seed) {
-      setAssignments((current) => ({ ...current, [seed.id]: project.id }));
+      setAssignments((current) => {
+        const next = { ...current, [seed.id]: project.id };
+        saveAssignments(next);
+        return next;
+      });
       setSelectedDocumentId(seed.id);
     }
     setView("projects");
   }
 
   function deleteProject(projectId: string) {
+    deleteStoredProject(projectId);
     setProjects((current) => current.filter((project) => project.id !== projectId));
     setAssignments((current) => {
       const next = { ...current };
       Object.keys(next).forEach((documentId) => {
         if (next[documentId] === projectId) next[documentId] = null;
       });
+      saveAssignments(next);
       return next;
     });
     setSelectedProjectId(null);
@@ -331,31 +351,38 @@ export function AnalysisDashboard() {
         if (project.id !== projectId) return project;
         if (field === "objectId") {
           const object = objects.find((entry) => entry.id === value);
-          return { ...project, objectId: value, object: object ? objectLabel(object) : "" };
+          return updateStoredProject({ ...project, objectId: value, object: object ? objectLabel(object) : "" });
         }
-        return { ...project, [field]: value };
+        return updateStoredProject({ ...project, [field]: value });
       })
     );
   }
 
   function updateDocument(documentId: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) {
-    setAnalysis((current) => ({
-      ...current,
-      objects: current.objects.map((document) => document.id === documentId ? updater(document) : document)
-    }));
+    setAnalysis((current) => {
+      const documents = current.objects.map((document) => document.id === documentId ? updateStoredDocument(updater(document)) : document);
+      return buildAnalysisFromDocuments(documents, current);
+    });
   }
 
   function deleteDocument(documentId: string) {
-    setAnalysis((current) => ({
-      ...current,
-      objects: current.objects.filter((document) => document.id !== documentId)
-    }));
+    deleteStoredDocument(documentId);
+    setAnalysis((current) => buildAnalysisFromDocuments(current.objects.filter((document) => document.id !== documentId), current));
     setAssignments((current) => {
       const next = { ...current };
       delete next[documentId];
+      saveAssignments(next);
       return next;
     });
     setSelectedDocumentId(null);
+  }
+
+  function assignDocument(documentId: string, projectId: string | null) {
+    setAssignments((current) => {
+      const next = { ...current, [documentId]: projectId };
+      saveAssignments(next);
+      return next;
+    });
   }
 
   return (
@@ -458,8 +485,8 @@ export function AnalysisDashboard() {
                 onSetTab={setProjectTab}
                 onUpdateProject={updateProject}
                 onSelectDocument={setSelectedDocumentId}
-                onAssign={(documentId, projectId) => setAssignments((current) => ({ ...current, [documentId]: projectId }))}
-                onRemoveDocument={(documentId) => setAssignments((current) => ({ ...current, [documentId]: null }))}
+                onAssign={assignDocument}
+                onRemoveDocument={(documentId) => assignDocument(documentId, null)}
                 onDeleteDocument={deleteDocument}
               />
               ) : null}
@@ -469,7 +496,7 @@ export function AnalysisDashboard() {
                 documents={unassignedDocuments}
                 projects={projects}
                 onSelect={setSelectedDocumentId}
-                onAssign={(documentId, projectId) => setAssignments((current) => ({ ...current, [documentId]: projectId }))}
+                onAssign={assignDocument}
                 onCreateProject={createProject}
                 onDelete={deleteDocument}
               />
@@ -488,7 +515,7 @@ export function AnalysisDashboard() {
               document={selectedDocument}
               projects={projects}
               assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
-              onAssign={(projectId) => selectedDocument && setAssignments((current) => ({ ...current, [selectedDocument.id]: projectId }))}
+              onAssign={(projectId) => selectedDocument && assignDocument(selectedDocument.id, projectId)}
               onCreateProject={() => selectedDocument && createProject(selectedDocument)}
               onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
               onUpdate={updateDocument}
@@ -1726,6 +1753,128 @@ function autoAssignDocuments(
     next[document.id] = matches.length === 1 ? matches[0].id : null;
   });
   return next;
+}
+
+function buildAnalysisFromDocuments(
+  documents: ObjectAnalysis[],
+  base: PortfolioAnalysisState = emptyAnalysisState
+): PortfolioAnalysisState {
+  return {
+    ...base,
+    objects: documents,
+    clusterSummary: documents.flatMap((document) => document.clusters),
+    totalCost: aggregateNumberField(documents.map((document) => document.totalCost)),
+    averageCostPerApartment: aggregateAverageField(
+      documents.map((document) => document.totalCost),
+      documents.map((document) => document.renovatedApartmentCount)
+    ),
+    averageCostPerSqm: aggregateAverageField(
+      documents.map((document) => document.totalCost),
+      documents.map((document) => document.livingAreaSqm)
+    ),
+    reviewRequiredCount: countReviewCases(documents),
+    issues: base.issues ?? []
+  };
+}
+
+function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: ObjectAnalysis[]): ObjectAnalysis[] {
+  const byKey = new Map<string, ObjectAnalysis>();
+  existing.forEach((document) => byKey.set(documentIdentity(document), document));
+  const merged = [...existing];
+
+  incoming.forEach((document) => {
+    const match = byKey.get(documentIdentity(document));
+    if (!match) {
+      merged.push(document);
+      return;
+    }
+    const index = merged.findIndex((entry) => entry.id === match.id);
+    merged[index] = mergeDocumentPreferManual(match, document);
+  });
+
+  return merged;
+}
+
+function mergeDocumentPreferManual(existing: ObjectAnalysis, incoming: ObjectAnalysis): ObjectAnalysis {
+  return {
+    ...incoming,
+    id: existing.id,
+    aiAgentName: mergeFieldPreferManual(existing.aiAgentName, incoming.aiAgentName),
+    confidenceScore: mergeFieldPreferManual(existing.confidenceScore, incoming.confidenceScore),
+    projectSuggestion: mergeFieldPreferManual(existing.projectSuggestion, incoming.projectSuggestion),
+    assignmentSuggestion: mergeFieldPreferManual(existing.assignmentSuggestion, incoming.assignmentSuggestion),
+    documentType: mergeFieldPreferManual(existing.documentType, incoming.documentType),
+    projectType: mergeFieldPreferManual(existing.projectType, incoming.projectType),
+    provider: mergeFieldPreferManual(existing.provider, incoming.provider),
+    year: mergeFieldPreferManual(existing.year, incoming.year),
+    fund: mergeFieldPreferManual(existing.fund, incoming.fund),
+    objectNumber: mergeFieldPreferManual(existing.objectNumber, incoming.objectNumber),
+    apartmentNumber: mergeFieldPreferManual(existing.apartmentNumber, incoming.apartmentNumber),
+    objectAddress: mergeFieldPreferManual(existing.objectAddress, incoming.objectAddress),
+    location: mergeFieldPreferManual(existing.location, incoming.location),
+    documentDate: mergeFieldPreferManual(existing.documentDate, incoming.documentDate),
+    documentNumber: mergeFieldPreferManual(existing.documentNumber, incoming.documentNumber),
+    renovatedApartmentCount: mergeFieldPreferManual(existing.renovatedApartmentCount, incoming.renovatedApartmentCount),
+    renovatedApartments: mergeFieldPreferManual(existing.renovatedApartments, incoming.renovatedApartments),
+    livingAreaSqm: mergeFieldPreferManual(existing.livingAreaSqm, incoming.livingAreaSqm),
+    totalAreaSqm: mergeFieldPreferManual(existing.totalAreaSqm, incoming.totalAreaSqm),
+    renovatedAreaSqm: mergeFieldPreferManual(existing.renovatedAreaSqm, incoming.renovatedAreaSqm),
+    netCost: mergeFieldPreferManual(existing.netCost, incoming.netCost),
+    vatCost: mergeFieldPreferManual(existing.vatCost, incoming.vatCost),
+    totalCost: mergeFieldPreferManual(existing.totalCost, incoming.totalCost),
+    costPerApartment: mergeFieldPreferManual(existing.costPerApartment, incoming.costPerApartment),
+    costPerSqm: mergeFieldPreferManual(existing.costPerSqm, incoming.costPerSqm),
+    measureDescription: mergeFieldPreferManual(existing.measureDescription, incoming.measureDescription),
+    dataQuality: mergeFieldPreferManual(existing.dataQuality, incoming.dataQuality),
+    missingInformation: mergeFieldPreferManual(existing.missingInformation, incoming.missingInformation),
+    clusters: existing.clusters.some((cluster) => hasManualSource(cluster.cluster) || hasManualSource(cluster.totalCost))
+      ? existing.clusters
+      : incoming.clusters,
+    costDebug: incoming.costDebug ?? existing.costDebug,
+    sourceDocumentIds: Array.from(new Set([...(existing.sourceDocumentIds ?? []), ...(incoming.sourceDocumentIds ?? [])]))
+  };
+}
+
+function mergeFieldPreferManual<T>(existing: ExtractedField<T>, incoming: ExtractedField<T>): ExtractedField<T> {
+  return hasManualSource(existing) ? existing : incoming;
+}
+
+function hasManualSource<T>(field: ExtractedField<T>): boolean {
+  return field.sources.some((source) => source.method === "Manuell");
+}
+
+function documentIdentity(document: ObjectAnalysis): string {
+  const fileName = sourceLabel(document.totalCost).split(" - ")[0];
+  const identity = [
+    fieldOrUnknown(document.documentNumber),
+    fieldOrUnknown(document.provider),
+    fieldOrUnknown(document.objectNumber),
+    fileName
+  ].filter((part) => part && part !== "k.A.").join("|").toLowerCase();
+  return identity || document.id;
+}
+
+function aggregateNumberField(fields: Array<ExtractedField<number>>): ExtractedField<number> {
+  const value = sumValues(fields.map((field) => field.value));
+  return value === null ? emptyField<number>() : {
+    value,
+    sources: [{ documentId: "storage", fileName: "Lokaler Speicher", method: "Berechnung", confidence: 1 }],
+    confidence: 1
+  };
+}
+
+function aggregateAverageField(
+  numeratorFields: Array<ExtractedField<number>>,
+  denominatorFields: Array<ExtractedField<number>>
+): ExtractedField<number> {
+  const numerator = sumValues(numeratorFields.map((field) => field.value));
+  const denominator = sumValues(denominatorFields.map((field) => field.value));
+  if (numerator === null || !denominator) return emptyField<number>();
+  return {
+    value: Math.round((numerator / denominator) * 100) / 100,
+    sources: [{ documentId: "storage", fileName: "Lokaler Speicher", method: "Berechnung", confidence: 1 }],
+    confidence: 1
+  };
 }
 
 function projectMatchesDocument(project: ProjectRecord, document: ObjectAnalysis): boolean {
