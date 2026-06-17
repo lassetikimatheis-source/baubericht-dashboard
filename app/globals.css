@@ -760,6 +760,46 @@ select {
   margin: 12px 0 18px;
 }
 
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+}
+
+.tabButton {
+  min-height: 34px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.tabButtonActive {
+  border-color: var(--navy);
+  background: #f8fbff;
+  color: var(--navy);
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rowActions button,
+.rowActions select {
+  min-height: 32px;
+  font-size: 12px;
+  padding: 0 9px;
+}
+
+.costSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(190px, 1fr));
+  gap: 10px;
+}
+
 .miniList,
 .unassignedList {
   display: grid;
@@ -847,7 +887,8 @@ select {
   .detailGrid,
   .debugGrid,
   .workspaceGrid,
-  .projectLayout {
+  .projectLayout,
+  .costSummaryGrid {
     grid-template-columns: 1fr;
   }
 

@@ -7,6 +7,7 @@ import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, u
 import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState } from "../types/analysis";
 
 type ViewKey = "dashboard" | "objects" | "projects" | "unassigned" | "reports" | "settings";
+type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
 type TextFieldKey =
   | "fund"
   | "objectNumber"
@@ -37,11 +38,28 @@ interface ParsedPreview {
   issues: string[];
 }
 
+interface ObjectRecord {
+  id: string;
+  fund: string;
+  objectNumber: string;
+  objectName: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  federalState: string;
+  constructionYear: string;
+  unitCount: string;
+  totalLivingAreaSqm: string;
+  assetManager: string;
+  portfolioManager: string;
+}
+
 interface ProjectRecord {
   id: string;
   projectName: string;
   projectType: string;
   fund: string;
+  objectId: string;
   object: string;
   status: string;
   budgetNet: string;
@@ -59,13 +77,17 @@ interface Filters {
   year: string;
   fund: string;
   object: string;
+  objectNumber: string;
   address: string;
+  project: string;
+  projectType: string;
   documentType: string;
-  cluster: string;
-  dataQuality: string;
+  provider: string;
   apartmentNumber: string;
   location: string;
-  livingAreaSqm: string;
+  cluster: string;
+  dataQuality: string;
+  status: string;
 }
 
 interface KpiShape {
@@ -74,24 +96,43 @@ interface KpiShape {
   objects: number;
   projects: number;
   documents: number;
-  unassigned: number;
   apartments: number | null;
   costPerApartment: number | null;
   costPerSqm: number | null;
-  reviewCount: number;
+  reviewCases: number;
+  unknownFields: number;
+}
+
+interface ProjectCostSummary {
+  offersNet: number | null;
+  offersGross: number | null;
+  invoicesNet: number | null;
+  invoicesGross: number | null;
+  supplementsNet: number | null;
+  supplementsGross: number | null;
+  finalInvoicesNet: number | null;
+  finalInvoicesGross: number | null;
+  offerToInvoiceDelta: number | null;
+  budgetToActualDelta: number | null;
+  costPerApartment: number | null;
+  costPerSqm: number | null;
 }
 
 const emptyFilters: Filters = {
   year: "",
   fund: "",
   object: "",
+  objectNumber: "",
   address: "",
+  project: "",
+  projectType: "",
   documentType: "",
-  cluster: "",
-  dataQuality: "",
+  provider: "",
   apartmentNumber: "",
   location: "",
-  livingAreaSqm: ""
+  cluster: "",
+  dataQuality: "",
+  status: ""
 };
 
 const navItems: Array<{ key: ViewKey; label: string }> = [
@@ -103,21 +144,32 @@ const navItems: Array<{ key: ViewKey; label: string }> = [
   { key: "settings", label: "Einstellungen" }
 ];
 
+const projectTabs: Array<{ key: ProjectTab; label: string }> = [
+  { key: "overview", label: "Uebersicht" },
+  { key: "documents", label: "Dokumente" },
+  { key: "costs", label: "Kosten" },
+  { key: "measures", label: "Massnahmen" },
+  { key: "ai", label: "KI-Pruefung" }
+];
+
 export function AnalysisDashboard() {
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("dashboard");
+  const [objects, setObjects] = useState<ObjectRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string | null>>({});
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
 
   const filteredDocuments = useMemo(() => {
-    return analysis.objects.filter((document) => matchesFilters(document, filters));
-  }, [analysis.objects, filters]);
+    return analysis.objects.filter((document) => matchesFilters(document, filters, projects, assignments));
+  }, [analysis.objects, assignments, filters, projects]);
 
   const selectedDocument = useMemo(() => {
     return analysis.objects.find((document) => document.id === selectedDocumentId) ?? filteredDocuments[0] ?? null;
@@ -126,6 +178,10 @@ export function AnalysisDashboard() {
   const selectedProject = useMemo(() => {
     return projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
   }, [projects, selectedProjectId]);
+
+  const selectedObject = useMemo(() => {
+    return objects.find((object) => object.id === selectedObjectId) ?? objects[0] ?? null;
+  }, [objects, selectedObjectId]);
 
   const unassignedDocuments = filteredDocuments.filter((document) => !assignments[document.id]);
   const selectedProjectDocuments = selectedProject
@@ -137,20 +193,24 @@ export function AnalysisDashboard() {
     const net = sumValues(filteredDocuments.map((document) => document.netCost.value));
     const apartments = sumValues(filteredDocuments.map((document) => document.renovatedApartmentCount.value));
     const area = sumValues(filteredDocuments.map((document) => document.livingAreaSqm.value));
+    const objectCount = new Set([
+      ...objects.map((object) => object.objectNumber || object.address || object.id),
+      ...filteredDocuments.map((document) => document.objectNumber.value || document.objectAddress.value || document.id)
+    ]).size;
 
     return {
       gross,
       net,
-      objects: new Set(filteredDocuments.map((document) => document.objectNumber.value || document.objectAddress.value || document.id)).size,
+      objects: objectCount,
       projects: projects.length,
       documents: filteredDocuments.length,
-      unassigned: unassignedDocuments.length,
       apartments,
       costPerApartment: gross !== null && apartments ? gross / apartments : null,
       costPerSqm: gross !== null && area ? gross / area : null,
-      reviewCount: countUnknownFields(filteredDocuments)
+      reviewCases: countReviewCases(filteredDocuments),
+      unknownFields: countUnknownFields(filteredDocuments)
     };
-  }, [filteredDocuments, projects.length, unassignedDocuments.length]);
+  }, [filteredDocuments, objects, projects.length]);
 
   async function handleAnalyze(files: File[]) {
     setIsAnalyzing(true);
@@ -173,7 +233,7 @@ export function AnalysisDashboard() {
       setAnalysis(data.analysis);
       setSelectedDocumentId(data.analysis.objects[0]?.id ?? null);
       setAssignments((current) => autoAssignDocuments(data.analysis.objects, projects, current));
-      setMessage("Analyse abgeschlossen. KI-Daten koennen rechts korrigiert werden.");
+      setMessage("Analyse abgeschlossen. Fehlende Werte bleiben k.A. und koennen rechts korrigiert werden.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Analyse fehlgeschlagen.");
     } finally {
@@ -219,10 +279,28 @@ export function AnalysisDashboard() {
     URL.revokeObjectURL(url);
   }
 
+  function createObject(seed?: ObjectAnalysis) {
+    const object = objectFromDocument(seed);
+    setObjects((current) => [...current, object]);
+    setSelectedObjectId(object.id);
+    setView("objects");
+  }
+
+  function updateObject(objectId: string, field: keyof ObjectRecord, value: string) {
+    setObjects((current) => current.map((object) => object.id === objectId ? { ...object, [field]: value } : object));
+  }
+
+  function deleteObject(objectId: string) {
+    setObjects((current) => current.filter((object) => object.id !== objectId));
+    setProjects((current) => current.map((project) => project.objectId === objectId ? { ...project, objectId: "", object: "" } : project));
+    setSelectedObjectId(null);
+  }
+
   function createProject(seed?: ObjectAnalysis) {
-    const project = projectFromDocument(seed);
+    const project = projectFromDocument(seed, objects);
     setProjects((current) => [...current, project]);
     setSelectedProjectId(project.id);
+    setProjectTab("overview");
     if (seed) {
       setAssignments((current) => ({ ...current, [seed.id]: project.id }));
       setSelectedDocumentId(seed.id);
@@ -244,7 +322,14 @@ export function AnalysisDashboard() {
 
   function updateProject(projectId: string, field: keyof ProjectRecord, value: string) {
     setProjects((current) =>
-      current.map((project) => project.id === projectId ? { ...project, [field]: value } : project)
+      current.map((project) => {
+        if (project.id !== projectId) return project;
+        if (field === "objectId") {
+          const object = objects.find((entry) => entry.id === value);
+          return { ...project, objectId: value, object: object ? objectLabel(object) : "" };
+        }
+        return { ...project, [field]: value };
+      })
     );
   }
 
@@ -292,8 +377,8 @@ export function AnalysisDashboard() {
         </nav>
         <div className="sideNote">
           <span>Struktur</span>
-          <strong>Objekt → Projekt → Dokumente → Kosten</strong>
-          <p>Wohnungen bleiben Felder im Dokument oder Projekt.</p>
+          <strong>Objekt - Projekt - Dokumente - Kosten</strong>
+          <p>Keine einzelne Wohnungsverwaltung in diesem Schritt.</p>
         </div>
       </aside>
 
@@ -302,7 +387,7 @@ export function AnalysisDashboard() {
           <div>
             <p className="eyebrow">KI als Hauptarbeit</p>
             <h1>PARIBUS | Baukosten Analyse</h1>
-            <p className="muted">Dokument hochladen, KI auslesen lassen, Projekt zuordnen und bei Bedarf manuell korrigieren.</p>
+            <p className="muted">Dokument hochladen, KI auslesen lassen, Projekt zuordnen und falsche Werte manuell korrigieren.</p>
           </div>
           <div className="headerActions">
             <button className="buttonPrimary" type="button" onClick={() => setView("dashboard")}>Upload</button>
@@ -326,26 +411,43 @@ export function AnalysisDashboard() {
                   selectedDocumentId={selectedDocument?.id ?? null}
                   onSelect={setSelectedDocumentId}
                   onAssign={(documentId, projectId) => setAssignments((current) => ({ ...current, [documentId]: projectId }))}
+                  onCreateProject={createProject}
                   onDelete={deleteDocument}
                 />
               </>
             ) : null}
 
             {view === "objects" ? (
-              <ObjectsView documents={filteredDocuments} onSelect={setSelectedDocumentId} />
+              <ObjectsView
+                objects={objects}
+                documents={filteredDocuments}
+                selectedObject={selectedObject}
+                onCreate={() => createObject()}
+                onCreateFromDocument={createObject}
+                onDelete={deleteObject}
+                onSelectObject={setSelectedObjectId}
+                onUpdateObject={updateObject}
+                onSelectDocument={setSelectedDocumentId}
+              />
             ) : null}
 
             {view === "projects" ? (
               <ProjectsView
                 projects={projects}
+                objects={objects}
                 selectedProject={selectedProject}
+                activeTab={projectTab}
                 documents={selectedProjectDocuments}
+                assignments={assignments}
                 onCreate={() => createProject()}
                 onDelete={deleteProject}
                 onSelectProject={setSelectedProjectId}
+                onSetTab={setProjectTab}
                 onUpdateProject={updateProject}
                 onSelectDocument={setSelectedDocumentId}
+                onAssign={(documentId, projectId) => setAssignments((current) => ({ ...current, [documentId]: projectId }))}
                 onRemoveDocument={(documentId) => setAssignments((current) => ({ ...current, [documentId]: null }))}
+                onDeleteDocument={deleteDocument}
               />
             ) : null}
 
@@ -361,7 +463,7 @@ export function AnalysisDashboard() {
             ) : null}
 
             {view === "reports" ? (
-              <ReportsView documents={filteredDocuments} projects={projects} />
+              <ReportsView documents={filteredDocuments} projects={projects} assignments={assignments} />
             ) : null}
 
             {view === "settings" ? (
@@ -389,12 +491,14 @@ function KpiGrid({ kpis }: { kpis: KpiShape }) {
     <section className="kpiGrid" aria-label="Kennzahlen">
       <Kpi label="Gesamtkosten brutto" value={formatNullableCurrency(kpis.gross)} accent />
       <Kpi label="Gesamtkosten netto" value={formatNullableCurrency(kpis.net)} />
-      <Kpi label="Objekte" value={formatNumber(kpis.objects)} />
-      <Kpi label="Projekte" value={formatNumber(kpis.projects)} />
-      <Kpi label="Dokumente" value={formatNumber(kpis.documents)} />
-      <Kpi label="Unzugeordnet" value={formatNumber(kpis.unassigned)} warning />
+      <Kpi label="Anzahl Objekte" value={formatNumber(kpis.objects)} />
+      <Kpi label="Anzahl Projekte" value={formatNumber(kpis.projects)} />
+      <Kpi label="Anzahl Dokumente" value={formatNumber(kpis.documents)} />
       <Kpi label="Sanierte Wohnungen" value={formatNullableNumber(kpis.apartments)} />
-      <Kpi label="Kosten pro qm" value={formatNullableCurrency(kpis.costPerSqm)} />
+      <Kpi label="Kosten pro Wohnung" value={formatNullableCurrency(kpis.costPerApartment)} />
+      <Kpi label="Kosten pro m2" value={formatNullableCurrency(kpis.costPerSqm)} />
+      <Kpi label="Offene Prueffaelle" value={formatNumber(kpis.reviewCases)} warning />
+      <Kpi label="k.A.-Felder" value={formatNumber(kpis.unknownFields)} warning />
     </section>
   );
 }
@@ -406,13 +510,17 @@ function FilterBar({ filters, setFilters }: { filters: Filters; setFilters: (val
         ["year", "Jahr"],
         ["fund", "Fonds"],
         ["object", "Objekt"],
+        ["objectNumber", "Objektnummer"],
         ["address", "Adresse"],
+        ["project", "Projekt"],
+        ["projectType", "Projektart"],
         ["documentType", "Dokumenttyp"],
-        ["cluster", "Maßnahmencluster"],
-        ["dataQuality", "Datenqualität"],
+        ["provider", "Anbieter"],
         ["apartmentNumber", "Wohnungsnummer"],
         ["location", "Lage"],
-        ["livingAreaSqm", "Wohnfläche m²"]
+        ["cluster", "Massnahmencluster"],
+        ["dataQuality", "Datenqualitaet"],
+        ["status", "Status"]
       ] as Array<[keyof Filters, string]>).map(([key, label]) => (
         <label className="filterInput" key={key}>
           <span>{label}</span>
@@ -423,7 +531,7 @@ function FilterBar({ filters, setFilters }: { filters: Filters; setFilters: (val
           />
         </label>
       ))}
-      <button type="button" onClick={() => setFilters(emptyFilters)}>Filter zurücksetzen</button>
+      <button type="button" onClick={() => setFilters(emptyFilters)}>Filter zuruecksetzen</button>
     </section>
   );
 }
@@ -435,7 +543,7 @@ function PreviewPanel({ previews }: { previews: ParsedPreview[] }) {
       <div className="panelHeader">
         <div>
           <h2>Textvorschau</h2>
-          <p>Rohtext-Prüfung vor der KI-Auswertung.</p>
+          <p>Rohtext-Pruefung vor der KI-Auswertung.</p>
         </div>
       </div>
       <div className="previewList">
@@ -460,6 +568,7 @@ function DocumentTable({
   selectedDocumentId,
   onSelect,
   onAssign,
+  onCreateProject,
   onDelete
 }: {
   documents: ObjectAnalysis[];
@@ -468,6 +577,7 @@ function DocumentTable({
   selectedDocumentId: string | null;
   onSelect: (id: string) => void;
   onAssign: (documentId: string, projectId: string | null) => void;
+  onCreateProject: (document: ObjectAnalysis) => void;
   onDelete: (id: string) => void;
 }) {
   return (
@@ -475,7 +585,7 @@ function DocumentTable({
       <div className="panelHeader tableHeader">
         <div>
           <h2>Dokumente & Kosten</h2>
-          <p>Wohnungsdaten sind nur Dokumentfelder und keine eigene Verwaltungsebene.</p>
+          <p>Eine Zeile je erkanntem Dokument. Wohnungsdaten sind nur Felder, keine eigene Verwaltungsebene.</p>
         </div>
       </div>
       <div className="tableWrap">
@@ -491,13 +601,13 @@ function DocumentTable({
               <th>Anbieter</th>
               <th>Datum</th>
               <th>Wohnung / Lage</th>
-              <th>Wohnfläche</th>
+              <th>Wohnflaeche</th>
               <th>Cluster</th>
               <th>Netto</th>
               <th>MwSt</th>
               <th>Brutto</th>
-              <th>Datenqualität</th>
-              <th>Aktion</th>
+              <th>KI-Status</th>
+              <th>Aktionen</th>
             </tr>
           </thead>
           <tbody>
@@ -516,7 +626,7 @@ function DocumentTable({
                     onClick={(event) => event.stopPropagation()}
                   >
                     <option value="">Unzugeordnet</option>
-                    {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName}</option>)}
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
                   </select>
                 </td>
                 <td>{fieldOrUnknown(document.fund)}</td>
@@ -534,7 +644,11 @@ function DocumentTable({
                 <td className="moneyStrong">{formatCurrency(document.totalCost)}</td>
                 <td>{fieldOrUnknown(document.dataQuality)}</td>
                 <td>
-                  <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(document.id); }}>Löschen</button>
+                  <div className="rowActions">
+                    <button type="button" onClick={(event) => { event.stopPropagation(); onSelect(document.id); }}>Ansehen</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); onCreateProject(document); }}>Projekt erstellen</button>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(document.id); }}>Loeschen</button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -545,18 +659,70 @@ function DocumentTable({
   );
 }
 
-function ObjectsView({ documents, onSelect }: { documents: ObjectAnalysis[]; onSelect: (id: string) => void }) {
-  const objectGroups = groupByObject(documents);
+function ObjectsView({
+  objects,
+  documents,
+  selectedObject,
+  onCreate,
+  onCreateFromDocument,
+  onDelete,
+  onSelectObject,
+  onUpdateObject,
+  onSelectDocument
+}: {
+  objects: ObjectRecord[];
+  documents: ObjectAnalysis[];
+  selectedObject: ObjectRecord | null;
+  onCreate: () => void;
+  onCreateFromDocument: (document: ObjectAnalysis) => void;
+  onDelete: (id: string) => void;
+  onSelectObject: (id: string) => void;
+  onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
+  onSelectDocument: (id: string) => void;
+}) {
+  const detectedGroups = groupByObject(documents);
   return (
     <section className="panel">
       <div className="panelHeader">
         <div>
           <h2>Objekte</h2>
-          <p>Objekte bündeln Projekte und Dokumente anhand Objektnummer oder Adresse.</p>
+          <p>Objekte koennen manuell angelegt und bearbeitet werden. Keine einzelne Wohnungsverwaltung.</p>
+        </div>
+        <button className="buttonPrimary" type="button" onClick={onCreate}>Objekt erstellen</button>
+      </div>
+
+      <div className="projectLayout">
+        <div className="projectList">
+          {objects.length === 0 ? <p className="muted">Noch keine manuell angelegten Objekte.</p> : null}
+          {objects.map((object) => (
+            <button
+              key={object.id}
+              className={selectedObject?.id === object.id ? "projectListItem selectedRow" : "projectListItem"}
+              type="button"
+              onClick={() => onSelectObject(object.id)}
+            >
+              <strong>{objectLabel(object) || "k.A."}</strong>
+              <span>{object.fund || "k.A."}</span>
+            </button>
+          ))}
+        </div>
+        <div>
+          {selectedObject ? (
+            <>
+              <ObjectForm object={selectedObject} onChange={(field, value) => onUpdateObject(selectedObject.id, field, value)} />
+              <div className="headerActions projectActions">
+                <button type="button" onClick={() => onDelete(selectedObject.id)}>Objekt loeschen</button>
+              </div>
+            </>
+          ) : (
+            <div className="emptyState"><p>Kein Objekt ausgewaehlt.</p></div>
+          )}
         </div>
       </div>
+
+      <h3>Aus Dokumenten erkannte Objektbereiche</h3>
       <div className="objectGrid">
-        {objectGroups.map((group) => (
+        {detectedGroups.map((group) => (
           <article className="objectCard" key={group.key}>
             <span>{group.documents.length} Dokument(e)</span>
             <strong>{group.objectNumber || "k.A."}</strong>
@@ -565,7 +731,10 @@ function ObjectsView({ documents, onSelect }: { documents: ObjectAnalysis[]; onS
               <span>Brutto</span>
               <strong>{formatNullableCurrency(sumValues(group.documents.map((document) => document.totalCost.value)))}</strong>
             </div>
-            <button type="button" onClick={() => onSelect(group.documents[0].id)}>Erstes Dokument öffnen</button>
+            <div className="headerActions">
+              <button type="button" onClick={() => onSelectDocument(group.documents[0].id)}>Dokument oeffnen</button>
+              <button type="button" onClick={() => onCreateFromDocument(group.documents[0])}>Objekt daraus erstellen</button>
+            </div>
           </article>
         ))}
       </div>
@@ -575,31 +744,43 @@ function ObjectsView({ documents, onSelect }: { documents: ObjectAnalysis[]; onS
 
 function ProjectsView({
   projects,
+  objects,
   selectedProject,
+  activeTab,
   documents,
+  assignments,
   onCreate,
   onDelete,
   onSelectProject,
+  onSetTab,
   onUpdateProject,
   onSelectDocument,
-  onRemoveDocument
+  onAssign,
+  onRemoveDocument,
+  onDeleteDocument
 }: {
   projects: ProjectRecord[];
+  objects: ObjectRecord[];
   selectedProject: ProjectRecord | null;
+  activeTab: ProjectTab;
   documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
   onCreate: () => void;
   onDelete: (id: string) => void;
   onSelectProject: (id: string) => void;
+  onSetTab: (tab: ProjectTab) => void;
   onUpdateProject: (id: string, field: keyof ProjectRecord, value: string) => void;
   onSelectDocument: (id: string) => void;
+  onAssign: (documentId: string, projectId: string | null) => void;
   onRemoveDocument: (id: string) => void;
+  onDeleteDocument: (id: string) => void;
 }) {
   return (
     <section className="panel">
       <div className="panelHeader">
         <div>
           <h2>Projekte</h2>
-          <p>Projekte erstellen, bearbeiten, löschen und Dokumente zuordnen.</p>
+          <p>Projekt erstellen, bearbeiten, loeschen und Dokumente projektbezogen pruefen.</p>
         </div>
         <button className="buttonPrimary" type="button" onClick={onCreate}>Projekt erstellen</button>
       </div>
@@ -621,19 +802,200 @@ function ProjectsView({
         <div>
           {selectedProject ? (
             <>
-              <ProjectForm project={selectedProject} onChange={(field, value) => onUpdateProject(selectedProject.id, field, value)} />
-              <div className="headerActions projectActions">
-                <button type="button" onClick={() => onDelete(selectedProject.id)}>Projekt löschen</button>
+              <div className="tabs">
+                {projectTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    className={activeTab === tab.key ? "tabButton tabButtonActive" : "tabButton"}
+                    type="button"
+                    onClick={() => onSetTab(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-              <h3>Dokumente zu Projekt</h3>
-              <MiniDocumentList documents={documents} onSelect={onSelectDocument} actionLabel="Entfernen" onAction={onRemoveDocument} />
+              {activeTab === "overview" ? (
+                <>
+                  <ProjectForm
+                    project={selectedProject}
+                    objects={objects}
+                    onChange={(field, value) => onUpdateProject(selectedProject.id, field, value)}
+                  />
+                  <div className="headerActions projectActions">
+                    <button type="button" onClick={() => onDelete(selectedProject.id)}>Projekt loeschen</button>
+                  </div>
+                </>
+              ) : null}
+              {activeTab === "documents" ? (
+                <ProjectDocumentsTab
+                  documents={documents}
+                  projects={projects}
+                  assignments={assignments}
+                  onSelect={onSelectDocument}
+                  onAssign={onAssign}
+                  onRemove={onRemoveDocument}
+                  onDelete={onDeleteDocument}
+                />
+              ) : null}
+              {activeTab === "costs" ? (
+                <ProjectCostsTab project={selectedProject} documents={documents} />
+              ) : null}
+              {activeTab === "measures" ? (
+                <ProjectMeasuresTab documents={documents} />
+              ) : null}
+              {activeTab === "ai" ? (
+                <ProjectAiTab documents={documents} />
+              ) : null}
             </>
           ) : (
-            <div className="emptyState"><p>Kein Projekt ausgewählt.</p></div>
+            <div className="emptyState"><p>Kein Projekt ausgewaehlt.</p></div>
           )}
         </div>
       </div>
     </section>
+  );
+}
+
+function ProjectDocumentsTab({
+  documents,
+  projects,
+  assignments,
+  onSelect,
+  onAssign,
+  onRemove,
+  onDelete
+}: {
+  documents: ObjectAnalysis[];
+  projects: ProjectRecord[];
+  assignments: Record<string, string | null>;
+  onSelect: (id: string) => void;
+  onAssign: (documentId: string, projectId: string | null) => void;
+  onRemove: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="tableWrap">
+      <table className="dataTable">
+        <thead>
+          <tr>
+            <th>Dateiname</th>
+            <th>Dokumenttyp</th>
+            <th>Anbieter</th>
+            <th>Dokumentnummer</th>
+            <th>Datum</th>
+            <th>Wohnungsnummer</th>
+            <th>Lage</th>
+            <th>Netto</th>
+            <th>MwSt</th>
+            <th>Brutto</th>
+            <th>KI-Status</th>
+            <th>Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          {documents.length === 0 ? (
+            <tr><td colSpan={12}>k.A.</td></tr>
+          ) : documents.map((document) => (
+            <tr key={document.id}>
+              <td>{sourceLabel(document.totalCost).split(" - ")[0]}</td>
+              <td>{fieldOrUnknown(document.documentType)}</td>
+              <td>{fieldOrUnknown(document.provider)}</td>
+              <td>{fieldOrUnknown(document.documentNumber)}</td>
+              <td>{fieldOrUnknown(document.documentDate)}</td>
+              <td>{fieldOrUnknown(document.apartmentNumber)}</td>
+              <td>{fieldOrUnknown(document.location)}</td>
+              <td>{formatCurrency(document.netCost)}</td>
+              <td>{formatCurrency(document.vatCost)}</td>
+              <td>{formatCurrency(document.totalCost)}</td>
+              <td>{fieldOrUnknown(document.dataQuality)}</td>
+              <td>
+                <div className="rowActions">
+                  <button type="button" onClick={() => onSelect(document.id)}>Ansehen</button>
+                  <button type="button" onClick={() => onSelect(document.id)}>Bearbeiten</button>
+                  <button type="button">KI erneut</button>
+                  <select value={assignments[document.id] ?? ""} onChange={(event) => onAssign(document.id, event.target.value || null)}>
+                    <option value="">Verschieben</option>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
+                  </select>
+                  <button type="button" onClick={() => onRemove(document.id)}>Entfernen</button>
+                  <button type="button" onClick={() => onDelete(document.id)}>Loeschen</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProjectCostsTab({ project, documents }: { project: ProjectRecord; documents: ObjectAnalysis[] }) {
+  const summary = calculateProjectCosts(project, documents);
+  return (
+    <div className="costSummaryGrid">
+      <CostMetric label="Summe Angebote netto" value={formatNullableCurrency(summary.offersNet)} />
+      <CostMetric label="Summe Angebote brutto" value={formatNullableCurrency(summary.offersGross)} />
+      <CostMetric label="Summe Rechnungen netto" value={formatNullableCurrency(summary.invoicesNet)} />
+      <CostMetric label="Summe Rechnungen brutto" value={formatNullableCurrency(summary.invoicesGross)} />
+      <CostMetric label="Summe Nachtraege netto" value={formatNullableCurrency(summary.supplementsNet)} />
+      <CostMetric label="Summe Nachtraege brutto" value={formatNullableCurrency(summary.supplementsGross)} />
+      <CostMetric label="Summe Schlussrechnungen netto" value={formatNullableCurrency(summary.finalInvoicesNet)} />
+      <CostMetric label="Summe Schlussrechnungen brutto" value={formatNullableCurrency(summary.finalInvoicesGross)} />
+      <CostMetric label="Abweichung Angebot zu Rechnung" value={formatNullableCurrency(summary.offerToInvoiceDelta)} />
+      <CostMetric label="Abweichung Budget zu Ist" value={formatNullableCurrency(summary.budgetToActualDelta)} />
+      <CostMetric label="Kosten pro sanierte Wohnung" value={formatNullableCurrency(summary.costPerApartment)} />
+      <CostMetric label="Kosten pro m2" value={formatNullableCurrency(summary.costPerSqm)} />
+    </div>
+  );
+}
+
+function ProjectMeasuresTab({ documents }: { documents: ObjectAnalysis[] }) {
+  const byCluster = groupByCluster(documents);
+  return (
+    <div className="tableWrap compactTable">
+      <table>
+        <thead>
+          <tr><th>Massnahmencluster</th><th>Dokumente</th><th>Kosten brutto</th></tr>
+        </thead>
+        <tbody>
+          {byCluster.length === 0 ? (
+            <tr><td colSpan={3}>k.A.</td></tr>
+          ) : byCluster.map((entry) => (
+            <tr key={entry.cluster}>
+              <td>{entry.cluster}</td>
+              <td>{entry.count}</td>
+              <td>{formatNullableCurrency(entry.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProjectAiTab({ documents }: { documents: ObjectAnalysis[] }) {
+  return (
+    <div className="previewList">
+      {documents.length === 0 ? <p className="muted">k.A.</p> : null}
+      {documents.map((document) => (
+        <article className="previewItem" key={document.id}>
+          <div className="previewHeader">
+            <strong>{fieldOrUnknown(document.documentType)} - {fieldOrUnknown(document.documentNumber)}</strong>
+            <span className="status statusNeutral">{fieldOrUnknown(document.dataQuality)}</span>
+          </div>
+          <div className="debugGrid">
+            <div className="debugBlock">
+              <h4>Fehlende Angaben</h4>
+              <p>{document.missingInformation.value?.join(", ") || "k.A."}</p>
+            </div>
+            <div className="debugBlock">
+              <h4>Summenblock</h4>
+              <pre>{document.costDebug?.summaryBlock || "k.A."}</pre>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -657,7 +1019,7 @@ function UnassignedView({
       <div className="panelHeader tableHeader">
         <div>
           <h2>Unzugeordnete Dokumente</h2>
-          <p>Hier landen Dokumente ohne sichere Projektzuordnung.</p>
+          <p>Wenn kein Projekt sicher erkannt wird, landet das Dokument hier.</p>
         </div>
       </div>
       <div className="unassignedList">
@@ -666,17 +1028,19 @@ function UnassignedView({
           <article className="unassignedCard" key={document.id}>
             <div>
               <strong>{fieldOrUnknown(document.documentType)} - {fieldOrUnknown(document.documentNumber)}</strong>
-              <p>{fieldOrUnknown(document.objectAddress)} · {formatCurrency(document.totalCost)}</p>
+              <p>{fieldOrUnknown(document.objectAddress)} - {formatCurrency(document.totalCost)}</p>
               <small>KI-Vorschlag: {fieldOrUnknown(document.objectNumber)} / {fieldOrUnknown(document.projectType)}</small>
             </div>
             <div className="headerActions">
               <button type="button" onClick={() => onSelect(document.id)}>Ansehen</button>
+              <button type="button" onClick={() => onSelect(document.id)}>Erkannte Daten bearbeiten</button>
               <select onChange={(event) => onAssign(document.id, event.target.value || null)} defaultValue="">
-                <option value="">Projekt auswählen</option>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName}</option>)}
+                <option value="">Projekt auswaehlen</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
               </select>
               <button type="button" onClick={() => onCreateProject(document)}>Neues Projekt aus Dokument</button>
-              <button type="button" onClick={() => onDelete(document.id)}>Löschen</button>
+              <button type="button">KI erneut</button>
+              <button type="button" onClick={() => onDelete(document.id)}>Loeschen</button>
             </div>
           </article>
         ))}
@@ -685,21 +1049,29 @@ function UnassignedView({
   );
 }
 
-function ReportsView({ documents, projects }: { documents: ObjectAnalysis[]; projects: ProjectRecord[] }) {
+function ReportsView({
+  documents,
+  projects,
+  assignments
+}: {
+  documents: ObjectAnalysis[];
+  projects: ProjectRecord[];
+  assignments: Record<string, string | null>;
+}) {
   const byCluster = groupByCluster(documents);
   return (
     <section className="panel">
       <div className="panelHeader">
         <div>
           <h2>Auswertungen</h2>
-          <p>Kosten nach Objekt, Projekt und Maßnahmencluster.</p>
+          <p>Kosten nach Objekt, Projekt und Massnahmencluster.</p>
         </div>
       </div>
       <div className="objectGrid">
         <ReportCard label="Projekte" value={formatNumber(projects.length)} />
         <ReportCard label="Dokumente" value={formatNumber(documents.length)} />
+        <ReportCard label="Zugeordnet" value={formatNumber(Object.values(assignments).filter(Boolean).length)} />
         <ReportCard label="Brutto" value={formatNullableCurrency(sumValues(documents.map((document) => document.totalCost.value)))} />
-        <ReportCard label="Netto" value={formatNullableCurrency(sumValues(documents.map((document) => document.netCost.value)))} />
       </div>
       <div className="tableWrap compactTable">
         <table>
@@ -727,7 +1099,7 @@ function SettingsView() {
       <div className="panelHeader">
         <div>
           <h2>Einstellungen</h2>
-          <p>OpenAI API-Key und Analyse-Regeln werden über Server-Umgebung und Backend gesteuert.</p>
+          <p>OpenAI API-Key und Analyse-Regeln werden ueber Server-Umgebung und Backend gesteuert.</p>
         </div>
       </div>
       <div className="settingsGrid">
@@ -759,7 +1131,7 @@ function DocumentEditor({
     return (
       <aside className="editorPanel">
         <h2>KI-Daten bearbeiten</h2>
-        <div className="emptyState"><p>Kein Dokument ausgewählt.</p></div>
+        <div className="emptyState"><p>Kein Dokument ausgewaehlt.</p></div>
       </aside>
     );
   }
@@ -783,14 +1155,14 @@ function DocumentEditor({
         <span>Projekt</span>
         <select value={assignedProjectId ?? ""} onChange={(event) => onAssign(event.target.value || null)}>
           <option value="">Unzugeordnet</option>
-          {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName}</option>)}
+          {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
         </select>
       </label>
 
       <div className="editorActions">
         <button type="button" onClick={onCreateProject}>Neues Projekt aus Dokument</button>
         <button type="button">KI erneut starten</button>
-        <button type="button" onClick={onDelete}>Dokument löschen</button>
+        <button type="button" onClick={onDelete}>Dokument loeschen</button>
       </div>
 
       <div className="editForm">
@@ -806,13 +1178,13 @@ function DocumentEditor({
         <EditInput label="Wohnungsnummer" value={fieldOrUnknown(document.apartmentNumber)} onChange={(value) => setText("apartmentNumber", value)} />
         <EditInput label="Lage" value={fieldOrUnknown(document.location)} onChange={(value) => setText("location", value)} />
         <EditInput label="Anzahl sanierte Wohnungen" value={fieldOrUnknown(document.renovatedApartmentCount)} onChange={(value) => setNumber("renovatedApartmentCount", value)} />
-        <EditInput label="Wohnfläche m²" value={fieldOrUnknown(document.livingAreaSqm)} onChange={(value) => setNumber("livingAreaSqm", value)} />
-        <EditInput label="Maßnahmencluster" value={formatClusters(document)} onChange={(value) => setCluster(document.id, value, onUpdate)} />
+        <EditInput label="Wohnflaeche m2" value={fieldOrUnknown(document.livingAreaSqm)} onChange={(value) => setNumber("livingAreaSqm", value)} />
+        <EditInput label="Massnahmencluster" value={formatClusters(document)} onChange={(value) => setCluster(document.id, value, onUpdate)} />
         <EditInput label="Beschreibung" value={fieldOrUnknown(document.measureDescription)} onChange={(value) => setText("measureDescription", value)} />
         <EditInput label="Netto" value={fieldOrUnknown(document.netCost)} onChange={(value) => setNumber("netCost", value)} />
         <EditInput label="MwSt" value={fieldOrUnknown(document.vatCost)} onChange={(value) => setNumber("vatCost", value)} />
         <EditInput label="Brutto" value={fieldOrUnknown(document.totalCost)} onChange={(value) => setNumber("totalCost", value)} />
-        <EditInput label="Datenqualität" value={fieldOrUnknown(document.dataQuality)} onChange={(value) => setText("dataQuality", value)} />
+        <EditInput label="Datenqualitaet" value={fieldOrUnknown(document.dataQuality)} onChange={(value) => setText("dataQuality", value)} />
       </div>
 
       <div className="debugBlock">
@@ -824,54 +1196,61 @@ function DocumentEditor({
   );
 }
 
-function ProjectForm({ project, onChange }: { project: ProjectRecord; onChange: (field: keyof ProjectRecord, value: string) => void }) {
+function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (field: keyof ObjectRecord, value: string) => void }) {
   return (
     <div className="projectForm">
       {([
-        ["projectName", "Projektname"],
-        ["projectType", "Projektart"],
         ["fund", "Fonds"],
-        ["object", "Objekt"],
-        ["status", "Status"],
-        ["budgetNet", "Budget netto"],
-        ["budgetGross", "Budget brutto"],
-        ["startDate", "Startdatum"],
-        ["endDate", "Enddatum"],
-        ["description", "Beschreibung"],
-        ["apartmentNumber", "Wohnungsnummer"],
-        ["location", "Lage"],
-        ["renovatedApartmentCount", "Anzahl sanierte Wohnungen"],
-        ["livingAreaSqm", "Wohnfläche m²"]
-      ] as Array<[keyof ProjectRecord, string]>).map(([field, label]) => (
-        <EditInput key={field} label={label} value={project[field]} onChange={(value) => onChange(field, value)} />
+        ["objectNumber", "Objektnummer"],
+        ["objectName", "Objektname"],
+        ["address", "Adresse"],
+        ["postalCode", "PLZ"],
+        ["city", "Ort"],
+        ["federalState", "Bundesland"],
+        ["constructionYear", "Baujahr"],
+        ["unitCount", "Anzahl Wohneinheiten"],
+        ["totalLivingAreaSqm", "Gesamtwohnflaeche m2"],
+        ["assetManager", "Asset Manager"],
+        ["portfolioManager", "Portfolio Manager"]
+      ] as Array<[keyof ObjectRecord, string]>).map(([field, label]) => (
+        <EditInput key={field} label={label} value={object[field]} onChange={(value) => onChange(field, value)} />
       ))}
     </div>
   );
 }
 
-function MiniDocumentList({
-  documents,
-  onSelect,
-  actionLabel,
-  onAction
+function ProjectForm({
+  project,
+  objects,
+  onChange
 }: {
-  documents: ObjectAnalysis[];
-  onSelect: (id: string) => void;
-  actionLabel: string;
-  onAction: (id: string) => void;
+  project: ProjectRecord;
+  objects: ObjectRecord[];
+  onChange: (field: keyof ProjectRecord, value: string) => void;
 }) {
-  if (documents.length === 0) return <p className="muted">Keine Dokumente zugeordnet.</p>;
   return (
-    <div className="miniList">
-      {documents.map((document) => (
-        <div className="miniItem" key={document.id}>
-          <button type="button" onClick={() => onSelect(document.id)}>
-            <strong>{fieldOrUnknown(document.documentType)} - {fieldOrUnknown(document.documentNumber)}</strong>
-            <span>{formatCurrency(document.totalCost)}</span>
-          </button>
-          <button type="button" onClick={() => onAction(document.id)}>{actionLabel}</button>
-        </div>
-      ))}
+    <div className="projectForm">
+      <EditInput label="Projektname" value={project.projectName} onChange={(value) => onChange("projectName", value)} />
+      <EditInput label="Projektart" value={project.projectType} onChange={(value) => onChange("projectType", value)} />
+      <EditInput label="Fonds" value={project.fund} onChange={(value) => onChange("fund", value)} />
+      <label className="filterInput">
+        <span>Objekt</span>
+        <select value={project.objectId} onChange={(event) => onChange("objectId", event.target.value)}>
+          <option value="">k.A.</option>
+          {objects.map((object) => <option key={object.id} value={object.id}>{objectLabel(object) || "k.A."}</option>)}
+        </select>
+      </label>
+      <EditInput label="Objekt Freitext" value={project.object} onChange={(value) => onChange("object", value)} />
+      <EditInput label="Status" value={project.status} onChange={(value) => onChange("status", value)} />
+      <EditInput label="Budget netto" value={project.budgetNet} onChange={(value) => onChange("budgetNet", value)} />
+      <EditInput label="Budget brutto" value={project.budgetGross} onChange={(value) => onChange("budgetGross", value)} />
+      <EditInput label="Startdatum" value={project.startDate} onChange={(value) => onChange("startDate", value)} />
+      <EditInput label="Enddatum" value={project.endDate} onChange={(value) => onChange("endDate", value)} />
+      <EditInput label="Beschreibung" value={project.description} onChange={(value) => onChange("description", value)} />
+      <EditInput label="Wohnungsnummer" value={project.apartmentNumber} onChange={(value) => onChange("apartmentNumber", value)} />
+      <EditInput label="Lage" value={project.location} onChange={(value) => onChange("location", value)} />
+      <EditInput label="Anzahl sanierte Wohnungen" value={project.renovatedApartmentCount} onChange={(value) => onChange("renovatedApartmentCount", value)} />
+      <EditInput label="Wohnflaeche m2" value={project.livingAreaSqm} onChange={(value) => onChange("livingAreaSqm", value)} />
     </div>
   );
 }
@@ -882,6 +1261,15 @@ function EditInput({ label, value, onChange }: { label: string; value: string; o
       <span>{label}</span>
       <input value={value === "k.A." ? "" : value} onChange={(event) => onChange(event.target.value)} placeholder="k.A." />
     </label>
+  );
+}
+
+function CostMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="costLine">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -903,16 +1291,41 @@ function Kpi({ label, value, accent, warning }: { label: string; value: string; 
   );
 }
 
-function projectFromDocument(document?: ObjectAnalysis): ProjectRecord {
-  const objectLabel = document ? firstKnown(fieldOrUnknown(document.objectNumber), fieldOrUnknown(document.objectAddress)) : "";
+function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
+  return {
+    id: `object-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    fund: document ? emptyIfUnknown(fieldOrUnknown(document.fund)) : "",
+    objectNumber: document ? emptyIfUnknown(fieldOrUnknown(document.objectNumber)) : "",
+    objectName: "",
+    address: document ? emptyIfUnknown(fieldOrUnknown(document.objectAddress)) : "",
+    postalCode: "",
+    city: "",
+    federalState: "",
+    constructionYear: "",
+    unitCount: "",
+    totalLivingAreaSqm: document ? emptyIfUnknown(fieldOrUnknown(document.livingAreaSqm)) : "",
+    assetManager: "",
+    portfolioManager: ""
+  };
+}
+
+function projectFromDocument(document?: ObjectAnalysis, objects: ObjectRecord[] = []): ProjectRecord {
+  const objectNumber = document ? emptyIfUnknown(fieldOrUnknown(document.objectNumber)) : "";
+  const address = document ? emptyIfUnknown(fieldOrUnknown(document.objectAddress)) : "";
+  const matchedObject = objects.find((object) =>
+    (objectNumber && object.objectNumber === objectNumber) ||
+    (address && object.address.toLowerCase() === address.toLowerCase())
+  );
+  const objectText = matchedObject ? objectLabel(matchedObject) : firstKnown(objectNumber, address);
   const projectType = document ? emptyIfUnknown(fieldOrUnknown(document.projectType)) : "";
   return {
     id: `project-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    projectName: document ? `${projectType} ${objectLabel}`.trim() : "",
+    projectName: document ? `${projectType} ${objectText}`.trim() : "",
     projectType,
     fund: document ? emptyIfUnknown(fieldOrUnknown(document.fund)) : "",
-    object: document ? objectLabel : "",
-    status: "Prüfung",
+    objectId: matchedObject?.id ?? "",
+    object: objectText,
+    status: "Pruefung",
     budgetNet: "",
     budgetGross: "",
     startDate: "",
@@ -933,37 +1346,92 @@ function autoAssignDocuments(
   const next = { ...current };
   documents.forEach((document) => {
     if (next[document.id]) return;
-    const matches = projects.filter((project) => {
-      const objectNumber = fieldOrUnknown(document.objectNumber);
-      const address = fieldOrUnknown(document.objectAddress);
-      return (
-        (objectNumber !== "k.A." && project.object.toLowerCase().includes(objectNumber.toLowerCase())) ||
-        (address !== "k.A." && project.object.toLowerCase().includes(address.toLowerCase()))
-      );
-    });
+    const matches = projects.filter((project) => projectMatchesDocument(project, document));
     next[document.id] = matches.length === 1 ? matches[0].id : null;
   });
   return next;
 }
 
-function matchesFilters(document: ObjectAnalysis, filters: Filters): boolean {
+function projectMatchesDocument(project: ProjectRecord, document: ObjectAnalysis): boolean {
+  const objectNumber = fieldOrUnknown(document.objectNumber);
+  const address = fieldOrUnknown(document.objectAddress);
+  const projectType = fieldOrUnknown(document.projectType);
+  return (
+    (objectNumber !== "k.A." && project.object.toLowerCase().includes(objectNumber.toLowerCase())) ||
+    (address !== "k.A." && project.object.toLowerCase().includes(address.toLowerCase())) ||
+    (projectType !== "k.A." && project.projectType.toLowerCase() === projectType.toLowerCase())
+  );
+}
+
+function matchesFilters(
+  document: ObjectAnalysis,
+  filters: Filters,
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+): boolean {
+  const project = projects.find((entry) => entry.id === assignments[document.id]);
   const haystacks = {
     year: String(unwrap(document.year) ?? ""),
     fund: String(unwrap(document.fund) ?? ""),
-    object: String(unwrap(document.objectNumber) ?? ""),
+    object: `${String(unwrap(document.objectNumber) ?? "")} ${String(unwrap(document.objectAddress) ?? "")}`,
+    objectNumber: String(unwrap(document.objectNumber) ?? ""),
     address: String(unwrap(document.objectAddress) ?? ""),
+    project: project?.projectName ?? "",
+    projectType: `${String(unwrap(document.projectType) ?? "")} ${project?.projectType ?? ""}`,
     documentType: String(unwrap(document.documentType) ?? ""),
-    cluster: document.clusters.map((cluster) => unwrap(cluster.cluster) ?? "").join(" "),
-    dataQuality: String(unwrap(document.dataQuality) ?? ""),
+    provider: String(unwrap(document.provider) ?? ""),
     apartmentNumber: String(unwrap(document.apartmentNumber) ?? ""),
     location: String(unwrap(document.location) ?? ""),
-    livingAreaSqm: String(unwrap(document.livingAreaSqm) ?? "")
+    cluster: document.clusters.map((cluster) => unwrap(cluster.cluster) ?? "").join(" "),
+    dataQuality: String(unwrap(document.dataQuality) ?? ""),
+    status: project?.status ?? ""
   };
 
   return Object.entries(filters).every(([key, value]) => {
     if (!value.trim()) return true;
     return haystacks[key as keyof Filters].toLowerCase().includes(value.trim().toLowerCase());
   });
+}
+
+function calculateProjectCosts(project: ProjectRecord, documents: ObjectAnalysis[]): ProjectCostSummary {
+  const offers = documents.filter((document) => /angebot/i.test(fieldOrUnknown(document.documentType)));
+  const invoices = documents.filter((document) => /rechnung/i.test(fieldOrUnknown(document.documentType)) && !/schluss/i.test(fieldOrUnknown(document.documentType)));
+  const supplements = documents.filter((document) => /nachtrag/i.test(fieldOrUnknown(document.documentType)));
+  const finalInvoices = documents.filter((document) => /schlussrechnung|schluss/i.test(fieldOrUnknown(document.documentType)));
+  const offersNet = sumValues(offers.map((document) => document.netCost.value));
+  const offersGross = sumValues(offers.map((document) => document.totalCost.value));
+  const invoicesNet = sumValues(invoices.map((document) => document.netCost.value));
+  const invoicesGross = sumValues(invoices.map((document) => document.totalCost.value));
+  const supplementsNet = sumValues(supplements.map((document) => document.netCost.value));
+  const supplementsGross = sumValues(supplements.map((document) => document.totalCost.value));
+  const finalInvoicesNet = sumValues(finalInvoices.map((document) => document.netCost.value));
+  const finalInvoicesGross = sumValues(finalInvoices.map((document) => document.totalCost.value));
+  const actualGross = firstNumber(finalInvoicesGross, invoicesGross, sumValues(documents.map((document) => document.totalCost.value)));
+  const actualNet = firstNumber(finalInvoicesNet, invoicesNet, sumValues(documents.map((document) => document.netCost.value)));
+  const renovatedApartments = parseGermanNumber(project.renovatedApartmentCount) ?? sumValues(documents.map((document) => document.renovatedApartmentCount.value));
+  const livingArea = parseGermanNumber(project.livingAreaSqm) ?? sumValues(documents.map((document) => document.livingAreaSqm.value));
+  const budgetGross = parseGermanNumber(project.budgetGross);
+  const budgetNet = parseGermanNumber(project.budgetNet);
+  const budgetDelta = budgetGross !== null && actualGross !== null
+    ? actualGross - budgetGross
+    : budgetNet !== null && actualNet !== null
+      ? actualNet - budgetNet
+      : null;
+
+  return {
+    offersNet,
+    offersGross,
+    invoicesNet,
+    invoicesGross,
+    supplementsNet,
+    supplementsGross,
+    finalInvoicesNet,
+    finalInvoicesGross,
+    offerToInvoiceDelta: offersGross !== null && actualGross !== null ? actualGross - offersGross : null,
+    budgetToActualDelta: budgetDelta,
+    costPerApartment: actualGross !== null && renovatedApartments ? actualGross / renovatedApartments : null,
+    costPerSqm: actualGross !== null && livingArea ? actualGross / livingArea : null
+  };
 }
 
 function groupByObject(documents: ObjectAnalysis[]) {
@@ -1034,6 +1502,26 @@ function manualField<T extends string>(value: T): ExtractedField<T> {
   };
 }
 
+function manualNumberField(value: string): ExtractedField<number> {
+  const parsed = parseGermanNumber(value);
+  if (parsed === null) return emptyField<number>();
+  return {
+    value: parsed,
+    sources: [{ documentId: "manual", fileName: "Manuelle Korrektur", method: "Manuell", confidence: 1 }],
+    confidence: 1
+  };
+}
+
+function parseGermanNumber(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
+}
+
+function firstNumber(...values: Array<number | null>): number | null {
+  return values.find((value): value is number => typeof value === "number") ?? null;
+}
+
 function emptyIfUnknown(value: string): string {
   return value === "k.A." ? "" : value;
 }
@@ -1042,15 +1530,8 @@ function firstKnown(...values: string[]): string {
   return values.find((value) => value && value !== "k.A.") ?? "";
 }
 
-function manualNumberField(value: string): ExtractedField<number> {
-  if (!value.trim()) return emptyField<number>();
-  const parsed = Number(value.replace(/\./g, "").replace(",", "."));
-  if (!Number.isFinite(parsed)) return emptyField<number>();
-  return {
-    value: Math.round(parsed * 100) / 100,
-    sources: [{ documentId: "manual", fileName: "Manuelle Korrektur", method: "Manuell", confidence: 1 }],
-    confidence: 1
-  };
+function objectLabel(object: ObjectRecord): string {
+  return firstKnown(object.objectNumber, object.objectName, object.address);
 }
 
 function formatApartment(document: ObjectAnalysis): string {
@@ -1071,6 +1552,13 @@ function sumValues(values: Array<number | null>): number | null {
   const numericValues = values.filter((value): value is number => typeof value === "number");
   if (numericValues.length === 0) return null;
   return numericValues.reduce((sum, value) => sum + value, 0);
+}
+
+function countReviewCases(documents: ObjectAnalysis[]): number {
+  return documents.filter((document) =>
+    /pruefung|prüfung|unsicher|k\.a\./i.test(String(document.dataQuality.value ?? "")) ||
+    document.missingInformation.value?.length
+  ).length;
 }
 
 function countUnknownFields(documents: ObjectAnalysis[]): number {
