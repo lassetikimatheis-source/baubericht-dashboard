@@ -31,6 +31,7 @@ interface AiMeasureResult {
 
 interface AiObjectResult {
   dokumenttyp?: AiField<string>;
+  projektart?: AiField<string>;
   anbieter?: AiField<string>;
   dokumentnummer?: AiField<string>;
   datum?: AiField<string>;
@@ -48,6 +49,7 @@ interface AiObjectResult {
   objectAddress?: AiField<string>;
   renovatedApartmentCount?: AiField<number>;
   renovatedApartments?: AiField<string[]>;
+  livingAreaSqm?: AiField<number>;
   totalAreaSqm?: AiField<number>;
   renovatedAreaSqm?: AiField<number>;
   totalCost?: AiField<number>;
@@ -159,12 +161,14 @@ async function runOpenAiExtractionPerDocument(
           role: "user",
           content: [
             "Extrahiere diese Struktur:",
-            "{ objects: [{ dokumenttyp:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
+            "{ objects: [{ dokumenttyp:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
             "Erlaubte cluster: Planung / Dokumentation, Boden, Maler, Bad / Fliesen, Sanitaer / Heizung, Elektro, Tueren / Fenster, Reinigung, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
             "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitaer - Heizungsarbeiten -> Sanitaer / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Tueren / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
             "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
             "Wenn im Betreff eine Lage wie 2.OG 3.v.li steht, als lage speichern.",
+            "Projektart aus dem Dokument ableiten, z.B. Wohnungssanierung, Fassadensanierung, Dacharbeiten oder Elektroarbeiten, aber nur bei belegbarer Quelle.",
+            "Wohnflaeche m2 nur fuellen, wenn eine Wohnflaeche im Dokument ausdruecklich genannt wird.",
             "Wenn Nettosumme, Umsatzsteuer und Gesamtsumme am Dokumentende stehen, diese Werte bevorzugt verwenden.",
             "Wenn keine Wohnflaeche im Dokument steht, costPerSqm null und fehlende_angaben enthaelt Wohnflaeche in m2.",
             "Nicht jede Einzelposition als Hauptobjekt uebernehmen. Die Haupttabelle fasst je Dokument und Objekt zusammen.",
@@ -219,6 +223,7 @@ function normalizeObjects(
     return {
       id: String(id),
       documentType: verifiedField(object.dokumenttyp, document, "Dokumenttyp", issues),
+      projectType: verifiedField(object.projektart, document, "Projektart", issues),
       provider: verifiedField(object.anbieter, document, "Anbieter", issues),
       year: verifiedField(object.year, document, "Jahr", issues),
       documentDate: verifiedField(object.datum, document, "Datum", issues),
@@ -235,6 +240,7 @@ function normalizeObjects(
         "Welche Wohnungen saniert wurden",
         issues
       ),
+      livingAreaSqm: verifiedField(object.livingAreaSqm, document, "Wohnflaeche", issues),
       totalAreaSqm: verifiedField(object.totalAreaSqm, document, "Gesamtflaeche", issues),
       renovatedAreaSqm: verifiedField(object.renovatedAreaSqm, document, "Sanierte Flaeche", issues),
       netCost,
@@ -368,6 +374,7 @@ function mergeObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
       ...existing,
       year: preferField(existing.year, object.year),
       documentType: preferField(existing.documentType, object.documentType),
+      projectType: preferField(existing.projectType, object.projectType),
       provider: preferField(existing.provider, object.provider),
       fund: preferField(existing.fund, object.fund),
       documentDate: preferField(existing.documentDate, object.documentDate),
@@ -378,6 +385,7 @@ function mergeObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
       location: preferField(existing.location, object.location),
       renovatedApartmentCount: preferField(existing.renovatedApartmentCount, object.renovatedApartmentCount),
       renovatedApartments: preferField(existing.renovatedApartments, object.renovatedApartments),
+      livingAreaSqm: preferField(existing.livingAreaSqm, object.livingAreaSqm),
       totalAreaSqm: preferField(existing.totalAreaSqm, object.totalAreaSqm),
       renovatedAreaSqm: preferField(existing.renovatedAreaSqm, object.renovatedAreaSqm),
       netCost: combineNumberFields(existing.netCost, object.netCost),
@@ -632,6 +640,7 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
 
   return {
     dokumenttyp: aiField("Angebot", "Angebot"),
+    projektart: aiField("Wohnungssanierung", subjectEvidence),
     anbieter: aiField(provider?.[1] ?? null, provider?.[0] ?? null),
     year: aiField(year, date?.[0] ?? documentNumber?.[0] ?? null),
     datum: aiField(date?.[1] ?? null, date?.[0] ?? null),
@@ -643,6 +652,7 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
     lage: aiField(locationAndAddress.location, subjectEvidence),
     renovatedApartmentCount: aiField(1, subjectEvidence),
     renovatedApartments: aiField([apartmentNumber], subjectEvidence),
+    livingAreaSqm: aiField(null, null),
     totalAreaSqm: aiField(null, null),
     renovatedAreaSqm: aiField(null, null),
     kosten_netto: aiField(net.value, net.raw || null),

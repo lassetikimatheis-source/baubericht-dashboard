@@ -77,6 +77,7 @@ export interface LineItem {
 export interface ObjectAnalysis {
   id: string;
   documentType: ExtractedField<string>;
+  projectType: ExtractedField<string>;
   provider: ExtractedField<string>;
   year: ExtractedField<number>;
   fund: ExtractedField<string>;
@@ -88,6 +89,7 @@ export interface ObjectAnalysis {
   documentNumber: ExtractedField<string>;
   renovatedApartmentCount: ExtractedField<number>;
   renovatedApartments: ExtractedField<string[]>;
+  livingAreaSqm: ExtractedField<number>;
   totalAreaSqm: ExtractedField<number>;
   renovatedAreaSqm: ExtractedField<number>;
   netCost: ExtractedField<number>;

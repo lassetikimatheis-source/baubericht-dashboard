@@ -144,6 +144,22 @@ button:disabled {
   background: rgba(255, 255, 255, 0.12);
 }
 
+.navButton {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.86);
+  text-align: left;
+}
+
+.navButton:hover,
+.navButtonActive {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
 .sideNote {
   margin-top: auto;
   color: rgba(255, 255, 255, 0.78);
@@ -660,6 +676,153 @@ tbody tr:hover,
   margin-bottom: 10px;
 }
 
+.appWorkspace {
+  max-width: none;
+}
+
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 16px;
+  align-items: start;
+}
+
+.workspaceMain {
+  min-width: 0;
+}
+
+.editorPanel {
+  position: sticky;
+  top: 18px;
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.06);
+  padding: 16px;
+}
+
+.editorActions {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.editForm,
+.projectForm,
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.editorPanel .editForm {
+  grid-template-columns: 1fr;
+}
+
+select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.projectLayout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.projectList {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.projectListItem {
+  min-height: 64px;
+  display: grid;
+  justify-items: start;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.projectListItem span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.projectActions {
+  justify-content: flex-start;
+  margin: 12px 0 18px;
+}
+
+.miniList,
+.unassignedList {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.miniItem,
+.unassignedCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.miniItem > button:first-child {
+  display: grid;
+  justify-items: start;
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
+.miniItem span,
+.unassignedCard small {
+  color: var(--muted);
+}
+
+.unassignedCard p {
+  margin-bottom: 4px;
+}
+
+.objectGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.objectCard {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.objectCard span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.objectCard strong {
+  color: var(--navy);
+  font-size: 20px;
+}
+
 @media (max-width: 1420px) {
   .kpiGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -682,8 +845,15 @@ tbody tr:hover,
 
   .filterBar,
   .detailGrid,
-  .debugGrid {
+  .debugGrid,
+  .workspaceGrid,
+  .projectLayout {
     grid-template-columns: 1fr;
+  }
+
+  .editorPanel {
+    position: static;
+    max-height: none;
   }
 }
 
@@ -702,7 +872,18 @@ tbody tr:hover,
 
   .kpiGrid,
   .detailMetrics,
-  .debugMatches {
+  .debugMatches,
+  .editForm,
+  .projectForm,
+  .settingsGrid,
+  .objectGrid,
+  .miniItem,
+  .unassignedCard {
     grid-template-columns: 1fr;
+  }
+
+  .miniItem,
+  .unassignedCard {
+    display: grid;
   }
 }

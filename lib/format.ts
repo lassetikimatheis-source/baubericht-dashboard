@@ -33,7 +33,7 @@ export function formatNumber(value: number | ExtractedField<number> | null | und
 
 export function formatSqm(value: number | ExtractedField<number> | null | undefined): string {
   const formatted = formatNumber(value);
-  return formatted === "k.A." ? formatted : `${formatted} qm`;
+  return formatted === "k.A." ? formatted : `${formatted} m²`;
 }
 
 export function formatList(value: string[] | ExtractedField<string[]> | null | undefined): string {
