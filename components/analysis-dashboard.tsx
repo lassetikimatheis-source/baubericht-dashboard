@@ -399,28 +399,26 @@ export function AnalysisDashboard() {
           </div>
         </header>
 
-        <section className="workspaceGrid">
-          <div className="workspaceMain">
-            {view === "dashboard" ? (
-              <>
-                <KpiGrid kpis={kpis} />
-                <FilterBar filters={filters} setFilters={setFilters} />
-                <UploadPanel isAnalyzing={isAnalyzing} message={message} onAnalyze={handleAnalyze} onPreview={handlePreview} />
-                <PreviewPanel previews={previews} />
-                <DocumentTable
-                  documents={filteredDocuments}
-                  projects={projects}
-                  assignments={assignments}
-                  selectedDocumentId={selectedDocument?.id ?? null}
-                  onSelect={setSelectedDocumentId}
-                  onAssign={(documentId, projectId) => setAssignments((current) => ({ ...current, [documentId]: projectId }))}
-                  onCreateProject={createProject}
-                  onDelete={deleteDocument}
-                />
-              </>
-            ) : null}
-
-            {view === "objects" ? (
+        {view === "dashboard" ? (
+          <DashboardView
+            kpis={kpis}
+            documents={filteredDocuments}
+            selectedDocument={selectedDocument}
+            filters={filters}
+            setFilters={setFilters}
+            previews={previews}
+            isAnalyzing={isAnalyzing}
+            message={message}
+            onAnalyze={handleAnalyze}
+            onPreview={handlePreview}
+            onSelectDocument={setSelectedDocumentId}
+            onOpenProjects={() => setView("projects")}
+            onOpenObjects={() => setView("objects")}
+          />
+        ) : (
+          <section className="workspaceGrid">
+            <div className="workspaceMain">
+              {view === "objects" ? (
               <ObjectsView
                 objects={objects}
                 documents={filteredDocuments}
@@ -432,9 +430,9 @@ export function AnalysisDashboard() {
                 onUpdateObject={updateObject}
                 onSelectDocument={setSelectedDocumentId}
               />
-            ) : null}
+              ) : null}
 
-            {view === "projects" ? (
+              {view === "projects" ? (
               <ProjectsView
                 projects={projects}
                 objects={objects}
@@ -452,9 +450,9 @@ export function AnalysisDashboard() {
                 onRemoveDocument={(documentId) => setAssignments((current) => ({ ...current, [documentId]: null }))}
                 onDeleteDocument={deleteDocument}
               />
-            ) : null}
+              ) : null}
 
-            {view === "unassigned" ? (
+              {view === "unassigned" ? (
               <UnassignedView
                 documents={unassignedDocuments}
                 projects={projects}
@@ -463,29 +461,280 @@ export function AnalysisDashboard() {
                 onCreateProject={createProject}
                 onDelete={deleteDocument}
               />
-            ) : null}
+              ) : null}
 
-            {view === "reports" ? (
+              {view === "reports" ? (
               <ReportsView documents={filteredDocuments} projects={projects} assignments={assignments} />
-            ) : null}
+              ) : null}
 
-            {view === "settings" ? (
+              {view === "settings" ? (
               <SettingsView />
-            ) : null}
-          </div>
+              ) : null}
+            </div>
 
-          <DocumentEditor
-            document={selectedDocument}
-            projects={projects}
-            assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
-            onAssign={(projectId) => selectedDocument && setAssignments((current) => ({ ...current, [selectedDocument.id]: projectId }))}
-            onCreateProject={() => selectedDocument && createProject(selectedDocument)}
-            onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
-            onUpdate={updateDocument}
-          />
-        </section>
+            <DocumentEditor
+              document={selectedDocument}
+              projects={projects}
+              assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
+              onAssign={(projectId) => selectedDocument && setAssignments((current) => ({ ...current, [selectedDocument.id]: projectId }))}
+              onCreateProject={() => selectedDocument && createProject(selectedDocument)}
+              onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
+              onUpdate={updateDocument}
+            />
+          </section>
+        )}
       </section>
     </main>
+  );
+}
+
+function DashboardView({
+  kpis,
+  documents,
+  selectedDocument,
+  filters,
+  setFilters,
+  previews,
+  isAnalyzing,
+  message,
+  onAnalyze,
+  onPreview,
+  onSelectDocument,
+  onOpenProjects,
+  onOpenObjects
+}: {
+  kpis: KpiShape;
+  documents: ObjectAnalysis[];
+  selectedDocument: ObjectAnalysis | null;
+  filters: Filters;
+  setFilters: (value: Filters) => void;
+  previews: ParsedPreview[];
+  isAnalyzing: boolean;
+  message: string | null;
+  onAnalyze: (files: File[]) => Promise<void>;
+  onPreview: (files: File[]) => Promise<void>;
+  onSelectDocument: (id: string) => void;
+  onOpenProjects: () => void;
+  onOpenObjects: () => void;
+}) {
+  return (
+    <section className="portfolioDashboard">
+      <div className="dashboardToolbar">
+        <div>
+          <h2>UEBERSICHT</h2>
+          <p>Portfolio Baukosten und Dokumentanalyse</p>
+        </div>
+        <div className="headerActions">
+          <label className="periodSelect">
+            <span>Zeitraum</span>
+            <select value={filters.year} onChange={(event) => setFilters({ ...filters, year: event.target.value })}>
+              <option value="">Alle Jahre</option>
+              <option value="2024">2024</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+            </select>
+          </label>
+          <button type="button" onClick={onOpenProjects}>Projekte</button>
+          <button type="button" onClick={onOpenObjects}>Objekte</button>
+        </div>
+      </div>
+
+      <KpiGrid kpis={kpis} />
+
+      <section className="mapObjectGrid">
+        <PortfolioMap documents={documents} selectedDocument={selectedDocument} onSelectDocument={onSelectDocument} />
+        <ObjectSideList documents={documents} selectedDocument={selectedDocument} onSelectDocument={onSelectDocument} />
+      </section>
+
+      <SelectedPortfolioDetail document={selectedDocument} />
+
+      <section className="dashboardUtilityGrid">
+        <UploadPanel isAnalyzing={isAnalyzing} message={message} onAnalyze={onAnalyze} onPreview={onPreview} />
+        <PreviewPanel previews={previews} />
+      </section>
+    </section>
+  );
+}
+
+function PortfolioMap({
+  documents,
+  selectedDocument,
+  onSelectDocument
+}: {
+  documents: ObjectAnalysis[];
+  selectedDocument: ObjectAnalysis | null;
+  onSelectDocument: (id: string) => void;
+}) {
+  const groups = groupByObject(documents);
+  return (
+    <section className="portfolioMap panel">
+      <div className="mapControls">
+        <button type="button">+</button>
+        <button type="button">-</button>
+      </div>
+      <div className="mapCompass">o</div>
+      <div className="mapCanvas">
+        {groups.length === 0 ? (
+          <div className="mapEmpty">Nach Upload erscheinen erkannte Objekte auf der Karte.</div>
+        ) : groups.map((group, index) => {
+          const left = 14 + ((index * 17) % 70);
+          const top = 18 + ((index * 23) % 58);
+          const active = selectedDocument ? group.documents.some((document) => document.id === selectedDocument.id) : index === 0;
+          return (
+            <button
+              key={group.key}
+              className={active ? "mapMarker mapMarkerActive" : "mapMarker"}
+              style={{ left: `${left}%`, top: `${top}%` }}
+              type="button"
+              onClick={() => onSelectDocument(group.documents[0].id)}
+              title={group.address || group.objectNumber || "Objekt"}
+            >
+              {group.documents.length}
+            </button>
+          );
+        })}
+        {selectedDocument ? (
+          <div className="mapTooltip">
+            <strong>{fieldOrUnknown(selectedDocument.objectAddress)}</strong>
+            <span>{formatClusters(selectedDocument)}</span>
+            <span>{formatCurrency(selectedDocument.totalCost)} Gesamt</span>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ObjectSideList({
+  documents,
+  selectedDocument,
+  onSelectDocument
+}: {
+  documents: ObjectAnalysis[];
+  selectedDocument: ObjectAnalysis | null;
+  onSelectDocument: (id: string) => void;
+}) {
+  const groups = groupByObject(documents).slice(0, 8);
+  return (
+    <section className="panel objectSidePanel">
+      <div className="panelHeader">
+        <div>
+          <h2>Objekte</h2>
+          <p>Erkannte Objektbereiche</p>
+        </div>
+      </div>
+      <input className="sideSearch" placeholder="Suche Objekt..." readOnly />
+      <div className="sideObjectRows">
+        {groups.length === 0 ? <p className="muted">Noch keine Objekte erkannt.</p> : null}
+        {groups.map((group) => {
+          const active = selectedDocument ? group.documents.some((document) => document.id === selectedDocument.id) : false;
+          return (
+            <button
+              key={group.key}
+              className={active ? "sideObjectRow selectedRow" : "sideObjectRow"}
+              type="button"
+              onClick={() => onSelectDocument(group.documents[0].id)}
+            >
+              <span className="pinDot" />
+              <span>{group.address || group.objectNumber || "k.A."}</span>
+              <strong>{group.documents.length}</strong>
+              <em>{formatNullableCurrency(sumValues(group.documents.map((document) => document.totalCost.value)))}</em>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function SelectedPortfolioDetail({ document }: { document: ObjectAnalysis | null }) {
+  if (!document) {
+    return (
+      <section className="panel detailPortfolioPanel">
+        <div className="emptyState">
+          <p>Waehle ein Objekt aus oder lade Dokumente hoch.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel detailPortfolioPanel">
+      <div className="backLink">&lt;- Zurueck zur Karte</div>
+      <h2>{fieldOrUnknown(document.objectAddress)}</h2>
+      <div className="portfolioDetailGrid">
+        <div className="buildingPreview">
+          <div className="buildingImage">
+            <div className="buildingFacade" />
+          </div>
+          <div className="thumbStrip">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+        <div className="infoCard">
+          <h3>Objektinformationen</h3>
+          <InfoLine label="Adresse" value={fieldOrUnknown(document.objectAddress)} />
+          <InfoLine label="Objektnummer" value={fieldOrUnknown(document.objectNumber)} />
+          <InfoLine label="Fonds" value={fieldOrUnknown(document.fund)} />
+          <InfoLine label="Wohnung / Lage" value={formatApartment(document)} />
+          <InfoLine label="Wohnflaeche" value={formatSqm(document.livingAreaSqm)} />
+        </div>
+        <div className="infoCard">
+          <h3>Kostenuebersicht</h3>
+          <InfoLine label="Netto" value={formatCurrency(document.netCost)} />
+          <InfoLine label="MwSt" value={formatCurrency(document.vatCost)} />
+          <InfoLine label="Brutto" value={formatCurrency(document.totalCost)} />
+          <div className="donutMini">
+            <span>{formatCurrency(document.totalCost)}</span>
+          </div>
+        </div>
+        <div className="infoCard">
+          <h3>KI-Pruefung</h3>
+          <InfoLine label="Agent" value={fieldOrUnknown(document.aiAgentName)} />
+          <InfoLine label="Status" value={formatKiStatus(document)} />
+          <InfoLine label="Projektvorschlag" value={fieldOrUnknown(document.projectSuggestion)} />
+          <InfoLine label="Zuordnung" value={fieldOrUnknown(document.assignmentSuggestion)} />
+        </div>
+      </div>
+      <div className="tableWrap compactTable">
+        <table>
+          <thead>
+            <tr>
+              <th>Massnahme</th>
+              <th>Beschreibung</th>
+              <th>Kosten</th>
+              <th>Art</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {document.clusters.length === 0 ? (
+              <tr><td colSpan={5}>k.A.</td></tr>
+            ) : document.clusters.map((cluster) => (
+              <tr key={cluster.id}>
+                <td>{fieldOrUnknown(cluster.cluster)}</td>
+                <td>{fieldOrUnknown(cluster.description)}</td>
+                <td>{formatCurrency(cluster.totalCost)}</td>
+                <td>{fieldOrUnknown(cluster.allocation as ExtractedField<string>)}</td>
+                <td>{fieldOrUnknown(document.dataQuality)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="infoLine">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 

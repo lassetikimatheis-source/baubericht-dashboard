@@ -1,6 +1,6 @@
 :root {
   --navy: #466389;
-  --navy-dark: #31465f;
+  --navy-dark: #071c34;
   --orange: #ff6e42;
   --orange-soft: #fff0eb;
   --ink: #424242;
@@ -90,7 +90,9 @@ button:disabled {
   flex-direction: column;
   gap: 28px;
   padding: 28px 20px;
-  background: var(--navy);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(70, 99, 137, 0.9), transparent 34%),
+    linear-gradient(180deg, #061b32 0%, #02101f 100%);
   color: #fff;
 }
 
@@ -109,6 +111,17 @@ button:disabled {
   border-radius: 6px;
   font-size: 23px;
   font-weight: 800;
+  color: transparent;
+}
+
+.brandMark::before {
+  content: "";
+  width: 24px;
+  height: 28px;
+  display: block;
+  border: 2px solid #fff;
+  border-top: 0;
+  box-shadow: 8px -8px 0 -2px transparent, 8px -8px 0 0 rgba(255, 255, 255, 0.9);
 }
 
 .brand strong,
@@ -179,7 +192,7 @@ button:disabled {
 .content {
   max-width: 1840px;
   width: 100%;
-  padding: 28px;
+  padding: 22px 26px;
 }
 
 .pageHeader {
@@ -264,7 +277,7 @@ h4 {
 
 .kpiGrid {
   display: grid;
-  grid-template-columns: repeat(8, minmax(130px, 1fr));
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -279,22 +292,47 @@ h4 {
 }
 
 .kpi {
-  min-height: 104px;
-  padding: 15px;
+  min-height: 116px;
+  position: relative;
+  overflow: hidden;
+  padding: 18px 18px 14px 72px;
+}
+
+.kpi::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  top: 20px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #edf2f7;
+}
+
+.kpi::after {
+  content: "";
+  position: absolute;
+  left: 30px;
+  top: 31px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--navy);
+  box-shadow: 8px 6px 0 rgba(70, 99, 137, 0.42);
 }
 
 .kpi span {
   display: block;
   margin-bottom: 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .kpi strong {
   display: block;
   color: #2f363d;
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1.18;
 }
 
@@ -310,6 +348,325 @@ h4 {
 .kpiWarning {
   border-color: rgba(255, 110, 66, 0.38);
   background: var(--orange-soft);
+}
+
+.kpi:nth-child(n + 6) {
+  display: none;
+}
+
+.portfolioDashboard {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboardToolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashboardToolbar h2 {
+  margin-bottom: 2px;
+  font-size: 24px;
+  letter-spacing: 0.02em;
+}
+
+.dashboardToolbar p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.periodSelect {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mapObjectGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(320px, 0.95fr);
+  gap: 14px;
+}
+
+.portfolioMap {
+  position: relative;
+  min-height: 360px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.mapCanvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(34deg, transparent 0 47%, rgba(255, 255, 255, 0.88) 47% 49%, transparent 49%),
+    linear-gradient(125deg, transparent 0 44%, rgba(255, 255, 255, 0.85) 44% 46%, transparent 46%),
+    linear-gradient(90deg, rgba(70, 99, 137, 0.08) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(70, 99, 137, 0.08) 1px, transparent 1px),
+    #dfeadf;
+  background-size: 100% 100%, 100% 100%, 74px 74px, 74px 74px, auto;
+}
+
+.mapCanvas::before,
+.mapCanvas::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  opacity: 0.55;
+}
+
+.mapCanvas::before {
+  left: -8%;
+  top: 28%;
+  width: 120%;
+  height: 28px;
+  background: #b7c7d4;
+  transform: rotate(-8deg);
+}
+
+.mapCanvas::after {
+  left: 56%;
+  top: -12%;
+  width: 26px;
+  height: 130%;
+  background: #bdd0dd;
+  transform: rotate(12deg);
+}
+
+.mapControls {
+  position: absolute;
+  z-index: 4;
+  left: 12px;
+  top: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.mapControls button,
+.mapCompass {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(66, 66, 66, 0.12);
+  padding: 0;
+}
+
+.mapCompass {
+  position: absolute;
+  z-index: 4;
+  left: 12px;
+  top: 92px;
+  display: grid;
+  place-items: center;
+  color: var(--navy);
+  font-weight: 900;
+}
+
+.mapMarker {
+  position: absolute;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #116ac5;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(17, 106, 197, 0.32);
+  font-size: 13px;
+  font-weight: 900;
+  padding: 0;
+}
+
+.mapMarkerActive {
+  background: var(--orange);
+  transform: scale(1.08);
+}
+
+.mapTooltip {
+  position: absolute;
+  z-index: 5;
+  left: 17%;
+  bottom: 26%;
+  display: grid;
+  gap: 4px;
+  min-width: 190px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(66, 66, 66, 0.16);
+  padding: 12px;
+  font-size: 13px;
+}
+
+.mapEmpty {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.objectSidePanel {
+  min-height: 360px;
+  padding: 16px;
+}
+
+.sideSearch {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  padding: 0 10px;
+}
+
+.sideObjectRows {
+  display: grid;
+}
+
+.sideObjectRow {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 56px 90px;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 500;
+  padding: 0 0;
+  text-align: left;
+}
+
+.sideObjectRow strong,
+.sideObjectRow em {
+  font-style: normal;
+  text-align: right;
+}
+
+.pinDot {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  border-radius: 50%;
+  background: #6b7280;
+}
+
+.detailPortfolioPanel {
+  padding: 18px;
+}
+
+.backLink {
+  margin-bottom: 12px;
+  color: #0b63c7;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.portfolioDetailGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1.35fr 1.35fr;
+  gap: 14px;
+  margin: 12px 0 14px;
+}
+
+.buildingPreview,
+.infoCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.buildingImage {
+  height: 220px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #a6c8ec 0%, #d9e8f7 42%, #d9d2c5 42%, #b9b2a6 100%);
+}
+
+.buildingFacade {
+  width: 74%;
+  height: 76%;
+  margin: 48px auto 0;
+  border: 2px solid #827b72;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 255, 255, 0.75) 22px 34px),
+    repeating-linear-gradient(0deg, #c7bbaa 0 31px, #998f82 31px 34px);
+  transform: perspective(180px) rotateY(-7deg);
+}
+
+.thumbStrip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.thumbStrip span {
+  height: 46px;
+  border-radius: 5px;
+  background: #c7d3df;
+}
+
+.infoCard h3 {
+  margin-bottom: 16px;
+}
+
+.infoLine {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.infoLine span {
+  color: var(--muted);
+}
+
+.infoLine strong {
+  color: var(--ink);
+}
+
+.donutMini {
+  width: 142px;
+  height: 142px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  margin: 14px auto 0;
+  background: conic-gradient(#126ac6 0 64%, #62a746 64% 100%);
+}
+
+.donutMini span {
+  width: 82px;
+  height: 82px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.dashboardUtilityGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
 }
 
 .kpiWarning strong {
@@ -888,7 +1245,9 @@ select {
   .debugGrid,
   .workspaceGrid,
   .projectLayout,
-  .costSummaryGrid {
+  .costSummaryGrid,
+  .mapObjectGrid,
+  .portfolioDetailGrid {
     grid-template-columns: 1fr;
   }
 
@@ -918,6 +1277,7 @@ select {
   .projectForm,
   .settingsGrid,
   .objectGrid,
+  .portfolioDetailGrid,
   .miniItem,
   .unassignedCard {
     grid-template-columns: 1fr;
