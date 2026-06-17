@@ -6,19 +6,24 @@ import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
 import {
   deleteDocument as deleteStoredDocument,
+  deleteEntrance as deleteStoredEntrance,
   deleteObject as deleteStoredObject,
   deleteProject as deleteStoredProject,
   getAssignments,
   getDocuments,
+  getEntrances,
   getObjects,
   getProjects,
   saveAssignments,
   saveDocument,
+  saveEntrance,
   saveObject,
   saveProject,
   updateDocument as updateStoredDocument,
+  updateEntrance as updateStoredEntrance,
   updateObject as updateStoredObject,
   updateProject as updateStoredProject,
+  type StoredEntranceRecord,
   type StoredObjectRecord,
   type StoredProjectRecord
 } from "../lib/storage";
@@ -26,6 +31,7 @@ import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, Po
 
 type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
+type ObjectTab = "overview" | "entrances" | "projects" | "documents" | "costs";
 type TextFieldKey =
   | "fund"
   | "objectNumber"
@@ -60,6 +66,7 @@ interface ParsedPreview {
 }
 
 type ObjectRecord = StoredObjectRecord;
+type EntranceRecord = StoredEntranceRecord;
 type ProjectRecord = StoredProjectRecord;
 
 interface Filters {
@@ -142,16 +149,26 @@ const projectTabs: Array<{ key: ProjectTab; label: string }> = [
   { key: "ai", label: "KI-Pruefung" }
 ];
 
+const objectTabs: Array<{ key: ObjectTab; label: string }> = [
+  { key: "overview", label: "Uebersicht" },
+  { key: "entrances", label: "Hauseingaenge" },
+  { key: "projects", label: "Projekte" },
+  { key: "documents", label: "Dokumente" },
+  { key: "costs", label: "Kosten" }
+];
+
 export function AnalysisDashboard() {
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("dashboard");
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
+  const [entrances, setEntrances] = useState<EntranceRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [objectImages, setObjectImages] = useState<Record<string, string[]>>({});
   const [assignments, setAssignments] = useState<Record<string, string | null>>({});
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
+  const [objectTab, setObjectTab] = useState<ObjectTab>("overview");
   const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -160,11 +177,13 @@ export function AnalysisDashboard() {
 
   useEffect(() => {
     const storedObjects = getObjects();
+    const storedEntrances = getEntrances();
     const storedProjects = getProjects();
     const storedDocuments = getDocuments();
     const storedAssignments = getAssignments();
 
     setObjects(storedObjects);
+    setEntrances(storedEntrances);
     setProjects(storedProjects);
     setAssignments(storedAssignments);
     setAnalysis(buildAnalysisFromDocuments(storedDocuments));
@@ -307,12 +326,46 @@ export function AnalysisDashboard() {
 
   function deleteObject(objectId: string) {
     deleteStoredObject(objectId);
+    entrances.filter((entrance) => entrance.objectId === objectId).forEach((entrance) => deleteStoredEntrance(entrance.id));
     setObjects((current) => current.filter((object) => object.id !== objectId));
+    setEntrances((current) => current.filter((entrance) => entrance.objectId !== objectId));
     setProjects((current) => current.map((project) => {
       if (project.objectId !== objectId) return project;
-      return updateStoredProject({ ...project, objectId: "", object: "" });
+      return updateStoredProject({ ...project, objectId: "", object: "", entranceId: "", entrance: "" });
     }));
     setSelectedObjectId(null);
+  }
+
+  function createEntrance(objectId: string) {
+    const entrance = saveEntrance(emptyEntrance(objectId));
+    setEntrances((current) => [...current.filter((entry) => entry.id !== entrance.id), entrance]);
+    setObjectTab("entrances");
+  }
+
+  function updateEntrance(entranceId: string, field: keyof EntranceRecord, value: string) {
+    let updatedEntrance: EntranceRecord | null = null;
+    setEntrances((current) => current.map((entrance) => {
+      if (entrance.id !== entranceId) return entrance;
+      const updated = updateStoredEntrance({ ...entrance, [field]: value });
+      updatedEntrance = updated;
+      return updated;
+    }));
+    if (updatedEntrance) {
+      const entranceName = entranceLabel(updatedEntrance);
+      setProjects((current) => current.map((project) => {
+        if (project.entranceId !== entranceId) return project;
+        return updateStoredProject({ ...project, entrance: entranceName });
+      }));
+    }
+  }
+
+  function deleteEntrance(entranceId: string) {
+    deleteStoredEntrance(entranceId);
+    setEntrances((current) => current.filter((entrance) => entrance.id !== entranceId));
+    setProjects((current) => current.map((project) => {
+      if (project.entranceId !== entranceId) return project;
+      return updateStoredProject({ ...project, entranceId: "", entrance: "" });
+    }));
   }
 
   function createProject(seed?: ObjectAnalysis) {
@@ -351,7 +404,11 @@ export function AnalysisDashboard() {
         if (project.id !== projectId) return project;
         if (field === "objectId") {
           const object = objects.find((entry) => entry.id === value);
-          return updateStoredProject({ ...project, objectId: value, object: object ? objectLabel(object) : "" });
+          return updateStoredProject({ ...project, objectId: value, object: object ? objectLabel(object) : "", entranceId: "", entrance: "" });
+        }
+        if (field === "entranceId") {
+          const entrance = entrances.find((entry) => entry.id === value);
+          return updateStoredProject({ ...project, entranceId: value, entrance: entrance ? entranceLabel(entrance) : "" });
         }
         return updateStoredProject({ ...project, [field]: value });
       })
@@ -409,7 +466,7 @@ export function AnalysisDashboard() {
         </nav>
         <div className="sideNote">
           <span>Struktur</span>
-          <strong>Objekt - Projekt - Dokumente - Kosten</strong>
+          <strong>Fonds - Objekt - Hauseingang - Projekt - Dokumente</strong>
           <p>Keine einzelne Wohnungsverwaltung in diesem Schritt.</p>
         </div>
       </aside>
@@ -431,11 +488,19 @@ export function AnalysisDashboard() {
         {view === "dashboard" ? (
           <DashboardView
             kpis={kpis}
+            objects={objects}
+            projects={projects}
             documents={filteredDocuments}
+            assignments={assignments}
             selectedDocument={selectedDocument}
             filters={filters}
             setFilters={setFilters}
             onSelectDocument={setSelectedDocumentId}
+            onOpenObject={(objectId) => {
+              setSelectedObjectId(objectId);
+              setObjectTab("overview");
+              setView("objects");
+            }}
             onOpenProjects={() => setView("projects")}
             onOpenObjects={() => setView("objects")}
           />
@@ -445,14 +510,22 @@ export function AnalysisDashboard() {
               {view === "objects" ? (
               <ObjectsView
                 objects={objects}
+                entrances={entrances}
+                projects={projects}
+                assignments={assignments}
                 documents={filteredDocuments}
                 selectedObject={selectedObject}
+                activeTab={objectTab}
                 objectImages={objectImages}
                 onCreate={() => createObject()}
                 onCreateFromDocument={createObject}
+                onCreateEntrance={createEntrance}
                 onDelete={deleteObject}
+                onDeleteEntrance={deleteEntrance}
                 onSelectObject={setSelectedObjectId}
+                onSetTab={setObjectTab}
                 onUpdateObject={updateObject}
+                onUpdateEntrance={updateEntrance}
                 onAddObjectImages={(objectId, files) => {
                   const urls = Array.from(files).map((file) => URL.createObjectURL(file));
                   setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
@@ -475,6 +548,7 @@ export function AnalysisDashboard() {
               <ProjectsView
                 projects={projects}
                 objects={objects}
+                entrances={entrances}
                 selectedProject={selectedProject}
                 activeTab={projectTab}
                 documents={selectedProjectDocuments}
@@ -529,20 +603,28 @@ export function AnalysisDashboard() {
 
 function DashboardView({
   kpis,
+  objects,
+  projects,
   documents,
+  assignments,
   selectedDocument,
   filters,
   setFilters,
   onSelectDocument,
+  onOpenObject,
   onOpenProjects,
   onOpenObjects
 }: {
   kpis: KpiShape;
+  objects: ObjectRecord[];
+  projects: ProjectRecord[];
   documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
   selectedDocument: ObjectAnalysis | null;
   filters: Filters;
   setFilters: (value: Filters) => void;
   onSelectDocument: (id: string) => void;
+  onOpenObject: (id: string) => void;
   onOpenProjects: () => void;
   onOpenObjects: () => void;
 }) {
@@ -571,8 +653,24 @@ function DashboardView({
       <KpiGrid kpis={kpis} />
 
       <section className="mapObjectGrid">
-        <PortfolioMap documents={documents} selectedDocument={selectedDocument} onSelectDocument={onSelectDocument} />
-        <ObjectSideList documents={documents} selectedDocument={selectedDocument} onSelectDocument={onSelectDocument} />
+        <PortfolioMap
+          objects={objects}
+          projects={projects}
+          documents={documents}
+          assignments={assignments}
+          selectedDocument={selectedDocument}
+          onSelectDocument={onSelectDocument}
+          onOpenObject={onOpenObject}
+        />
+        <ObjectSideList
+          objects={objects}
+          projects={projects}
+          documents={documents}
+          assignments={assignments}
+          selectedDocument={selectedDocument}
+          onSelectDocument={onSelectDocument}
+          onOpenObject={onOpenObject}
+        />
       </section>
 
       <SelectedPortfolioDetail document={selectedDocument} />
@@ -609,15 +707,23 @@ function DocumentUploadView({
 }
 
 function PortfolioMap({
+  objects,
+  projects,
   documents,
+  assignments,
   selectedDocument,
-  onSelectDocument
+  onSelectDocument,
+  onOpenObject
 }: {
+  objects: ObjectRecord[];
+  projects: ProjectRecord[];
   documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
   selectedDocument: ObjectAnalysis | null;
   onSelectDocument: (id: string) => void;
+  onOpenObject: (id: string) => void;
 }) {
-  const groups = groupByObject(documents);
+  const entries = buildMapEntries(objects, projects, documents, assignments);
   return (
     <section className="portfolioMap panel">
       <div className="mapControls">
@@ -626,22 +732,22 @@ function PortfolioMap({
       </div>
       <div className="mapCompass">o</div>
       <div className="mapCanvas">
-        {groups.length === 0 ? (
-          <div className="mapEmpty">Nach Upload erscheinen erkannte Objekte auf der Karte.</div>
-        ) : groups.map((group, index) => {
+        {entries.length === 0 ? (
+          <div className="mapEmpty">Nach Upload oder Objektanlage erscheinen Wirtschaftseinheiten auf der Karte.</div>
+        ) : entries.map((entry, index) => {
           const left = 14 + ((index * 17) % 70);
           const top = 18 + ((index * 23) % 58);
-          const active = selectedDocument ? group.documents.some((document) => document.id === selectedDocument.id) : index === 0;
+          const active = selectedDocument ? entry.documents.some((document) => document.id === selectedDocument.id) : index === 0;
           return (
             <button
-              key={group.key}
+              key={entry.key}
               className={active ? "mapMarker mapMarkerActive" : "mapMarker"}
               style={{ left: `${left}%`, top: `${top}%` }}
               type="button"
-              onClick={() => onSelectDocument(group.documents[0].id)}
-              title={group.address || group.objectNumber || "Objekt"}
+              onClick={() => entry.objectId ? onOpenObject(entry.objectId) : entry.documents[0] && onSelectDocument(entry.documents[0].id)}
+              title={entry.title}
             >
-              {group.documents.length}
+              {entry.projectCount || entry.documents.length || 1}
             </button>
           );
         })}
@@ -658,15 +764,23 @@ function PortfolioMap({
 }
 
 function ObjectSideList({
+  objects,
+  projects,
   documents,
+  assignments,
   selectedDocument,
-  onSelectDocument
+  onSelectDocument,
+  onOpenObject
 }: {
+  objects: ObjectRecord[];
+  projects: ProjectRecord[];
   documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
   selectedDocument: ObjectAnalysis | null;
   onSelectDocument: (id: string) => void;
+  onOpenObject: (id: string) => void;
 }) {
-  const groups = groupByObject(documents).slice(0, 8);
+  const entries = buildMapEntries(objects, projects, documents, assignments).slice(0, 8);
   return (
     <section className="panel objectSidePanel">
       <div className="panelHeader">
@@ -677,20 +791,20 @@ function ObjectSideList({
       </div>
       <input className="sideSearch" placeholder="Suche Objekt..." readOnly />
       <div className="sideObjectRows">
-        {groups.length === 0 ? <p className="muted">Noch keine Objekte erkannt.</p> : null}
-        {groups.map((group) => {
-          const active = selectedDocument ? group.documents.some((document) => document.id === selectedDocument.id) : false;
+        {entries.length === 0 ? <p className="muted">Noch keine Objekte vorhanden.</p> : null}
+        {entries.map((entry) => {
+          const active = selectedDocument ? entry.documents.some((document) => document.id === selectedDocument.id) : false;
           return (
             <button
-              key={group.key}
+              key={entry.key}
               className={active ? "sideObjectRow selectedRow" : "sideObjectRow"}
               type="button"
-              onClick={() => onSelectDocument(group.documents[0].id)}
+              onClick={() => entry.objectId ? onOpenObject(entry.objectId) : entry.documents[0] && onSelectDocument(entry.documents[0].id)}
             >
               <span className="pinDot" />
-              <span>{group.address || group.objectNumber || "k.A."}</span>
-              <strong>{group.documents.length}</strong>
-              <em>{formatNullableCurrency(sumValues(group.documents.map((document) => document.totalCost.value)))}</em>
+              <span>{entry.title}</span>
+              <strong>{entry.projectCount} P / {entry.documents.length} D</strong>
+              <em>{formatNullableCurrency(entry.totalCost)}</em>
             </button>
           );
         })}
@@ -965,30 +1079,49 @@ function DocumentTable({
 
 function ObjectsView({
   objects,
+  entrances,
+  projects,
+  assignments,
   documents,
   selectedObject,
+  activeTab,
   objectImages,
   onCreate,
   onCreateFromDocument,
+  onCreateEntrance,
   onDelete,
+  onDeleteEntrance,
   onSelectObject,
+  onSetTab,
   onUpdateObject,
+  onUpdateEntrance,
   onAddObjectImages,
   onSelectDocument
 }: {
   objects: ObjectRecord[];
+  entrances: EntranceRecord[];
+  projects: ProjectRecord[];
+  assignments: Record<string, string | null>;
   documents: ObjectAnalysis[];
   selectedObject: ObjectRecord | null;
+  activeTab: ObjectTab;
   objectImages: Record<string, string[]>;
   onCreate: () => void;
   onCreateFromDocument: (document: ObjectAnalysis) => void;
+  onCreateEntrance: (objectId: string) => void;
   onDelete: (id: string) => void;
+  onDeleteEntrance: (id: string) => void;
   onSelectObject: (id: string) => void;
+  onSetTab: (tab: ObjectTab) => void;
   onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
+  onUpdateEntrance: (id: string, field: keyof EntranceRecord, value: string) => void;
   onAddObjectImages: (id: string, files: FileList) => void;
   onSelectDocument: (id: string) => void;
 }) {
   const detectedGroups = groupByObject(documents);
+  const selectedEntrances = selectedObject ? entrances.filter((entrance) => entrance.objectId === selectedObject.id) : [];
+  const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
+  const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
   return (
     <section className="panel">
       <div className="panelHeader">
@@ -1017,11 +1150,50 @@ function ObjectsView({
         <div>
           {selectedObject ? (
             <>
-              <ObjectForm object={selectedObject} onChange={(field, value) => onUpdateObject(selectedObject.id, field, value)} />
-              <ObjectImageUpload
-                images={objectImages[selectedObject.id] ?? []}
-                onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
-              />
+              <ObjectDetailHeader object={selectedObject} entrances={selectedEntrances} projects={selectedProjects} documents={selectedDocuments} />
+              <div className="tabs">
+                {objectTabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    className={activeTab === tab.key ? "tabButton tabButtonActive" : "tabButton"}
+                    type="button"
+                    onClick={() => onSetTab(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              {activeTab === "overview" ? (
+                <>
+                  <ObjectForm object={selectedObject} onChange={(field, value) => onUpdateObject(selectedObject.id, field, value)} />
+                  <ObjectImageUpload
+                    images={objectImages[selectedObject.id] ?? []}
+                    onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
+                  />
+                </>
+              ) : null}
+              {activeTab === "entrances" ? (
+                <EntrancesTab
+                  entrances={selectedEntrances}
+                  onCreate={() => onCreateEntrance(selectedObject.id)}
+                  onDelete={onDeleteEntrance}
+                  onUpdate={onUpdateEntrance}
+                />
+              ) : null}
+              {activeTab === "projects" ? <ObjectProjectsTab projects={selectedProjects} /> : null}
+              {activeTab === "documents" ? (
+                <ObjectDocumentsTab documents={selectedDocuments} onSelect={onSelectDocument} />
+              ) : null}
+              {activeTab === "costs" ? (
+                <ObjectCostsTab
+                  object={selectedObject}
+                  entrances={selectedEntrances}
+                  projects={selectedProjects}
+                  documents={selectedDocuments}
+                  allProjects={projects}
+                  assignments={assignments}
+                />
+              ) : null}
               <div className="headerActions projectActions">
                 <button type="button" onClick={() => onDelete(selectedObject.id)}>Objekt loeschen</button>
               </div>
@@ -1055,6 +1227,173 @@ function ObjectsView({
         ))}
       </div>
     </section>
+  );
+}
+
+function ObjectDetailHeader({
+  object,
+  entrances,
+  projects,
+  documents
+}: {
+  object: ObjectRecord;
+  entrances: EntranceRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+}) {
+  return (
+    <div className="objectDetailHeader">
+      <div>
+        <span className="eyebrow">Wirtschaftseinheit</span>
+        <h3>{object.objectNumber || object.objectName || "k.A."}</h3>
+        <p>{object.address || "Adressbereich k.A."}</p>
+      </div>
+      <div className="objectHeaderMetrics">
+        <CostMetric label="Hauseingaenge" value={formatNumber(entrances.length)} />
+        <CostMetric label="Projekte" value={formatNumber(projects.length)} />
+        <CostMetric label="Dokumente" value={formatNumber(documents.length)} />
+        <CostMetric label="Kosten brutto" value={formatNullableCurrency(sumValues(documents.map((document) => document.totalCost.value)))} />
+      </div>
+    </div>
+  );
+}
+
+function EntrancesTab({
+  entrances,
+  onCreate,
+  onUpdate,
+  onDelete
+}: {
+  entrances: EntranceRecord[];
+  onCreate: () => void;
+  onUpdate: (id: string, field: keyof EntranceRecord, value: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="stackSection">
+      <div className="panelHeader compactHeader">
+        <div>
+          <h3>Hauseingaenge</h3>
+          <p>Ein Objekt kann eine ganze Wirtschaftseinheit wie Pamirweg 1-14 umfassen.</p>
+        </div>
+        <button className="buttonPrimary" type="button" onClick={onCreate}>Hauseingang anlegen</button>
+      </div>
+      {entrances.length === 0 ? <div className="emptyState"><p>Noch keine Hauseingaenge angelegt.</p></div> : null}
+      <div className="entranceGrid">
+        {entrances.map((entrance) => (
+          <article className="entranceCard" key={entrance.id}>
+            <EntranceForm entrance={entrance} onChange={(field, value) => onUpdate(entrance.id, field, value)} />
+            <div className="headerActions">
+              <button type="button" onClick={() => onDelete(entrance.id)}>Hauseingang loeschen</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ObjectProjectsTab({ projects }: { projects: ProjectRecord[] }) {
+  return (
+    <div className="tableWrap compactTable">
+      <table>
+        <thead>
+          <tr><th>Projekt</th><th>Projektart</th><th>Hauseingang</th><th>Status</th><th>Budget brutto</th></tr>
+        </thead>
+        <tbody>
+          {projects.length === 0 ? <tr><td colSpan={5}>k.A.</td></tr> : projects.map((project) => (
+            <tr key={project.id}>
+              <td>{project.projectName || "k.A."}</td>
+              <td>{project.projectType || "k.A."}</td>
+              <td>{project.entrance || "k.A."}</td>
+              <td>{project.status || "k.A."}</td>
+              <td>{project.budgetGross || "k.A."}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ObjectDocumentsTab({ documents, onSelect }: { documents: ObjectAnalysis[]; onSelect: (id: string) => void }) {
+  return (
+    <div className="tableWrap compactTable">
+      <table>
+        <thead>
+          <tr><th>Dokumenttyp</th><th>Anbieter</th><th>Dokumentnummer</th><th>Adresse</th><th>Brutto</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {documents.length === 0 ? <tr><td colSpan={6}>k.A.</td></tr> : documents.map((document) => (
+            <tr key={document.id} onClick={() => onSelect(document.id)}>
+              <td>{fieldOrUnknown(document.documentType)}</td>
+              <td>{fieldOrUnknown(document.provider)}</td>
+              <td>{fieldOrUnknown(document.documentNumber)}</td>
+              <td>{fieldOrUnknown(document.objectAddress)}</td>
+              <td>{formatCurrency(document.totalCost)}</td>
+              <td>{formatKiStatus(document)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ObjectCostsTab({
+  object,
+  entrances,
+  projects,
+  documents,
+  allProjects,
+  assignments
+}: {
+  object: ObjectRecord;
+  entrances: EntranceRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+  allProjects: ProjectRecord[];
+  assignments: Record<string, string | null>;
+}) {
+  const objectTotal = sumValues(documents.map((document) => document.totalCost.value));
+  return (
+    <div className="costHierarchy">
+      <CostMetric label={`Gesamtkosten Objekt ${object.objectNumber || "k.A."}`} value={formatNullableCurrency(objectTotal)} />
+      <div className="tableWrap compactTable">
+        <table>
+          <thead>
+            <tr><th>Ebene</th><th>Bezeichnung</th><th>Projekte</th><th>Dokumente</th><th>Kosten brutto</th></tr>
+          </thead>
+          <tbody>
+            {entrances.length === 0 ? <tr><td colSpan={5}>Keine Hauseingaenge angelegt.</td></tr> : entrances.map((entrance) => {
+              const entranceProjects = projects.filter((project) => project.entranceId === entrance.id);
+              const entranceDocuments = documents.filter((document) => documentBelongsToEntrance(document, entrance, allProjects, assignments));
+              return (
+                <tr key={entrance.id}>
+                  <td>Hauseingang</td>
+                  <td>{entranceLabel(entrance) || "k.A."}</td>
+                  <td>{formatNumber(entranceProjects.length)}</td>
+                  <td>{formatNumber(entranceDocuments.length)}</td>
+                  <td>{formatNullableCurrency(sumValues(entranceDocuments.map((document) => document.totalCost.value)))}</td>
+                </tr>
+              );
+            })}
+            {projects.map((project) => {
+              const projectDocuments = documents.filter((document) => assignments[document.id] === project.id);
+              return (
+                <tr key={project.id}>
+                  <td>Projekt</td>
+                  <td>{project.projectName || "k.A."}</td>
+                  <td>1</td>
+                  <td>{formatNumber(projectDocuments.length)}</td>
+                  <td>{formatNullableCurrency(sumValues(projectDocuments.map((document) => document.totalCost.value)))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -1127,6 +1466,7 @@ function ObjectImageUpload({ images, onAdd }: { images: string[]; onAdd: (files:
 function ProjectsView({
   projects,
   objects,
+  entrances,
   selectedProject,
   activeTab,
   documents,
@@ -1143,6 +1483,7 @@ function ProjectsView({
 }: {
   projects: ProjectRecord[];
   objects: ObjectRecord[];
+  entrances: EntranceRecord[];
   selectedProject: ProjectRecord | null;
   activeTab: ProjectTab;
   documents: ObjectAnalysis[];
@@ -1201,6 +1542,7 @@ function ProjectsView({
                   <ProjectForm
                     project={selectedProject}
                     objects={objects}
+                    entrances={entrances}
                     onChange={(field, value) => onUpdateProject(selectedProject.id, field, value)}
                   />
                   <div className="headerActions projectActions">
@@ -1600,7 +1942,7 @@ function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (fie
         ["fund", "Fonds"],
         ["objectNumber", "Objektnummer"],
         ["objectName", "Objektname"],
-        ["address", "Adresse"],
+        ["address", "Adressbereich"],
         ["postalCode", "PLZ"],
         ["city", "Ort"],
         ["federalState", "Bundesland"],
@@ -1616,15 +1958,36 @@ function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (fie
   );
 }
 
+function EntranceForm({ entrance, onChange }: { entrance: EntranceRecord; onChange: (field: keyof EntranceRecord, value: string) => void }) {
+  return (
+    <div className="projectForm entranceForm">
+      {([
+        ["street", "Strasse"],
+        ["houseNumber", "Hausnummer"],
+        ["suffix", "Zusatz"],
+        ["postalCode", "PLZ"],
+        ["city", "Ort"],
+        ["livingAreaSqm", "Wohnflaeche"],
+        ["unitCount", "Anzahl WE"]
+      ] as Array<[keyof EntranceRecord, string]>).map(([field, label]) => (
+        <EditInput key={field} label={label} value={String(entrance[field] ?? "")} onChange={(value) => onChange(field, value)} />
+      ))}
+    </div>
+  );
+}
+
 function ProjectForm({
   project,
   objects,
+  entrances,
   onChange
 }: {
   project: ProjectRecord;
   objects: ObjectRecord[];
+  entrances: EntranceRecord[];
   onChange: (field: keyof ProjectRecord, value: string) => void;
 }) {
+  const objectEntrances = entrances.filter((entrance) => entrance.objectId === project.objectId);
   return (
     <div className="projectForm">
       <EditInput label="Projektname" value={project.projectName} onChange={(value) => onChange("projectName", value)} />
@@ -1638,6 +2001,14 @@ function ProjectForm({
         </select>
       </label>
       <EditInput label="Objekt Freitext" value={project.object} onChange={(value) => onChange("object", value)} />
+      <label className="filterInput">
+        <span>Hauseingang</span>
+        <select value={project.entranceId ?? ""} onChange={(event) => onChange("entranceId", event.target.value)}>
+          <option value="">k.A.</option>
+          {objectEntrances.map((entrance) => <option key={entrance.id} value={entrance.id}>{entranceLabel(entrance) || "k.A."}</option>)}
+        </select>
+      </label>
+      <EditInput label="Hauseingang Freitext" value={project.entrance ?? ""} onChange={(value) => onChange("entrance", value)} />
       <EditInput label="Status" value={project.status} onChange={(value) => onChange("status", value)} />
       <EditInput label="Budget netto" value={project.budgetNet} onChange={(value) => onChange("budgetNet", value)} />
       <EditInput label="Budget brutto" value={project.budgetGross} onChange={(value) => onChange("budgetGross", value)} />
@@ -1711,6 +2082,20 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
   };
 }
 
+function emptyEntrance(objectId: string): EntranceRecord {
+  return {
+    id: `entrance-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    objectId,
+    street: "",
+    houseNumber: "",
+    suffix: "",
+    postalCode: "",
+    city: "",
+    livingAreaSqm: "",
+    unitCount: ""
+  };
+}
+
 function projectFromDocument(document?: ObjectAnalysis, objects: ObjectRecord[] = []): ProjectRecord {
   const objectNumber = document ? emptyIfUnknown(fieldOrUnknown(document.objectNumber)) : "";
   const address = document ? emptyIfUnknown(fieldOrUnknown(document.objectAddress)) : "";
@@ -1728,6 +2113,8 @@ function projectFromDocument(document?: ObjectAnalysis, objects: ObjectRecord[] 
     fund: document ? emptyIfUnknown(fieldOrUnknown(document.fund)) : "",
     objectId: matchedObject?.id ?? "",
     object: objectText,
+    entranceId: "",
+    entrance: "",
     status: "Pruefung",
     budgetNet: "",
     budgetGross: "",
@@ -1975,6 +2362,67 @@ function groupByObject(documents: ObjectAnalysis[]) {
   }));
 }
 
+function buildMapEntries(
+  objects: ObjectRecord[],
+  projects: ProjectRecord[],
+  documents: ObjectAnalysis[],
+  assignments: Record<string, string | null>
+) {
+  const objectEntries = objects.map((object) => {
+    const objectDocuments = documents.filter((document) => documentBelongsToObject(document, object, projects, assignments));
+    const objectProjects = projects.filter((project) => project.objectId === object.id);
+    return {
+      key: object.id,
+      objectId: object.id,
+      title: objectLabel(object) || "k.A.",
+      projectCount: objectProjects.length,
+      documents: objectDocuments,
+      totalCost: sumValues(objectDocuments.map((document) => document.totalCost.value))
+    };
+  });
+
+  if (objectEntries.length > 0) return objectEntries;
+
+  return groupByObject(documents).map((group) => ({
+    key: group.key,
+    objectId: "",
+    title: group.address || group.objectNumber || "k.A.",
+    projectCount: 0,
+    documents: group.documents,
+    totalCost: sumValues(group.documents.map((document) => document.totalCost.value))
+  }));
+}
+
+function documentBelongsToObject(
+  document: ObjectAnalysis,
+  object: ObjectRecord,
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+): boolean {
+  const assignedProject = projects.find((project) => project.id === assignments[document.id]);
+  if (assignedProject?.objectId) return assignedProject.objectId === object.id;
+  const documentObjectNumber = fieldOrUnknown(document.objectNumber);
+  const documentAddress = fieldOrUnknown(document.objectAddress).toLowerCase();
+  return (
+    (object.objectNumber && documentObjectNumber !== "k.A." && object.objectNumber === documentObjectNumber) ||
+    (object.address && documentAddress !== "k.a." && documentAddress.includes(object.address.toLowerCase())) ||
+    (object.objectName && documentAddress !== "k.a." && documentAddress.includes(object.objectName.toLowerCase()))
+  );
+}
+
+function documentBelongsToEntrance(
+  document: ObjectAnalysis,
+  entrance: EntranceRecord,
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+): boolean {
+  const assignedProject = projects.find((project) => project.id === assignments[document.id]);
+  if (assignedProject?.entranceId) return assignedProject.entranceId === entrance.id;
+  const address = fieldOrUnknown(document.objectAddress).toLowerCase();
+  const label = entranceLabel(entrance).toLowerCase();
+  return label !== "k.a." && address.includes(label);
+}
+
 function groupByCluster(documents: ObjectAnalysis[]) {
   const groups = new Map<string, { count: number; total: number | null }>();
   documents.forEach((document) => {
@@ -2057,6 +2505,12 @@ function firstKnown(...values: string[]): string {
 
 function objectLabel(object: ObjectRecord): string {
   return firstKnown(object.objectNumber, object.objectName, object.address);
+}
+
+function entranceLabel(entrance: EntranceRecord): string {
+  const streetLine = `${entrance.street} ${entrance.houseNumber}${entrance.suffix}`.trim();
+  const cityLine = firstKnown(entrance.city, entrance.postalCode);
+  return firstKnown(streetLine, cityLine);
 }
 
 function formatApartment(document: ObjectAnalysis): string {

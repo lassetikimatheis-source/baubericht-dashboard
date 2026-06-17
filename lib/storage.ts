@@ -25,6 +25,8 @@ export interface StoredProjectRecord {
   fund: string;
   objectId: string;
   object: string;
+  entranceId?: string;
+  entrance?: string;
   status: string;
   budgetNet: string;
   budgetGross: string;
@@ -39,8 +41,23 @@ export interface StoredProjectRecord {
   updatedAt?: string;
 }
 
+export interface StoredEntranceRecord {
+  id: string;
+  objectId: string;
+  street: string;
+  houseNumber: string;
+  suffix: string;
+  postalCode: string;
+  city: string;
+  livingAreaSqm: string;
+  unitCount: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 const STORAGE_KEYS = {
   objects: "paribus-baukosten.objects.v1",
+  entrances: "paribus-baukosten.entrances.v1",
   projects: "paribus-baukosten.projects.v1",
   documents: "paribus-baukosten.documents.v1",
   assignments: "paribus-baukosten.assignments.v1"
@@ -65,6 +82,27 @@ export function deleteObject(id: string): void {
 
 export function getObjects(): StoredObjectRecord[] {
   return readCollection<StoredObjectRecord>(STORAGE_KEYS.objects);
+}
+
+export function saveEntrance(entrance: StoredEntranceRecord): StoredEntranceRecord {
+  const now = timestamp();
+  const next = { ...entrance, createdAt: entrance.createdAt ?? now, updatedAt: now };
+  upsertItem(STORAGE_KEYS.entrances, next);
+  return next;
+}
+
+export function updateEntrance(entrance: StoredEntranceRecord): StoredEntranceRecord {
+  const next = { ...entrance, updatedAt: timestamp() };
+  upsertItem(STORAGE_KEYS.entrances, next);
+  return next;
+}
+
+export function deleteEntrance(id: string): void {
+  deleteItem(STORAGE_KEYS.entrances, id);
+}
+
+export function getEntrances(): StoredEntranceRecord[] {
+  return readCollection<StoredEntranceRecord>(STORAGE_KEYS.entrances);
 }
 
 export function saveProject(project: StoredProjectRecord): StoredProjectRecord {
