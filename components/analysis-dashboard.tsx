@@ -32,6 +32,7 @@ import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, Po
 type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
 type ObjectTab = "overview" | "entrances" | "projects" | "documents" | "costs";
+type OverviewGroup = "object" | "entrance" | "project" | "document";
 type TextFieldKey =
   | "fund"
   | "objectNumber"
@@ -114,6 +115,26 @@ interface ProjectCostSummary {
   costPerSqm: number | null;
 }
 
+interface OverviewRow {
+  id: string;
+  level: string;
+  objectNumber: string;
+  addressRange: string;
+  economicUnit: string;
+  entrance: string;
+  apartments: string;
+  renovatedCount: number | null;
+  clusters: string;
+  description: string;
+  netCost: number | null;
+  grossCost: number | null;
+  costPerRenovatedUnit: number | null;
+  costPerSqm: number | null;
+  documentCount: number;
+  dataQuality: string;
+  documentId?: string;
+}
+
 const emptyFilters: Filters = {
   year: "",
   fund: "",
@@ -169,6 +190,7 @@ export function AnalysisDashboard() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const [objectTab, setObjectTab] = useState<ObjectTab>("overview");
+  const [overviewGroup, setOverviewGroup] = useState<OverviewGroup>("object");
   const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -489,12 +511,15 @@ export function AnalysisDashboard() {
           <DashboardView
             kpis={kpis}
             objects={objects}
+            entrances={entrances}
             projects={projects}
             documents={filteredDocuments}
             assignments={assignments}
+            overviewGroup={overviewGroup}
             selectedDocument={selectedDocument}
             filters={filters}
             setFilters={setFilters}
+            onSetOverviewGroup={setOverviewGroup}
             onSelectDocument={setSelectedDocumentId}
             onOpenObject={(objectId) => {
               setSelectedObjectId(objectId);
@@ -604,12 +629,15 @@ export function AnalysisDashboard() {
 function DashboardView({
   kpis,
   objects,
+  entrances,
   projects,
   documents,
   assignments,
+  overviewGroup,
   selectedDocument,
   filters,
   setFilters,
+  onSetOverviewGroup,
   onSelectDocument,
   onOpenObject,
   onOpenProjects,
@@ -617,12 +645,15 @@ function DashboardView({
 }: {
   kpis: KpiShape;
   objects: ObjectRecord[];
+  entrances: EntranceRecord[];
   projects: ProjectRecord[];
   documents: ObjectAnalysis[];
   assignments: Record<string, string | null>;
+  overviewGroup: OverviewGroup;
   selectedDocument: ObjectAnalysis | null;
   filters: Filters;
   setFilters: (value: Filters) => void;
+  onSetOverviewGroup: (value: OverviewGroup) => void;
   onSelectDocument: (id: string) => void;
   onOpenObject: (id: string) => void;
   onOpenProjects: () => void;
@@ -674,6 +705,18 @@ function DashboardView({
       </section>
 
       <SelectedPortfolioDetail document={selectedDocument} />
+
+      <PortfolioOverviewTable
+        group={overviewGroup}
+        objects={objects}
+        entrances={entrances}
+        projects={projects}
+        documents={documents}
+        assignments={assignments}
+        selectedDocumentId={selectedDocument?.id ?? null}
+        onSetGroup={onSetOverviewGroup}
+        onSelectDocument={onSelectDocument}
+      />
     </section>
   );
 }
@@ -917,6 +960,108 @@ function KpiGrid({ kpis }: { kpis: KpiShape }) {
       <Kpi label="Kosten pro m2" value={formatNullableCurrency(kpis.costPerSqm)} />
       <Kpi label="Offene Prueffaelle" value={formatNumber(kpis.reviewCases)} warning />
       <Kpi label="k.A.-Felder" value={formatNumber(kpis.unknownFields)} warning />
+    </section>
+  );
+}
+
+function PortfolioOverviewTable({
+  group,
+  objects,
+  entrances,
+  projects,
+  documents,
+  assignments,
+  selectedDocumentId,
+  onSetGroup,
+  onSelectDocument
+}: {
+  group: OverviewGroup;
+  objects: ObjectRecord[];
+  entrances: EntranceRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
+  selectedDocumentId: string | null;
+  onSetGroup: (value: OverviewGroup) => void;
+  onSelectDocument: (id: string) => void;
+}) {
+  const rows = buildOverviewRows(group, objects, entrances, projects, documents, assignments);
+
+  return (
+    <section className="panel panelFlush overviewPanel">
+      <div className="panelHeader tableHeader">
+        <div>
+          <h2>Objektuebersicht</h2>
+          <p>Umschaltbar nach Gesamtobjekt, Hauseingang, Projekt oder Dokument.</p>
+        </div>
+        <div className="segmentedControl" aria-label="Gruppierung">
+          {([
+            ["object", "Gesamtobjekt"],
+            ["entrance", "Hauseingang"],
+            ["project", "Projekt"],
+            ["document", "Dokument"]
+          ] as Array<[OverviewGroup, string]>).map(([key, label]) => (
+            <button
+              key={key}
+              className={group === key ? "segmentButton segmentButtonActive" : "segmentButton"}
+              type="button"
+              onClick={() => onSetGroup(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="tableWrap">
+        <table className="dataTable overviewTable">
+          <thead>
+            <tr>
+              <th>Ebene</th>
+              <th>Objektnummer</th>
+              <th>Objektadresse / Adressbereich</th>
+              <th>Gesamtobjekt / Wirtschaftseinheit</th>
+              <th>Hauseingang</th>
+              <th>Welche WE / Wohnungen saniert</th>
+              <th>Anzahl sanierte WE</th>
+              <th>Massnahmencluster</th>
+              <th>Kurzbeschreibung</th>
+              <th>Kosten netto</th>
+              <th>Kosten brutto</th>
+              <th>Durchschnitt pro WE</th>
+              <th>Kosten pro m2</th>
+              <th>Anzahl Dokumente</th>
+              <th>Datenqualitaet / Prueffall</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={15}>k.A.</td></tr>
+            ) : rows.map((row) => (
+              <tr
+                key={row.id}
+                className={row.documentId && row.documentId === selectedDocumentId ? "selectedRow" : ""}
+                onClick={() => row.documentId && onSelectDocument(row.documentId)}
+              >
+                <td>{row.level}</td>
+                <td>{row.objectNumber}</td>
+                <td className="wideCell">{row.addressRange}</td>
+                <td>{row.economicUnit}</td>
+                <td>{row.entrance}</td>
+                <td>{row.apartments}</td>
+                <td>{formatNullableNumber(row.renovatedCount)}</td>
+                <td className="clusterCell">{row.clusters}</td>
+                <td className="wideCell">{row.description}</td>
+                <td>{formatNullableCurrency(row.netCost)}</td>
+                <td className="moneyStrong">{formatNullableCurrency(row.grossCost)}</td>
+                <td>{formatNullableCurrency(row.costPerRenovatedUnit)}</td>
+                <td>{formatNullableCurrency(row.costPerSqm)}</td>
+                <td>{formatNumber(row.documentCount)}</td>
+                <td>{row.dataQuality}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -2397,6 +2542,197 @@ function calculateProjectCosts(project: ProjectRecord, documents: ObjectAnalysis
   };
 }
 
+function buildOverviewRows(
+  group: OverviewGroup,
+  objects: ObjectRecord[],
+  entrances: EntranceRecord[],
+  projects: ProjectRecord[],
+  documents: ObjectAnalysis[],
+  assignments: Record<string, string | null>
+): OverviewRow[] {
+  if (group === "document") {
+    return documents.map((document) => overviewRowFromDocuments({
+      id: `document-${document.id}`,
+      level: "Dokument",
+      documents: [document],
+      projects,
+      assignments,
+      documentId: document.id
+    }));
+  }
+
+  if (group === "project") {
+    const projectRows = projects.map((project) => {
+      const projectDocuments = documents.filter((document) => assignments[document.id] === project.id);
+      return overviewRowFromDocuments({
+        id: `project-${project.id}`,
+        level: "Projekt",
+        documents: projectDocuments,
+        project,
+        projects,
+        assignments,
+        manualRenovatedCount: parseGermanNumber(project.renovatedApartmentCount),
+        manualLivingArea: parseGermanNumber(project.livingAreaSqm)
+      });
+    });
+    const unassignedRows = documents
+      .filter((document) => !assignments[document.id])
+      .map((document) => overviewRowFromDocuments({
+        id: `project-unassigned-${document.id}`,
+        level: "Projekt",
+        documents: [document],
+        projects,
+        assignments,
+        documentId: document.id
+      }));
+    return [...projectRows, ...unassignedRows];
+  }
+
+  if (group === "entrance") {
+    const entranceRows = entrances.map((entrance) => {
+      const entranceProjects = projects.filter((project) => project.entranceId === entrance.id);
+      const entranceDocuments = documents.filter((document) => documentBelongsToEntrance(document, entrance, projects, assignments));
+      const object = objects.find((entry) => entry.id === entrance.objectId);
+      return overviewRowFromDocuments({
+        id: `entrance-${entrance.id}`,
+        level: "Hauseingang",
+        documents: entranceDocuments,
+        object,
+        entrance,
+        projects: entranceProjects,
+        assignments,
+        manualLivingArea: parseGermanNumber(entrance.livingAreaSqm)
+      });
+    });
+
+    if (entranceRows.length > 0) return entranceRows;
+    return groupByObject(documents).map((entry) => overviewRowFromDocuments({
+      id: `entrance-detected-${entry.key}`,
+      level: "Hauseingang",
+      documents: entry.documents,
+      projects,
+      assignments
+    }));
+  }
+
+  const objectRows = objects.map((object) => {
+    const objectProjects = projects.filter((project) => project.objectId === object.id);
+    const objectDocuments = documents.filter((document) => documentBelongsToObject(document, object, projects, assignments));
+    return overviewRowFromDocuments({
+      id: `object-${object.id}`,
+      level: "Gesamtobjekt",
+      documents: objectDocuments,
+      object,
+      projects: objectProjects,
+      assignments,
+      manualLivingArea: parseGermanNumber(object.totalLivingAreaSqm)
+    });
+  });
+
+  if (objectRows.length > 0) return objectRows;
+  return groupByObject(documents).map((entry) => overviewRowFromDocuments({
+    id: `object-detected-${entry.key}`,
+    level: "Gesamtobjekt",
+    documents: entry.documents,
+    projects,
+    assignments
+  }));
+}
+
+function overviewRowFromDocuments({
+  id,
+  level,
+  documents,
+  object,
+  entrance,
+  project,
+  projects,
+  assignments,
+  manualRenovatedCount = null,
+  manualLivingArea = null,
+  documentId
+}: {
+  id: string;
+  level: string;
+  documents: ObjectAnalysis[];
+  object?: ObjectRecord;
+  entrance?: EntranceRecord;
+  project?: ProjectRecord;
+  projects: ProjectRecord[];
+  assignments: Record<string, string | null>;
+  manualRenovatedCount?: number | null;
+  manualLivingArea?: number | null;
+  documentId?: string;
+}): OverviewRow {
+  const firstDocument = documents[0] ?? null;
+  const assignedProject = firstDocument ? projects.find((entry) => entry.id === assignments[firstDocument.id]) : null;
+  const rowProject = project ?? assignedProject;
+  const netCost = sumValues(documents.map((document) => document.netCost.value));
+  const grossCost = sumValues(documents.map((document) => document.totalCost.value));
+  const renovatedCount = firstNumber(manualRenovatedCount, sumValues(documents.map((document) => document.renovatedApartmentCount.value)));
+  const livingArea = firstNumber(manualLivingArea, sumValues(documents.map((document) => document.livingAreaSqm.value)));
+  const apartments = collectApartments(documents, rowProject);
+
+  return {
+    id,
+    level,
+    objectNumber: firstKnown(object?.objectNumber ?? "", firstDocument ? fieldOrUnknown(firstDocument.objectNumber) : ""),
+    addressRange: firstKnown(object?.address ?? "", firstDocument ? fieldOrUnknown(firstDocument.objectAddress) : ""),
+    economicUnit: firstKnown(object ? objectLabel(object) : "", rowProject?.object ?? "", firstDocument ? fieldOrUnknown(firstDocument.objectNumber) : ""),
+    entrance: firstKnown(entrance ? entranceLabel(entrance) : "", rowProject?.entrance ?? ""),
+    apartments,
+    renovatedCount,
+    clusters: collectClusters(documents),
+    description: collectDescriptions(documents, rowProject),
+    netCost,
+    grossCost,
+    costPerRenovatedUnit: grossCost !== null && renovatedCount ? roundMoney(grossCost / renovatedCount) : null,
+    costPerSqm: grossCost !== null && livingArea ? roundMoney(grossCost / livingArea) : null,
+    documentCount: documents.length,
+    dataQuality: collectQuality(documents),
+    documentId
+  };
+}
+
+function collectApartments(documents: ObjectAnalysis[], project?: ProjectRecord): string {
+  const values = new Set<string>();
+  if (project?.apartmentNumber) values.add(project.apartmentNumber);
+  documents.forEach((document) => {
+    document.renovatedApartments.value?.forEach((entry) => entry && values.add(entry));
+    const apartment = fieldOrUnknown(document.apartmentNumber);
+    if (apartment !== "k.A.") values.add(apartment);
+  });
+  return values.size > 0 ? Array.from(values).join(", ") : "k.A.";
+}
+
+function collectClusters(documents: ObjectAnalysis[]): string {
+  const values = new Set<string>();
+  documents.forEach((document) => {
+    document.clusters.forEach((cluster) => {
+      if (cluster.cluster.value) values.add(cluster.cluster.value);
+    });
+  });
+  return values.size > 0 ? Array.from(values).join(", ") : "k.A.";
+}
+
+function collectDescriptions(documents: ObjectAnalysis[], project?: ProjectRecord): string {
+  const values = new Set<string>();
+  if (project?.description) values.add(project.description);
+  documents.forEach((document) => {
+    const description = fieldOrUnknown(document.measureDescription);
+    if (description !== "k.A.") values.add(description);
+  });
+  return values.size > 0 ? Array.from(values).slice(0, 3).join(" | ") : "k.A.";
+}
+
+function collectQuality(documents: ObjectAnalysis[]): string {
+  if (documents.length === 0) return "k.A.";
+  const values = new Set(documents.map(formatKiStatus).filter((value) => value && value !== "k.A."));
+  if (values.size === 0) return "k.A.";
+  if (Array.from(values).some((value) => /pruefung|manuell|unsicher|k\.a\./i.test(value))) return "Prueffall";
+  return Array.from(values).join(", ");
+}
+
 function groupByObject(documents: ObjectAnalysis[]) {
   const groups = new Map<string, ObjectAnalysis[]>();
   documents.forEach((document) => {
@@ -2589,6 +2925,10 @@ function sumValues(values: Array<number | null>): number | null {
   const numericValues = values.filter((value): value is number => typeof value === "number");
   if (numericValues.length === 0) return null;
   return numericValues.reduce((sum, value) => sum + value, 0);
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function countReviewCases(documents: ObjectAnalysis[]): number {
