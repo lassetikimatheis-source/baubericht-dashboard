@@ -194,7 +194,7 @@ button:disabled {
 .content {
   max-width: 1840px;
   width: 100%;
-  padding: 22px 26px;
+  padding: 18px 24px;
 }
 
 .pageHeader {
@@ -202,7 +202,7 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 22px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .headerActions {
@@ -280,8 +280,8 @@ h4 {
 .kpiGrid {
   display: grid;
   grid-template-columns: repeat(5, minmax(160px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 14px;
+  margin-bottom: 0;
 }
 
 .kpi,
@@ -294,10 +294,10 @@ h4 {
 }
 
 .kpi {
-  min-height: 116px;
+  min-height: 104px;
   position: relative;
   overflow: hidden;
-  padding: 18px 18px 14px 72px;
+  padding: 17px 18px 13px 72px;
 }
 
 .kpi::before {
@@ -413,6 +413,15 @@ h4 {
   gap: 14px;
 }
 
+.dashboardMapGrid .leafletCard {
+  min-height: 380px;
+  height: 380px;
+}
+
+.dashboardMapGrid .portfolioMap {
+  min-height: 440px;
+}
+
 .portfolioMap {
   position: relative;
   min-height: 360px;
@@ -526,24 +535,54 @@ h4 {
 
 .sideObjectRow {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) 56px 90px;
-  gap: 8px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  min-height: 44px;
+  min-height: 58px;
   border: 0;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   background: #fff;
   color: var(--ink);
   font-weight: 500;
-  padding: 0 0;
+  padding: 8px 0;
   text-align: left;
 }
 
-.sideObjectRow strong,
-.sideObjectRow em {
+.sideObjectText {
+  display: grid;
+  gap: 3px;
+}
+
+.sideObjectText strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sideObjectText em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
   font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sideObjectMeta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
   text-align: right;
+}
+
+.sideObjectCost {
+  grid-column: 2 / -1;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .pinDot {
@@ -1282,6 +1321,7 @@ select {
 
 .objectFormPanel {
   box-shadow: none;
+  padding: 16px;
 }
 
 .detectedObjectSection {
@@ -1303,7 +1343,7 @@ select {
   gap: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
   margin-bottom: 14px;
   padding: 16px;
 }
@@ -1331,13 +1371,13 @@ select {
 
 .tabButton {
   min-height: 34px;
-  border-radius: 999px;
+  border-radius: 6px;
   background: #fff;
 }
 
 .tabButtonActive {
   border-color: var(--navy);
-  background: #f8fbff;
+  background: #f0f5fb;
   color: var(--navy);
 }
 
@@ -1548,7 +1588,7 @@ select {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  margin-top: 14px;
+  margin-top: 0;
   padding: 16px;
 }
 
@@ -1602,13 +1642,16 @@ select {
   border: 1px dashed #cbd3dc;
   border-radius: 8px;
   color: var(--muted);
+  min-height: 260px;
+  display: grid;
+  place-items: center;
   padding: 22px;
   text-align: center;
 }
 
 .objectImageGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -1618,6 +1661,11 @@ select {
   border-radius: 8px;
   border: 1px solid var(--line);
   object-fit: cover;
+}
+
+.objectImageGrid img:first-child {
+  grid-column: 1 / -1;
+  aspect-ratio: 16 / 9;
 }
 
 .detectedImages {

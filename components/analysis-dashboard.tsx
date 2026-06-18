@@ -585,6 +585,11 @@ export function AnalysisDashboard() {
             setFilters={setFilters}
             onSetOverviewGroup={setOverviewGroup}
             onSelectDocument={setSelectedDocumentId}
+            onOpenObject={(objectId) => {
+              setSelectedObjectId(objectId);
+              setObjectTab("overview");
+              setView("objects");
+            }}
             onOpenProjects={() => setView("projects")}
             onOpenObjects={() => setView("objects")}
           />
@@ -716,6 +721,7 @@ function DashboardView({
   setFilters,
   onSetOverviewGroup,
   onSelectDocument,
+  onOpenObject,
   onOpenProjects,
   onOpenObjects
 }: {
@@ -732,6 +738,7 @@ function DashboardView({
   setFilters: (value: Filters) => void;
   onSetOverviewGroup: (value: OverviewGroup) => void;
   onSelectDocument: (id: string) => void;
+  onOpenObject: (id: string) => void;
   onOpenProjects: () => void;
   onOpenObjects: () => void;
 }) {
@@ -775,6 +782,27 @@ function DashboardView({
         projects={projects}
         assignments={assignments}
       />
+
+      <section className="mapObjectGrid dashboardMapGrid">
+        <PortfolioMap
+          objects={dashboardObjects}
+          projects={dashboardProjects}
+          documents={documents}
+          assignments={assignments}
+          selectedDocument={selectedDocument}
+          onSelectDocument={onSelectDocument}
+          onOpenObject={onOpenObject}
+        />
+        <ObjectSideList
+          objects={dashboardObjects}
+          projects={dashboardProjects}
+          documents={documents}
+          assignments={assignments}
+          selectedDocument={selectedDocument}
+          onSelectDocument={onSelectDocument}
+          onOpenObject={onOpenObject}
+        />
+      </section>
 
       <PortfolioOverviewTable
         group={overviewGroup}
@@ -964,9 +992,12 @@ function ObjectSideList({
               onClick={() => entry.objectId ? onOpenObject(entry.objectId) : entry.documents[0] && onSelectDocument(entry.documents[0].id)}
             >
               <span className="pinDot" />
-              <span>{entry.title}</span>
-              <strong>{entry.projectCount} P / {entry.documents.length} D</strong>
-              <em>{entry.latitude === null || entry.longitude === null ? "Koordinaten fehlen" : formatNullableCurrency(entry.totalCost)}</em>
+              <span className="sideObjectText">
+                <strong>{entry.title}</strong>
+                <em>{entry.address}</em>
+              </span>
+              <span className="sideObjectMeta">{entry.projectCount} P / {entry.documents.length} D</span>
+              <span className="sideObjectCost">{entry.latitude === null || entry.longitude === null ? "Koordinaten fehlen" : formatNullableCurrency(entry.totalCost)}</span>
             </button>
           );
         })}
