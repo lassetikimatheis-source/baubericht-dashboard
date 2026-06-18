@@ -38,7 +38,7 @@ const LeafletObjectMap = dynamic<LeafletObjectMapProps>(() => import("./leaflet-
 
 type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
-type ObjectTab = "overview" | "entrances" | "projects" | "documents" | "costs";
+type ObjectTab = "overview" | "measures" | "costs" | "projects" | "documents" | "ai" | "entrances";
 type OverviewGroup = "object" | "entrance" | "project" | "document";
 type TextFieldKey =
   | "fund"
@@ -142,6 +142,28 @@ interface OverviewRow {
   documentId?: string;
 }
 
+interface MeasureRow {
+  id: string;
+  documentId: string;
+  measureId: string;
+  cluster: string;
+  description: string;
+  netCost: number | null;
+  vatCost: number | null;
+  grossCost: number | null;
+  source: string;
+  status: string;
+  section: string;
+  confidence: string;
+  lineItems: LineItemView[];
+}
+
+interface LineItemView {
+  position: string;
+  description: string | null;
+  totalPrice: number | null;
+}
+
 interface MapEntry {
   key: string;
   objectId: string;
@@ -194,10 +216,12 @@ const projectTabs: Array<{ key: ProjectTab; label: string }> = [
 
 const objectTabs: Array<{ key: ObjectTab; label: string }> = [
   { key: "overview", label: "Uebersicht" },
-  { key: "entrances", label: "Hauseingaenge" },
+  { key: "measures", label: "Massnahmen" },
+  { key: "costs", label: "Kosten" },
   { key: "projects", label: "Projekte" },
   { key: "documents", label: "Dokumente" },
-  { key: "costs", label: "Kosten" }
+  { key: "ai", label: "KI-Pruefung" },
+  { key: "entrances", label: "Hauseingaenge" }
 ];
 
 export function AnalysisDashboard() {
@@ -503,7 +527,7 @@ export function AnalysisDashboard() {
               className={view === item.key ? "navButton navButtonActive" : "navButton"}
               type="button"
               onClick={() => setView(item.key)}
-            >
+              >
               {item.label}
             </button>
           ))}
@@ -573,6 +597,7 @@ export function AnalysisDashboard() {
                 onSetTab={setObjectTab}
                 onUpdateObject={updateObject}
                 onUpdateEntrance={updateEntrance}
+                onUpdateDocument={updateDocument}
                 onAddObjectImages={(objectId, files) => {
                   const urls = Array.from(files).map((file) => URL.createObjectURL(file));
                   setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
@@ -1251,6 +1276,7 @@ function ObjectsView({
   onSetTab,
   onUpdateObject,
   onUpdateEntrance,
+  onUpdateDocument,
   onAddObjectImages,
   onSelectDocument
 }: {
@@ -1271,10 +1297,15 @@ function ObjectsView({
   onSetTab: (tab: ObjectTab) => void;
   onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
   onUpdateEntrance: (id: string, field: keyof EntranceRecord, value: string) => void;
+  onUpdateDocument: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
   onAddObjectImages: (id: string, files: FileList) => void;
   onSelectDocument: (id: string) => void;
 }) {
+  const [objectSearch, setObjectSearch] = useState("");
   const detectedGroups = groupByObject(documents);
+  const filteredObjects = objects.filter((object) =>
+    `${object.objectNumber} ${object.objectName} ${object.address} ${object.fund}`.toLowerCase().includes(objectSearch.toLowerCase())
+  );
   const selectedEntrances = selectedObject ? entrances.filter((entrance) => entrance.objectId === selectedObject.id) : [];
   const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
   const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
@@ -1288,20 +1319,34 @@ function ObjectsView({
         <button className="buttonPrimary" type="button" onClick={onCreate}>Objekt erstellen</button>
       </div>
 
+      <div className="objectKpiStrip">
+        <CostMetric label="Objekte" value={formatNumber(objects.length)} />
+        <CostMetric label="Projekte" value={formatNumber(projects.length)} />
+        <CostMetric label="Dokumente" value={formatNumber(documents.length)} />
+        <CostMetric label="Prueffaelle" value={formatNumber(countReviewCases(documents))} />
+      </div>
+
       <div className="projectLayout">
         <div className="projectList">
-          {objects.length === 0 ? <p className="muted">Noch keine manuell angelegten Objekte.</p> : null}
-          {objects.map((object) => (
-            <button
-              key={object.id}
-              className={selectedObject?.id === object.id ? "projectListItem selectedRow" : "projectListItem"}
-              type="button"
-              onClick={() => onSelectObject(object.id)}
-            >
-              <strong>{objectLabel(object) || "k.A."}</strong>
-              <span>{object.fund || "k.A."}</span>
-            </button>
-          ))}
+          <input className="sideSearch" value={objectSearch} onChange={(event) => setObjectSearch(event.target.value)} placeholder="Objekt suchen..." />
+          {filteredObjects.length === 0 ? <p className="muted">Noch keine passenden Objekte.</p> : null}
+          {filteredObjects.map((object) => {
+            const objectDocuments = documents.filter((document) => documentBelongsToObject(document, object, projects, assignments));
+            const objectProjects = projects.filter((project) => project.objectId === object.id);
+            return (
+              <button
+                key={object.id}
+                className={selectedObject?.id === object.id ? "projectListItem selectedRow" : "projectListItem"}
+                type="button"
+                onClick={() => onSelectObject(object.id)}
+              >
+                <strong>{objectLabel(object) || "k.A."}</strong>
+                <span>{object.address || "Adressbereich k.A."}</span>
+                <span>{object.fund || "Fonds k.A."} - {objectProjects.length} P - {objectDocuments.length} D</span>
+                <em>{formatNullableCurrency(sumValues(objectDocuments.map((document) => document.totalCost.value)))}</em>
+              </button>
+            );
+          })}
         </div>
         <div>
           {selectedObject ? (
@@ -1336,10 +1381,19 @@ function ObjectsView({
                   onUpdate={onUpdateEntrance}
                 />
               ) : null}
+              {activeTab === "measures" ? (
+                <ObjectMeasuresTab
+                  documents={selectedDocuments}
+                  projects={projects}
+                  assignments={assignments}
+                  onUpdateDocument={onUpdateDocument}
+                />
+              ) : null}
               {activeTab === "projects" ? <ObjectProjectsTab projects={selectedProjects} /> : null}
               {activeTab === "documents" ? (
                 <ObjectDocumentsTab documents={selectedDocuments} onSelect={onSelectDocument} />
               ) : null}
+              {activeTab === "ai" ? <ProjectAiTab documents={selectedDocuments} /> : null}
               {activeTab === "costs" ? (
                 <ObjectCostsTab
                   object={selectedObject}
@@ -1496,6 +1550,135 @@ function ObjectDocumentsTab({ documents, onSelect }: { documents: ObjectAnalysis
   );
 }
 
+function ObjectMeasuresTab({
+  documents,
+  projects,
+  assignments,
+  onUpdateDocument
+}: {
+  documents: ObjectAnalysis[];
+  projects: ProjectRecord[];
+  assignments: Record<string, string | null>;
+  onUpdateDocument: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+}) {
+  const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
+  const [filters, setFilters] = useState({ project: "", year: "", documentType: "" });
+  const filteredDocuments = documents.filter((document) => {
+    const project = projects.find((entry) => entry.id === assignments[document.id]);
+    return (
+      (!filters.project || (project?.projectName ?? "").toLowerCase().includes(filters.project.toLowerCase())) &&
+      (!filters.year || String(document.year.value ?? "").includes(filters.year)) &&
+      (!filters.documentType || fieldOrUnknown(document.documentType).toLowerCase().includes(filters.documentType.toLowerCase()))
+    );
+  });
+  const rows = buildMeasureRows(filteredDocuments);
+  const totalGross = sumValues(rows.map((row) => row.grossCost));
+  const selectedRow = rows.find((row) => row.id === selectedMeasureId) ?? rows[0] ?? null;
+
+  function updateMeasure(row: MeasureRow, field: "cluster" | "description" | "grossCost" | "status", value: string) {
+    onUpdateDocument(row.documentId, (document) => ({
+      ...document,
+      clusters: document.clusters.map((cluster) => {
+        if (cluster.id !== row.measureId) return cluster;
+        if (field === "cluster") return { ...cluster, cluster: manualField(value as MeasureCluster) };
+        if (field === "description") return { ...cluster, description: manualField(value) };
+        if (field === "grossCost") return { ...cluster, totalCost: manualNumberField(value) };
+        return cluster;
+      }),
+      dataQuality: field === "status" ? manualField(value) : document.dataQuality
+    }));
+  }
+
+  return (
+    <div className="measuresWorkspace">
+      <div className="measureFilters">
+        <label className="filterInput"><span>Projekt</span><input value={filters.project} onChange={(event) => setFilters({ ...filters, project: event.target.value })} placeholder="Alle" /></label>
+        <label className="filterInput"><span>Jahr</span><input value={filters.year} onChange={(event) => setFilters({ ...filters, year: event.target.value })} placeholder="Alle" /></label>
+        <label className="filterInput"><span>Dokumenttyp</span><input value={filters.documentType} onChange={(event) => setFilters({ ...filters, documentType: event.target.value })} placeholder="Alle" /></label>
+      </div>
+      <MeasureCostChart rows={rows} onSelect={setSelectedMeasureId} />
+      <div className="measureGrid">
+        <div className="tableWrap compactTable">
+          <table className="measureTable">
+            <thead>
+              <tr>
+                <th>Gewerk / Cluster</th>
+                <th>Beschreibung</th>
+                <th>Kosten netto</th>
+                <th>MwSt</th>
+                <th>Kosten brutto</th>
+                <th>Anteil</th>
+                <th>Quelle</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? <tr><td colSpan={8}>k.A.</td></tr> : rows.map((row) => (
+                <tr key={row.id} className={selectedRow?.id === row.id ? "selectedRow" : ""} onClick={() => setSelectedMeasureId(row.id)}>
+                  <td><input value={row.cluster} onChange={(event) => updateMeasure(row, "cluster", event.target.value)} /></td>
+                  <td><input value={row.description === "k.A." ? "" : row.description} onChange={(event) => updateMeasure(row, "description", event.target.value)} placeholder="k.A." /></td>
+                  <td>{formatNullableCurrency(row.netCost)}</td>
+                  <td>{formatNullableCurrency(row.vatCost)}</td>
+                  <td><input value={row.grossCost === null ? "" : String(row.grossCost).replace(".", ",")} onChange={(event) => updateMeasure(row, "grossCost", event.target.value)} placeholder="k.A." /></td>
+                  <td>{formatPercent(row.grossCost, totalGross)}</td>
+                  <td className="wideCell">{row.source}</td>
+                  <td><input value={row.status === "k.A." ? "" : row.status} onChange={(event) => updateMeasure(row, "status", event.target.value)} placeholder="k.A." /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <MeasureDetailPanel row={selectedRow} />
+      </div>
+    </div>
+  );
+}
+
+function MeasureCostChart({ rows, onSelect }: { rows: MeasureRow[]; onSelect: (id: string) => void }) {
+  const chartRows = [...rows].filter((row) => row.grossCost !== null).sort((a, b) => (b.grossCost ?? 0) - (a.grossCost ?? 0));
+  const max = Math.max(...chartRows.map((row) => row.grossCost ?? 0), 0);
+  return (
+    <section className="measureChart panel">
+      <div className="panelHeader compactHeader">
+        <div>
+          <h3>Kosten nach Gewerk</h3>
+          <p>Bruttokosten nach erkanntem Massnahmencluster.</p>
+        </div>
+      </div>
+      {chartRows.length === 0 ? <p className="muted">k.A.</p> : chartRows.map((row, index) => (
+        <button className="barRow" type="button" key={row.id} onClick={() => onSelect(row.id)}>
+          <span>{row.cluster}</span>
+          <div><i style={{ width: `${max ? ((row.grossCost ?? 0) / max) * 100 : 0}%` }} className={index === 0 ? "barHighlight" : ""} /></div>
+          <strong>{formatNullableCurrency(row.grossCost)}</strong>
+        </button>
+      ))}
+    </section>
+  );
+}
+
+function MeasureDetailPanel({ row }: { row: MeasureRow | null }) {
+  if (!row) return <aside className="measureDetail"><p className="muted">Kein Gewerk ausgewaehlt.</p></aside>;
+  return (
+    <aside className="measureDetail">
+      <h3>{row.cluster}</h3>
+      <InfoLine label="Beschreibung" value={row.description} />
+      <InfoLine label="Abschnitt" value={row.section} />
+      <InfoLine label="Kosten" value={formatNullableCurrency(row.grossCost)} />
+      <InfoLine label="Quelle" value={row.source} />
+      <InfoLine label="KI-Sicherheit" value={row.confidence} />
+      <button type="button">Bearbeiten</button>
+      <h4>Erkannte Positionen</h4>
+      {row.lineItems.length === 0 ? <p className="muted">k.A.</p> : (
+        <ul>
+          {row.lineItems.map((item) => (
+            <li key={`${item.position}-${item.description}`}>{item.position} {item.description || "k.A."} {item.totalPrice ? formatNullableCurrency(item.totalPrice) : ""}</li>
+          ))}
+        </ul>
+      )}
+    </aside>
+  );
+}
+
 function ObjectCostsTab({
   object,
   entrances,
@@ -1512,9 +1695,18 @@ function ObjectCostsTab({
   assignments: Record<string, string | null>;
 }) {
   const objectTotal = sumValues(documents.map((document) => document.totalCost.value));
+  const byCluster = groupByCluster(documents);
+  const byDocumentType = groupByDocumentType(documents);
   return (
     <div className="costHierarchy">
       <CostMetric label={`Gesamtkosten Objekt ${object.objectNumber || "k.A."}`} value={formatNullableCurrency(objectTotal)} />
+      <div className="costSummaryGrid">
+        <CostMetric label="Kosten netto" value={formatNullableCurrency(sumValues(documents.map((document) => document.netCost.value)))} />
+        <CostMetric label="MwSt" value={formatNullableCurrency(sumValues(documents.map((document) => document.vatCost.value)))} />
+        <CostMetric label="Kosten brutto" value={formatNullableCurrency(objectTotal)} />
+        <CostMetric label="Kosten je sanierte WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, objectTotal))} />
+        <CostMetric label="Kosten je m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, objectTotal))} />
+      </div>
       <div className="tableWrap compactTable">
         <table>
           <thead>
@@ -1548,6 +1740,28 @@ function ObjectCostsTab({
             })}
           </tbody>
         </table>
+      </div>
+      <div className="costSplitGrid">
+        <div className="tableWrap compactTable">
+          <table>
+            <thead><tr><th>Gewerk</th><th>Dokumente</th><th>Kosten brutto</th></tr></thead>
+            <tbody>
+              {byCluster.length === 0 ? <tr><td colSpan={3}>k.A.</td></tr> : byCluster.map((entry) => (
+                <tr key={entry.cluster}><td>{entry.cluster}</td><td>{entry.count}</td><td>{formatNullableCurrency(entry.total)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="tableWrap compactTable">
+          <table>
+            <thead><tr><th>Dokumenttyp</th><th>Dokumente</th><th>Kosten brutto</th></tr></thead>
+            <tbody>
+              {byDocumentType.length === 0 ? <tr><td colSpan={3}>k.A.</td></tr> : byDocumentType.map((entry) => (
+                <tr key={entry.type}><td>{entry.type}</td><td>{entry.count}</td><td>{formatNullableCurrency(entry.total)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -2161,7 +2375,7 @@ function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (fie
       ] as Array<[keyof ObjectRecord, string]>).map(([field, label]) => (
         <EditInput key={field} label={label} value={String(object[field] ?? "")} onChange={(value) => onChange(field, value)} />
       ))}
-      <p className="formHint">Geocoding ist vorbereitet. Bis zur automatischen Adressauflösung bitte Koordinaten manuell eintragen.</p>
+      <p className="formHint">Geocoding ist vorbereitet. Bis zur automatischen Adressaufloesung bitte Koordinaten manuell eintragen.</p>
     </div>
   );
 }
@@ -2864,6 +3078,65 @@ function groupByCluster(documents: ObjectAnalysis[]) {
     });
   });
   return Array.from(groups.entries()).map(([cluster, values]) => ({ cluster, ...values }));
+}
+
+function groupByDocumentType(documents: ObjectAnalysis[]) {
+  const groups = new Map<string, { count: number; total: number | null }>();
+  documents.forEach((document) => {
+    const type = fieldOrUnknown(document.documentType);
+    const current = groups.get(type) ?? { count: 0, total: null };
+    groups.set(type, {
+      count: current.count + 1,
+      total: sumValues([current.total, document.totalCost.value])
+    });
+  });
+  return Array.from(groups.entries()).map(([type, values]) => ({ type, ...values }));
+}
+
+function costPerRenovatedUnit(documents: ObjectAnalysis[], grossCost: number | null): number | null {
+  const renovated = sumValues(documents.map((document) => document.renovatedApartmentCount.value));
+  return grossCost !== null && renovated ? roundMoney(grossCost / renovated) : null;
+}
+
+function costPerSqmForDocuments(documents: ObjectAnalysis[], grossCost: number | null): number | null {
+  const area = sumValues(documents.map((document) => document.livingAreaSqm.value));
+  return grossCost !== null && area ? roundMoney(grossCost / area) : null;
+}
+
+function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
+  return documents.flatMap((document) => {
+    return document.clusters.map((measure, index) => {
+      const cluster = fieldOrUnknown(measure.cluster);
+      const detail = document.measureDetails?.find((entry) => entry.cluster === measure.cluster.value || entry.abschnitt === measure.description.value);
+      const source = measure.totalCost.sources[0]?.textSnippet
+        ?? detail?.quelle
+        ?? sourceLabel(measure.totalCost);
+      return {
+        id: `${document.id}-${measure.id || index}`,
+        documentId: document.id,
+        measureId: measure.id,
+        cluster,
+        description: fieldOrUnknown(measure.description),
+        netCost: null,
+        vatCost: null,
+        grossCost: measure.totalCost.value,
+        source,
+        status: fieldOrUnknown(document.dataQuality),
+        section: detail?.abschnitt ?? fieldOrUnknown(measure.description),
+        confidence: measure.cluster.confidence === null ? "k.A." : `${Math.round(measure.cluster.confidence * 100)} %`,
+        lineItems: (measure.lineItems ?? []).map((item) => ({
+          position: item.position,
+          description: item.description,
+          totalPrice: item.totalPrice
+        }))
+      };
+    });
+  });
+}
+
+function formatPercent(value: number | null, total: number | null): string {
+  if (value === null || !total) return "k.A.";
+  return `${new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format((value / total) * 100)} %`;
 }
 
 function setCluster(

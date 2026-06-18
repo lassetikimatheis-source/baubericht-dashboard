@@ -1154,6 +1154,19 @@ select {
   font-size: 12px;
 }
 
+.projectListItem em {
+  color: var(--navy);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.objectKpiStrip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
 .projectActions {
   justify-content: flex-start;
   margin: 12px 0 18px;
@@ -1220,6 +1233,113 @@ select {
   display: grid;
   grid-template-columns: repeat(3, minmax(190px, 1fr));
   gap: 10px;
+}
+
+.costSplitGrid,
+.measureGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 14px;
+  align-items: start;
+}
+
+.measuresWorkspace {
+  display: grid;
+  gap: 14px;
+}
+
+.measureFilters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.measureChart {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.barRow span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.barRow div {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8edf2;
+}
+
+.barRow i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--navy);
+}
+
+.barRow .barHighlight {
+  background: var(--orange);
+}
+
+.barRow strong {
+  color: var(--ink);
+  font-size: 13px;
+  text-align: right;
+}
+
+.measureTable {
+  min-width: 1280px;
+}
+
+.measureTable input {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 8px;
+}
+
+.measureDetail {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.06);
+  padding: 14px;
+}
+
+.measureDetail h3 {
+  color: var(--navy);
+  font-size: 20px;
+}
+
+.measureDetail ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 18px;
+}
+
+.measureDetail li {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .stackSection,
@@ -1431,6 +1551,9 @@ select {
   .objectDetailHeader,
   .entranceGrid,
   .costSummaryGrid,
+  .costSplitGrid,
+  .measureGrid,
+  .measureFilters,
   .mapObjectGrid,
   .portfolioDetailGrid {
     grid-template-columns: 1fr;
@@ -1463,10 +1586,15 @@ select {
   .entranceForm,
   .settingsGrid,
   .objectHeaderMetrics,
+  .objectKpiStrip,
   .objectGrid,
   .portfolioDetailGrid,
   .miniItem,
   .unassignedCard {
+    grid-template-columns: 1fr;
+  }
+
+  .barRow {
     grid-template-columns: 1fr;
   }
 
