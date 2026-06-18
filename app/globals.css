@@ -1,3 +1,5 @@
+@import "leaflet/dist/leaflet.css";
+
 :root {
   --navy: #466389;
   --navy-dark: #071c34;
@@ -396,114 +398,7 @@ h4 {
   position: relative;
   min-height: 360px;
   overflow: hidden;
-  padding: 0;
-}
-
-.mapCanvas {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background:
-    linear-gradient(34deg, transparent 0 47%, rgba(255, 255, 255, 0.88) 47% 49%, transparent 49%),
-    linear-gradient(125deg, transparent 0 44%, rgba(255, 255, 255, 0.85) 44% 46%, transparent 46%),
-    linear-gradient(90deg, rgba(70, 99, 137, 0.08) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(70, 99, 137, 0.08) 1px, transparent 1px),
-    #dfeadf;
-  background-size: 100% 100%, 100% 100%, 74px 74px, 74px 74px, auto;
-}
-
-.mapCanvas::before,
-.mapCanvas::after {
-  content: "";
-  position: absolute;
-  border-radius: 999px;
-  opacity: 0.55;
-}
-
-.mapCanvas::before {
-  left: -8%;
-  top: 28%;
-  width: 120%;
-  height: 28px;
-  background: #b7c7d4;
-  transform: rotate(-8deg);
-}
-
-.mapCanvas::after {
-  left: 56%;
-  top: -12%;
-  width: 26px;
-  height: 130%;
-  background: #bdd0dd;
-  transform: rotate(12deg);
-}
-
-.mapControls {
-  position: absolute;
-  z-index: 4;
-  left: 12px;
-  top: 12px;
-  display: grid;
-  gap: 6px;
-}
-
-.mapControls button,
-.mapCompass {
-  width: 34px;
-  height: 34px;
-  min-height: 34px;
-  border-radius: 4px;
-  background: #fff;
-  box-shadow: 0 4px 14px rgba(66, 66, 66, 0.12);
-  padding: 0;
-}
-
-.mapCompass {
-  position: absolute;
-  z-index: 4;
-  left: 12px;
-  top: 92px;
-  display: grid;
-  place-items: center;
-  color: var(--navy);
-  font-weight: 900;
-}
-
-.mapMarker {
-  position: absolute;
-  z-index: 3;
-  width: 30px;
-  height: 30px;
-  min-height: 30px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: #116ac5;
-  color: #fff;
-  box-shadow: 0 6px 18px rgba(17, 106, 197, 0.32);
-  font-size: 13px;
-  font-weight: 900;
-  padding: 0;
-}
-
-.mapMarkerActive {
-  background: var(--orange);
-  transform: scale(1.08);
-}
-
-.mapTooltip {
-  position: absolute;
-  z-index: 5;
-  left: 17%;
-  bottom: 26%;
-  display: grid;
-  gap: 4px;
-  min-width: 190px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 14px 32px rgba(66, 66, 66, 0.16);
-  padding: 12px;
-  font-size: 13px;
+  padding: 14px;
 }
 
 .mapEmpty {
@@ -514,6 +409,79 @@ h4 {
   place-items: center;
   color: var(--muted);
   font-weight: 700;
+}
+
+.mapSearchBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.mapSearchBar input {
+  width: min(460px, 100%);
+}
+
+.mapSearchBar span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.leafletCard {
+  position: relative;
+  height: 380px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef2f5;
+}
+
+.leafletMap {
+  width: 100%;
+  height: 100%;
+}
+
+.leaflet-container {
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.paribusLeafletMarker {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: var(--orange);
+  box-shadow: 0 8px 18px rgba(255, 110, 66, 0.35);
+}
+
+.paribusLeafletMarker span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+.mapPopup {
+  display: grid;
+  gap: 6px;
+  min-width: 210px;
+}
+
+.mapPopup strong {
+  color: var(--navy);
+  font-size: 16px;
+}
+
+.mapPopup span {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.mapPopup button {
+  margin-top: 6px;
 }
 
 .objectSidePanel {
@@ -694,6 +662,13 @@ h4 {
   background: #fff;
   color: var(--ink);
   padding: 0 10px;
+}
+
+.formHint {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
 }
 
 .panel {

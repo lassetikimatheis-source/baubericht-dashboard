@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { UploadPanel } from "./upload-panel";
+import type { LeafletObjectMapProps } from "./leaflet-object-map";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
 import {
@@ -28,6 +30,11 @@ import {
   type StoredProjectRecord
 } from "../lib/storage";
 import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState } from "../types/analysis";
+
+const LeafletObjectMap = dynamic<LeafletObjectMapProps>(() => import("./leaflet-object-map"), {
+  ssr: false,
+  loading: () => <div className="mapEmpty">Karte wird geladen...</div>
+});
 
 type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
@@ -134,6 +141,21 @@ interface OverviewRow {
   dataQuality: string;
   documentId?: string;
 }
+
+interface MapEntry {
+  key: string;
+  objectId: string;
+  title: string;
+  objectNumber: string;
+  address: string;
+  fund: string;
+  projectCount: number;
+  documents: ObjectAnalysis[];
+  totalCost: number | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
 
 const emptyFilters: Filters = {
   year: "",
@@ -767,40 +789,29 @@ function PortfolioMap({
   onOpenObject: (id: string) => void;
 }) {
   const entries = buildMapEntries(objects, projects, documents, assignments);
+  const [query, setQuery] = useState("");
+  const filteredEntries = entries.filter((entry) =>
+    `${entry.title} ${entry.fund} ${entry.address}`.toLowerCase().includes(query.toLowerCase())
+  );
+  const mappedEntries = filteredEntries.filter((entry) => entry.latitude !== null && entry.longitude !== null);
+  const missingCount = filteredEntries.length - mappedEntries.length;
   return (
     <section className="portfolioMap panel">
-      <div className="mapControls">
-        <button type="button">+</button>
-        <button type="button">-</button>
+      <div className="mapSearchBar">
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Objekt oder Adresse suchen..." />
+        <span>{missingCount > 0 ? `${missingCount} Objekt(e): Koordinaten fehlen` : "Koordinaten gepflegt"}</span>
       </div>
-      <div className="mapCompass">o</div>
-      <div className="mapCanvas">
-        {entries.length === 0 ? (
-          <div className="mapEmpty">Nach Upload oder Objektanlage erscheinen Wirtschaftseinheiten auf der Karte.</div>
-        ) : entries.map((entry, index) => {
-          const left = 14 + ((index * 17) % 70);
-          const top = 18 + ((index * 23) % 58);
-          const active = selectedDocument ? entry.documents.some((document) => document.id === selectedDocument.id) : index === 0;
-          return (
-            <button
-              key={entry.key}
-              className={active ? "mapMarker mapMarkerActive" : "mapMarker"}
-              style={{ left: `${left}%`, top: `${top}%` }}
-              type="button"
-              onClick={() => entry.objectId ? onOpenObject(entry.objectId) : entry.documents[0] && onSelectDocument(entry.documents[0].id)}
-              title={entry.title}
-            >
-              {entry.projectCount || entry.documents.length || 1}
-            </button>
-          );
-        })}
-        {selectedDocument ? (
-          <div className="mapTooltip">
-            <strong>{fieldOrUnknown(selectedDocument.objectAddress)}</strong>
-            <span>{formatClusters(selectedDocument)}</span>
-            <span>{formatCurrency(selectedDocument.totalCost)} Gesamt</span>
-          </div>
-        ) : null}
+      <div className="leafletCard">
+        {mappedEntries.length === 0 ? (
+          <div className="mapEmpty">Koordinaten fehlen. Bitte latitude und longitude im Objektformular ergaenzen.</div>
+        ) : (
+          <LeafletObjectMap
+            entries={mappedEntries}
+            center={mapCenter(mappedEntries)}
+            onOpenObject={onOpenObject}
+            onSelectDocument={onSelectDocument}
+          />
+        )}
       </div>
     </section>
   );
@@ -847,7 +858,7 @@ function ObjectSideList({
               <span className="pinDot" />
               <span>{entry.title}</span>
               <strong>{entry.projectCount} P / {entry.documents.length} D</strong>
-              <em>{formatNullableCurrency(entry.totalCost)}</em>
+              <em>{entry.latitude === null || entry.longitude === null ? "Koordinaten fehlen" : formatNullableCurrency(entry.totalCost)}</em>
             </button>
           );
         })}
@@ -2144,10 +2155,13 @@ function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (fie
         ["unitCount", "Anzahl Wohneinheiten"],
         ["totalLivingAreaSqm", "Gesamtwohnflaeche m2"],
         ["assetManager", "Asset Manager"],
-        ["portfolioManager", "Portfolio Manager"]
+        ["portfolioManager", "Portfolio Manager"],
+        ["latitude", "Latitude"],
+        ["longitude", "Longitude"]
       ] as Array<[keyof ObjectRecord, string]>).map(([field, label]) => (
-        <EditInput key={field} label={label} value={object[field]} onChange={(value) => onChange(field, value)} />
+        <EditInput key={field} label={label} value={String(object[field] ?? "")} onChange={(value) => onChange(field, value)} />
       ))}
+      <p className="formHint">Geocoding ist vorbereitet. Bis zur automatischen Adressauflösung bitte Koordinaten manuell eintragen.</p>
     </div>
   );
 }
@@ -2272,7 +2286,9 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
     unitCount: "",
     totalLivingAreaSqm: document ? emptyIfUnknown(fieldOrUnknown(document.livingAreaSqm)) : "",
     assetManager: "",
-    portfolioManager: ""
+    portfolioManager: "",
+    latitude: "",
+    longitude: ""
   };
 }
 
@@ -2754,7 +2770,7 @@ function buildMapEntries(
   projects: ProjectRecord[],
   documents: ObjectAnalysis[],
   assignments: Record<string, string | null>
-) {
+): MapEntry[] {
   const objectEntries = objects.map((object) => {
     const objectDocuments = documents.filter((document) => documentBelongsToObject(document, object, projects, assignments));
     const objectProjects = projects.filter((project) => project.objectId === object.id);
@@ -2762,9 +2778,14 @@ function buildMapEntries(
       key: object.id,
       objectId: object.id,
       title: objectLabel(object) || "k.A.",
+      objectNumber: object.objectNumber || "k.A.",
+      address: object.address || "k.A.",
+      fund: object.fund || "k.A.",
       projectCount: objectProjects.length,
       documents: objectDocuments,
-      totalCost: sumValues(objectDocuments.map((document) => document.totalCost.value))
+      totalCost: sumValues(objectDocuments.map((document) => document.totalCost.value)),
+      latitude: parseCoordinate(object.latitude ?? ""),
+      longitude: parseCoordinate(object.longitude ?? "")
     };
   });
 
@@ -2774,10 +2795,29 @@ function buildMapEntries(
     key: group.key,
     objectId: "",
     title: group.address || group.objectNumber || "k.A.",
+    objectNumber: group.objectNumber || "k.A.",
+    address: group.address || "k.A.",
+    fund: fieldOrUnknown(group.documents[0].fund),
     projectCount: 0,
     documents: group.documents,
-    totalCost: sumValues(group.documents.map((document) => document.totalCost.value))
+    totalCost: sumValues(group.documents.map((document) => document.totalCost.value)),
+    latitude: null,
+    longitude: null
   }));
+}
+
+function parseCoordinate(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number(value.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function mapCenter(entries: MapEntry[]): [number, number] {
+  const coordinates = entries.filter((entry) => entry.latitude !== null && entry.longitude !== null);
+  if (coordinates.length === 0) return [51.1657, 10.4515];
+  const latitude = coordinates.reduce((sum, entry) => sum + (entry.latitude ?? 0), 0) / coordinates.length;
+  const longitude = coordinates.reduce((sum, entry) => sum + (entry.longitude ?? 0), 0) / coordinates.length;
+  return [latitude, longitude];
 }
 
 function documentBelongsToObject(

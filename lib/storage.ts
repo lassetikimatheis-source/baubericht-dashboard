@@ -14,6 +14,8 @@ export interface StoredObjectRecord {
   totalLivingAreaSqm: string;
   assetManager: string;
   portfolioManager: string;
+  latitude?: string;
+  longitude?: string;
   createdAt?: string;
   updatedAt?: string;
 }
