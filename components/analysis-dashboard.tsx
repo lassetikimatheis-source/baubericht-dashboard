@@ -40,7 +40,7 @@ const ObjectMap = dynamic<{ entries: ObjectMapEntry[]; onOpenObject: (id: string
   }
 );
 
-type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
+type ViewKey = "dashboard" | "objects" | "map" | "upload" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
 type ObjectTab = "overview" | "measures" | "costs" | "projects" | "documents" | "ai" | "entrances";
 type OverviewGroup = "object" | "entrance" | "project" | "document";
@@ -202,8 +202,9 @@ const emptyFilters: Filters = {
 
 const navItems: Array<{ key: ViewKey; label: string }> = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "upload", label: "Dokument Upload / KI" },
   { key: "objects", label: "Objekte" },
+  { key: "map", label: "Karte" },
+  { key: "upload", label: "Dokument Upload / KI" },
   { key: "projects", label: "Projekte" },
   { key: "unassigned", label: "Unzugeordnete Dokumente" },
   { key: "reports", label: "Auswertungen" },
@@ -523,6 +524,9 @@ export function AnalysisDashboard() {
     });
   }
 
+  const pageTitle = getPageTitle(view);
+  const showDocumentEditor = view === "upload" || view === "projects" || view === "unassigned" || view === "reports" || view === "settings";
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -555,8 +559,8 @@ export function AnalysisDashboard() {
       <section className="content appWorkspace">
         <header className="pageHeader">
           <div>
-            <p className="eyebrow">KI als Hauptarbeit</p>
-            <h1>PARIBUS | Baukosten Analyse</h1>
+            <p className="eyebrow">PARIBUS Asset Management</p>
+            <h1>{pageTitle}</h1>
             <p className="muted">Objekte, Projekte, Dokumente und Baukosten strukturiert auswerten.</p>
           </div>
           <div className="headerActions">
@@ -581,16 +585,11 @@ export function AnalysisDashboard() {
             setFilters={setFilters}
             onSetOverviewGroup={setOverviewGroup}
             onSelectDocument={setSelectedDocumentId}
-            onOpenObject={(objectId) => {
-              setSelectedObjectId(objectId);
-              setObjectTab("overview");
-              setView("objects");
-            }}
             onOpenProjects={() => setView("projects")}
             onOpenObjects={() => setView("objects")}
           />
         ) : (
-          <section className="workspaceGrid">
+          <section className={showDocumentEditor ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}>
             <div className="workspaceMain">
               {view === "objects" ? (
               <ObjectsView
@@ -617,6 +616,20 @@ export function AnalysisDashboard() {
                   setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
                 }}
                 onSelectDocument={setSelectedDocumentId}
+              />
+              ) : null}
+
+              {view === "map" ? (
+              <MapView
+                objects={objects}
+                projects={projects}
+                documents={filteredDocuments}
+                assignments={assignments}
+                onOpenObject={(objectId) => {
+                  setSelectedObjectId(objectId);
+                  setObjectTab("overview");
+                  setView("objects");
+                }}
               />
               ) : null}
 
@@ -671,15 +684,17 @@ export function AnalysisDashboard() {
               ) : null}
             </div>
 
-            <DocumentEditor
-              document={selectedDocument}
-              projects={projects}
-              assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
-              onAssign={(projectId) => selectedDocument && assignDocument(selectedDocument.id, projectId)}
-              onCreateProject={() => selectedDocument && createProject(selectedDocument)}
-              onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
-              onUpdate={updateDocument}
-            />
+            {showDocumentEditor ? (
+              <DocumentEditor
+                document={selectedDocument}
+                projects={projects}
+                assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
+                onAssign={(projectId) => selectedDocument && assignDocument(selectedDocument.id, projectId)}
+                onCreateProject={() => selectedDocument && createProject(selectedDocument)}
+                onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
+                onUpdate={updateDocument}
+              />
+            ) : null}
           </section>
         )}
       </section>
@@ -701,7 +716,6 @@ function DashboardView({
   setFilters,
   onSetOverviewGroup,
   onSelectDocument,
-  onOpenObject,
   onOpenProjects,
   onOpenObjects
 }: {
@@ -718,7 +732,6 @@ function DashboardView({
   setFilters: (value: Filters) => void;
   onSetOverviewGroup: (value: OverviewGroup) => void;
   onSelectDocument: (id: string) => void;
-  onOpenObject: (id: string) => void;
   onOpenProjects: () => void;
   onOpenObjects: () => void;
 }) {
@@ -763,29 +776,6 @@ function DashboardView({
         assignments={assignments}
       />
 
-      <section className="mapObjectGrid">
-        <PortfolioMap
-          objects={dashboardObjects}
-          projects={dashboardProjects}
-          documents={documents}
-          assignments={assignments}
-          selectedDocument={selectedDocument}
-          onSelectDocument={onSelectDocument}
-          onOpenObject={onOpenObject}
-        />
-        <ObjectSideList
-          objects={dashboardObjects}
-          projects={dashboardProjects}
-          documents={documents}
-          assignments={assignments}
-          selectedDocument={selectedDocument}
-          onSelectDocument={onSelectDocument}
-          onOpenObject={onOpenObject}
-        />
-      </section>
-
-      <SelectedPortfolioDetail document={selectedDocument} />
-
       <PortfolioOverviewTable
         group={overviewGroup}
         objects={dashboardObjects}
@@ -825,6 +815,52 @@ function DocumentUploadView({
       </div>
       <UploadPanel isAnalyzing={isAnalyzing} message={message} onAnalyze={onAnalyze} onPreview={onPreview} />
       <PreviewPanel previews={previews} />
+    </section>
+  );
+}
+
+function MapView({
+  objects,
+  projects,
+  documents,
+  assignments,
+  onOpenObject
+}: {
+  objects: ObjectRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
+  onOpenObject: (id: string) => void;
+}) {
+  return (
+    <section className="mapWorkspace">
+      <div className="sectionIntro">
+        <div>
+          <p className="eyebrow">Kartenansicht</p>
+          <h2>Objekte auf OpenStreetMap</h2>
+          <p>Die Karte zeigt nur Objekte mit gepflegten Koordinaten. Latitude und Longitude bearbeitest du direkt im Objektformular.</p>
+        </div>
+      </div>
+      <section className="mapObjectGrid">
+        <PortfolioMap
+          objects={objects}
+          projects={projects}
+          documents={documents}
+          assignments={assignments}
+          selectedDocument={null}
+          onSelectDocument={() => undefined}
+          onOpenObject={onOpenObject}
+        />
+        <ObjectSideList
+          objects={objects}
+          projects={projects}
+          documents={documents}
+          assignments={assignments}
+          selectedDocument={null}
+          onSelectDocument={() => undefined}
+          onOpenObject={onOpenObject}
+        />
+      </section>
     </section>
   );
 }
@@ -1028,6 +1064,20 @@ function InfoLine({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   );
+}
+
+function getPageTitle(view: ViewKey): string {
+  const titles: Record<ViewKey, string> = {
+    dashboard: "Dashboard",
+    objects: "Objekte",
+    map: "Karte",
+    upload: "Dokument Upload / KI",
+    projects: "Projekte",
+    unassigned: "Unzugeordnete Dokumente",
+    reports: "Auswertungen",
+    settings: "Einstellungen"
+  };
+  return titles[view];
 }
 
 function KpiGrid({ kpis }: { kpis: KpiShape }) {
@@ -1433,11 +1483,11 @@ function ObjectsView({
   const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
   const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
   return (
-    <section className="panel">
-      <div className="panelHeader">
+    <section className="objectWorkspace">
+      <div className="panelHeader objectPageHeader">
         <div>
           <h2>Objekte</h2>
-          <p>Objekte koennen manuell angelegt und bearbeitet werden. Keine einzelne Wohnungsverwaltung.</p>
+          <p>Wirtschaftseinheiten, Hauseingaenge, Projekte, Dokumente, Kosten und Bilder in einer sauberen Objektakte.</p>
         </div>
         <button className="buttonPrimary" type="button" onClick={onCreate}>Objekt erstellen</button>
       </div>
@@ -1449,8 +1499,8 @@ function ObjectsView({
         <CostMetric label="Prueffaelle" value={formatNumber(countReviewCases(documents))} />
       </div>
 
-      <div className="projectLayout">
-        <div className="projectList">
+      <div className="objectManagementLayout">
+        <aside className="objectDirectory">
           <input className="sideSearch" value={objectSearch} onChange={(event) => setObjectSearch(event.target.value)} placeholder="Objekt suchen..." />
           {filteredObjects.length === 0 ? <p className="muted">Noch keine passenden Objekte.</p> : null}
           {filteredObjects.map((object) => {
@@ -1470,8 +1520,8 @@ function ObjectsView({
               </button>
             );
           })}
-        </div>
-        <div>
+        </aside>
+        <div className="objectProfile">
           {selectedObject ? (
             <>
               <ObjectDetailHeader object={selectedObject} entrances={selectedEntrances} projects={selectedProjects} documents={selectedDocuments} />
@@ -1488,13 +1538,21 @@ function ObjectsView({
                 ))}
               </div>
               {activeTab === "overview" ? (
-                <>
-                  <ObjectForm object={selectedObject} onChange={(field, value) => onUpdateObject(selectedObject.id, field, value)} />
+                <div className="objectOverviewGrid">
+                  <section className="panel objectFormPanel">
+                    <div className="panelHeader compactHeader">
+                      <div>
+                        <h3>Objektstammdaten</h3>
+                        <p>Koordinaten fuer die Karte werden hier gepflegt.</p>
+                      </div>
+                    </div>
+                    <ObjectForm object={selectedObject} onChange={(field, value) => onUpdateObject(selectedObject.id, field, value)} />
+                  </section>
                   <ObjectImageUpload
                     images={objectImages[selectedObject.id] ?? []}
                     onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
                   />
-                </>
+                </div>
               ) : null}
               {activeTab === "entrances" ? (
                 <EntrancesTab
@@ -1537,6 +1595,7 @@ function ObjectsView({
         </div>
       </div>
 
+      <section className="detectedObjectSection">
       <h3>Aus Dokumenten erkannte Objektbereiche</h3>
       <div className="objectGrid">
         {detectedGroups.map((group) => (
@@ -1559,6 +1618,7 @@ function ObjectsView({
           </article>
         ))}
       </div>
+      </section>
     </section>
   );
 }

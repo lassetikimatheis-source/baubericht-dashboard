@@ -361,6 +361,25 @@ h4 {
   gap: 14px;
 }
 
+.sectionIntro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.045);
+  margin-bottom: 14px;
+  padding: 16px;
+}
+
+.mapWorkspace,
+.objectWorkspace {
+  display: grid;
+  gap: 14px;
+}
+
 .dashboardToolbar {
   display: flex;
   align-items: flex-start;
@@ -1132,6 +1151,10 @@ tbody tr:hover,
   align-items: start;
 }
 
+.workspaceGridFull {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .workspaceMain {
   min-width: 0;
 }
@@ -1211,6 +1234,62 @@ select {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.objectPageHeader {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.045);
+  padding: 16px;
+}
+
+.objectManagementLayout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.objectDirectory {
+  position: sticky;
+  top: 18px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.045);
+  padding: 14px;
+}
+
+.objectProfile {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.045);
+  padding: 16px;
+}
+
+.objectOverviewGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.objectFormPanel {
+  box-shadow: none;
+}
+
+.detectedObjectSection {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.045);
+  padding: 16px;
 }
 
 .projectActions {
@@ -1585,6 +1664,8 @@ select {
   .debugGrid,
   .workspaceGrid,
   .projectLayout,
+  .objectManagementLayout,
+  .objectOverviewGrid,
   .objectDetailHeader,
   .entranceGrid,
   .costSummaryGrid,
@@ -1600,6 +1681,10 @@ select {
   .editorPanel {
     position: static;
     max-height: none;
+  }
+
+  .objectDirectory {
+    position: static;
   }
 }
 
@@ -1626,6 +1711,7 @@ select {
   .objectHeaderMetrics,
   .objectKpiStrip,
   .objectGrid,
+  .objectOverviewGrid,
   .dashboardFilters,
   .portfolioDetailGrid,
   .miniItem,
