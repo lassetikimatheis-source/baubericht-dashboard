@@ -269,8 +269,10 @@ export function AnalysisDashboard() {
   }, [analysis.objects, assignments, filters, projects]);
 
   const selectedDocument = useMemo(() => {
-    return analysis.objects.find((document) => document.id === selectedDocumentId) ?? filteredDocuments[0] ?? null;
-  }, [analysis.objects, filteredDocuments, selectedDocumentId]);
+    const visibleDocument = filteredDocuments.find((document) => document.id === selectedDocumentId) ?? filteredDocuments[0] ?? null;
+    if (visibleDocument || hasFilters(filters)) return visibleDocument;
+    return analysis.objects.find((document) => document.id === selectedDocumentId) ?? null;
+  }, [analysis.objects, filteredDocuments, filters, selectedDocumentId]);
 
   const selectedProject = useMemo(() => {
     return projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
@@ -290,16 +292,23 @@ export function AnalysisDashboard() {
     const net = sumValues(filteredDocuments.map((document) => document.netCost.value));
     const apartments = sumValues(filteredDocuments.map((document) => document.renovatedApartmentCount.value));
     const area = sumValues(filteredDocuments.map((document) => document.livingAreaSqm.value));
-    const objectCount = new Set([
-      ...objects.map((object) => object.objectNumber || object.address || object.id),
-      ...filteredDocuments.map((document) => document.objectNumber.value || document.objectAddress.value || document.id)
-    ]).size;
+    const hasActiveFilters = hasFilters(filters);
+    const projectCount = hasActiveFilters
+      ? new Set(filteredDocuments.map((document) => assignments[document.id]).filter(Boolean)).size
+      : projects.length;
+    const objectKeys = hasActiveFilters
+      ? filteredDocuments.map((document) => document.objectNumber.value || document.objectAddress.value || document.id)
+      : [
+          ...objects.map((object) => object.objectNumber || object.address || object.id),
+          ...filteredDocuments.map((document) => document.objectNumber.value || document.objectAddress.value || document.id)
+        ];
+    const objectCount = new Set(objectKeys).size;
 
     return {
       gross,
       net,
       objects: objectCount,
-      projects: projects.length,
+      projects: projectCount,
       documents: filteredDocuments.length,
       apartments,
       costPerApartment: gross !== null && apartments ? gross / apartments : null,
@@ -307,7 +316,7 @@ export function AnalysisDashboard() {
       reviewCases: countReviewCases(filteredDocuments),
       unknownFields: countUnknownFields(filteredDocuments)
     };
-  }, [filteredDocuments, objects, projects.length]);
+  }, [assignments, filteredDocuments, filters, objects, projects.length]);
 
   async function handleAnalyze(files: File[]) {
     setIsAnalyzing(true);
@@ -564,6 +573,7 @@ export function AnalysisDashboard() {
             entrances={entrances}
             projects={projects}
             documents={filteredDocuments}
+            allDocuments={analysis.objects}
             assignments={assignments}
             overviewGroup={overviewGroup}
             selectedDocument={selectedDocument}
@@ -683,6 +693,7 @@ function DashboardView({
   entrances,
   projects,
   documents,
+  allDocuments,
   assignments,
   overviewGroup,
   selectedDocument,
@@ -699,6 +710,7 @@ function DashboardView({
   entrances: EntranceRecord[];
   projects: ProjectRecord[];
   documents: ObjectAnalysis[];
+  allDocuments: ObjectAnalysis[];
   assignments: Record<string, string | null>;
   overviewGroup: OverviewGroup;
   selectedDocument: ObjectAnalysis | null;
@@ -710,6 +722,14 @@ function DashboardView({
   onOpenProjects: () => void;
   onOpenObjects: () => void;
 }) {
+  const hasActiveFilters = hasFilters(filters);
+  const dashboardObjects = hasActiveFilters
+    ? objects.filter((object) => documents.some((document) => documentBelongsToObject(document, object, projects, assignments)))
+    : objects;
+  const dashboardProjects = hasActiveFilters
+    ? projects.filter((project) => documents.some((document) => assignments[document.id] === project.id))
+    : projects;
+
   return (
     <section className="portfolioDashboard">
       <div className="dashboardToolbar">
@@ -734,10 +754,19 @@ function DashboardView({
 
       <KpiGrid kpis={kpis} />
 
+      <DashboardFilterPanel
+        filters={filters}
+        setFilters={setFilters}
+        documents={allDocuments}
+        filteredCount={documents.length}
+        projects={projects}
+        assignments={assignments}
+      />
+
       <section className="mapObjectGrid">
         <PortfolioMap
-          objects={objects}
-          projects={projects}
+          objects={dashboardObjects}
+          projects={dashboardProjects}
           documents={documents}
           assignments={assignments}
           selectedDocument={selectedDocument}
@@ -745,8 +774,8 @@ function DashboardView({
           onOpenObject={onOpenObject}
         />
         <ObjectSideList
-          objects={objects}
-          projects={projects}
+          objects={dashboardObjects}
+          projects={dashboardProjects}
           documents={documents}
           assignments={assignments}
           selectedDocument={selectedDocument}
@@ -759,9 +788,9 @@ function DashboardView({
 
       <PortfolioOverviewTable
         group={overviewGroup}
-        objects={objects}
+        objects={dashboardObjects}
         entrances={entrances}
-        projects={projects}
+        projects={dashboardProjects}
         documents={documents}
         assignments={assignments}
         selectedDocumentId={selectedDocument?.id ?? null}
@@ -1015,6 +1044,82 @@ function KpiGrid({ kpis }: { kpis: KpiShape }) {
       <Kpi label="Offene Prueffaelle" value={formatNumber(kpis.reviewCases)} warning />
       <Kpi label="k.A.-Felder" value={formatNumber(kpis.unknownFields)} warning />
     </section>
+  );
+}
+
+function DashboardFilterPanel({
+  filters,
+  setFilters,
+  documents,
+  filteredCount,
+  projects,
+  assignments
+}: {
+  filters: Filters;
+  setFilters: (value: Filters) => void;
+  documents: ObjectAnalysis[];
+  filteredCount: number;
+  projects: ProjectRecord[];
+  assignments: Record<string, string | null>;
+}) {
+  const options = buildFilterOptions(documents, projects, assignments);
+  const activeCount = Object.values(filters).filter((value) => value.trim()).length;
+
+  return (
+    <section className="dashboardFilterPanel">
+      <div className="filterPanelHeader">
+        <div>
+          <h3>Filter</h3>
+          <p>{activeCount ? `${activeCount} Filter aktiv - ${filteredCount} Treffer` : `${filteredCount} Datensaetze sichtbar`}</p>
+        </div>
+        <button type="button" onClick={() => setFilters(emptyFilters)}>Filter zuruecksetzen</button>
+      </div>
+      <div className="dashboardFilters">
+        <label className="filterInput filterWide">
+          <span>Suche</span>
+          <input
+            value={filters.object}
+            onChange={(event) => setFilters({ ...filters, object: event.target.value })}
+            placeholder="Objekt, Adresse, Projekt, Anbieter..."
+          />
+        </label>
+        <FilterSelect label="Jahr" value={filters.year} options={options.years} onChange={(value) => setFilters({ ...filters, year: value })} />
+        <FilterSelect label="Fonds" value={filters.fund} options={options.funds} onChange={(value) => setFilters({ ...filters, fund: value })} />
+        <FilterSelect label="Objektnummer" value={filters.objectNumber} options={options.objectNumbers} onChange={(value) => setFilters({ ...filters, objectNumber: value })} />
+        <FilterSelect label="Adresse" value={filters.address} options={options.addresses} onChange={(value) => setFilters({ ...filters, address: value })} />
+        <FilterSelect label="Projekt" value={filters.project} options={options.projects} onChange={(value) => setFilters({ ...filters, project: value })} />
+        <FilterSelect label="Projektart" value={filters.projectType} options={options.projectTypes} onChange={(value) => setFilters({ ...filters, projectType: value })} />
+        <FilterSelect label="Dokumenttyp" value={filters.documentType} options={options.documentTypes} onChange={(value) => setFilters({ ...filters, documentType: value })} />
+        <FilterSelect label="Anbieter" value={filters.provider} options={options.providers} onChange={(value) => setFilters({ ...filters, provider: value })} />
+        <FilterSelect label="Wohnung" value={filters.apartmentNumber} options={options.apartments} onChange={(value) => setFilters({ ...filters, apartmentNumber: value })} />
+        <FilterSelect label="Lage" value={filters.location} options={options.locations} onChange={(value) => setFilters({ ...filters, location: value })} />
+        <FilterSelect label="Massnahme" value={filters.cluster} options={options.clusters} onChange={(value) => setFilters({ ...filters, cluster: value })} />
+        <FilterSelect label="Datenqualitaet" value={filters.dataQuality} options={options.qualities} onChange={(value) => setFilters({ ...filters, dataQuality: value })} />
+        <FilterSelect label="Status" value={filters.status} options={options.statuses} onChange={(value) => setFilters({ ...filters, status: value })} />
+      </div>
+    </section>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="filterInput">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Alle</option>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -2725,7 +2830,18 @@ function matchesFilters(
   const haystacks = {
     year: String(unwrap(document.year) ?? ""),
     fund: String(unwrap(document.fund) ?? ""),
-    object: `${String(unwrap(document.objectNumber) ?? "")} ${String(unwrap(document.objectAddress) ?? "")}`,
+    object: [
+      String(unwrap(document.objectNumber) ?? ""),
+      String(unwrap(document.objectAddress) ?? ""),
+      String(unwrap(document.fund) ?? ""),
+      String(unwrap(document.provider) ?? ""),
+      String(unwrap(document.documentNumber) ?? ""),
+      String(unwrap(document.documentType) ?? ""),
+      String(unwrap(document.projectType) ?? ""),
+      project?.projectName ?? "",
+      project?.status ?? "",
+      document.clusters.map((cluster) => unwrap(cluster.cluster) ?? "").join(" ")
+    ].join(" "),
     objectNumber: String(unwrap(document.objectNumber) ?? ""),
     address: String(unwrap(document.objectAddress) ?? ""),
     project: project?.projectName ?? "",
@@ -2743,6 +2859,37 @@ function matchesFilters(
     if (!value.trim()) return true;
     return haystacks[key as keyof Filters].toLowerCase().includes(value.trim().toLowerCase());
   });
+}
+
+function hasFilters(filters: Filters): boolean {
+  return Object.values(filters).some((value) => value.trim());
+}
+
+function buildFilterOptions(
+  documents: ObjectAnalysis[],
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+) {
+  const projectFor = (document: ObjectAnalysis) => projects.find((entry) => entry.id === assignments[document.id]);
+  return {
+    years: uniqueOptions(documents.map((document) => String(unwrap(document.year) ?? ""))),
+    funds: uniqueOptions(documents.map((document) => String(unwrap(document.fund) ?? ""))),
+    objectNumbers: uniqueOptions(documents.map((document) => String(unwrap(document.objectNumber) ?? ""))),
+    addresses: uniqueOptions(documents.map((document) => String(unwrap(document.objectAddress) ?? ""))),
+    projects: uniqueOptions(documents.map((document) => projectFor(document)?.projectName ?? "")),
+    projectTypes: uniqueOptions(documents.flatMap((document) => [String(unwrap(document.projectType) ?? ""), projectFor(document)?.projectType ?? ""])),
+    documentTypes: uniqueOptions(documents.map((document) => String(unwrap(document.documentType) ?? ""))),
+    providers: uniqueOptions(documents.map((document) => String(unwrap(document.provider) ?? ""))),
+    apartments: uniqueOptions(documents.map((document) => String(unwrap(document.apartmentNumber) ?? ""))),
+    locations: uniqueOptions(documents.map((document) => String(unwrap(document.location) ?? ""))),
+    clusters: uniqueOptions(documents.flatMap((document) => document.clusters.map((cluster) => String(unwrap(cluster.cluster) ?? "")))),
+    qualities: uniqueOptions(documents.map((document) => String(unwrap(document.dataQuality) ?? ""))),
+    statuses: uniqueOptions(documents.map((document) => projectFor(document)?.status ?? ""))
+  };
+}
+
+function uniqueOptions(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter((value) => value && value !== "k.A."))).sort((a, b) => a.localeCompare(b, "de"));
 }
 
 function calculateProjectCosts(project: ProjectRecord, documents: ObjectAnalysis[]): ProjectCostSummary {
