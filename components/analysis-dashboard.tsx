@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { UploadPanel } from "./upload-panel";
-import type { LeafletObjectMapProps } from "./leaflet-object-map";
+import type { ObjectMapEntry } from "./map/ObjectMap";
+import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
 import {
@@ -31,10 +32,13 @@ import {
 } from "../lib/storage";
 import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState } from "../types/analysis";
 
-const LeafletObjectMap = dynamic<LeafletObjectMapProps>(() => import("./leaflet-object-map"), {
+const ObjectMap = dynamic<{ entries: ObjectMapEntry[]; onOpenObject: (id: string) => void }>(
+  () => import("./map/ObjectMap").then((module) => module.ObjectMap),
+  {
   ssr: false,
   loading: () => <div className="mapEmpty">Karte wird geladen...</div>
-});
+  }
+);
 
 type ViewKey = "dashboard" | "upload" | "objects" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
@@ -819,6 +823,19 @@ function PortfolioMap({
     `${entry.title} ${entry.fund} ${entry.address}`.toLowerCase().includes(query.toLowerCase())
   );
   const mappedEntries = filteredEntries.filter((entry) => entry.latitude !== null && entry.longitude !== null);
+  const objectMapEntries: ObjectMapEntry[] = mappedEntries.map((entry) => ({
+    key: entry.key,
+    objectId: entry.objectId,
+    title: entry.title,
+    objectNumber: entry.objectNumber,
+    address: entry.address,
+    fund: entry.fund,
+    projectCount: entry.projectCount,
+    documentCount: entry.documents.length,
+    totalCost: entry.totalCost,
+    latitude: entry.latitude as number,
+    longitude: entry.longitude as number
+  }));
   const missingCount = filteredEntries.length - mappedEntries.length;
   return (
     <section className="portfolioMap panel">
@@ -827,14 +844,12 @@ function PortfolioMap({
         <span>{missingCount > 0 ? `${missingCount} Objekt(e): Koordinaten fehlen` : "Koordinaten gepflegt"}</span>
       </div>
       <div className="leafletCard">
-        {mappedEntries.length === 0 ? (
+        {objectMapEntries.length === 0 ? (
           <div className="mapEmpty">Koordinaten fehlen. Bitte latitude und longitude im Objektformular ergaenzen.</div>
         ) : (
-          <LeafletObjectMap
-            entries={mappedEntries}
-            center={mapCenter(mappedEntries)}
+          <ObjectMap
+            entries={objectMapEntries}
             onOpenObject={onOpenObject}
-            onSelectDocument={onSelectDocument}
           />
         )}
       </div>
@@ -859,7 +874,10 @@ function ObjectSideList({
   onSelectDocument: (id: string) => void;
   onOpenObject: (id: string) => void;
 }) {
-  const entries = buildMapEntries(objects, projects, documents, assignments).slice(0, 8);
+  const [query, setQuery] = useState("");
+  const entries = buildMapEntries(objects, projects, documents, assignments)
+    .filter((entry) => `${entry.title} ${entry.address} ${entry.fund} ${entry.objectNumber}`.toLowerCase().includes(query.toLowerCase()))
+    .slice(0, 8);
   return (
     <section className="panel objectSidePanel">
       <div className="panelHeader">
@@ -868,7 +886,7 @@ function ObjectSideList({
           <p>Erkannte Objektbereiche</p>
         </div>
       </div>
-      <input className="sideSearch" placeholder="Suche Objekt..." readOnly />
+      <input className="sideSearch" placeholder="Suche Objekt..." value={query} onChange={(event) => setQuery(event.target.value)} />
       <div className="sideObjectRows">
         {entries.length === 0 ? <p className="muted">Noch keine Objekte vorhanden.</p> : null}
         {entries.map((entry) => {
@@ -1573,11 +1591,27 @@ function ObjectMeasuresTab({
   });
   const rows = buildMeasureRows(filteredDocuments);
   const totalGross = sumValues(rows.map((row) => row.grossCost));
+  const chartRows: TradeCostChartRow[] = rows.map((row) => ({
+    id: row.id,
+    cluster: row.cluster,
+    beschreibung: row.description,
+    kosten_brutto: row.grossCost,
+    anteil_prozent: row.grossCost !== null && totalGross ? (row.grossCost / totalGross) * 100 : null,
+    quelle: row.source,
+    status: row.status
+  }));
   const selectedRow = rows.find((row) => row.id === selectedMeasureId) ?? rows[0] ?? null;
 
   function updateMeasure(row: MeasureRow, field: "cluster" | "description" | "grossCost" | "status", value: string) {
     onUpdateDocument(row.documentId, (document) => ({
       ...document,
+      measureDetails: document.measureDetails?.map((detail) => {
+        if (detail.cluster !== row.cluster && detail.abschnitt !== row.section) return detail;
+        if (field === "cluster") return { ...detail, cluster: value as MeasureCluster };
+        if (field === "description") return { ...detail, beschreibung: value };
+        if (field === "grossCost") return { ...detail, summe: parseGermanNumber(value) };
+        return detail;
+      }),
       clusters: document.clusters.map((cluster) => {
         if (cluster.id !== row.measureId) return cluster;
         if (field === "cluster") return { ...cluster, cluster: manualField(value as MeasureCluster) };
@@ -1596,7 +1630,7 @@ function ObjectMeasuresTab({
         <label className="filterInput"><span>Jahr</span><input value={filters.year} onChange={(event) => setFilters({ ...filters, year: event.target.value })} placeholder="Alle" /></label>
         <label className="filterInput"><span>Dokumenttyp</span><input value={filters.documentType} onChange={(event) => setFilters({ ...filters, documentType: event.target.value })} placeholder="Alle" /></label>
       </div>
-      <MeasureCostChart rows={rows} onSelect={setSelectedMeasureId} />
+      <TradeCostBarChart rows={chartRows} onSelect={setSelectedMeasureId} />
       <div className="measureGrid">
         <div className="tableWrap compactTable">
           <table className="measureTable">
@@ -1610,10 +1644,11 @@ function ObjectMeasuresTab({
                 <th>Anteil</th>
                 <th>Quelle</th>
                 <th>Status</th>
+                <th>Bearbeiten</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? <tr><td colSpan={8}>k.A.</td></tr> : rows.map((row) => (
+              {rows.length === 0 ? <tr><td colSpan={9}>k.A.</td></tr> : rows.map((row) => (
                 <tr key={row.id} className={selectedRow?.id === row.id ? "selectedRow" : ""} onClick={() => setSelectedMeasureId(row.id)}>
                   <td><input value={row.cluster} onChange={(event) => updateMeasure(row, "cluster", event.target.value)} /></td>
                   <td><input value={row.description === "k.A." ? "" : row.description} onChange={(event) => updateMeasure(row, "description", event.target.value)} placeholder="k.A." /></td>
@@ -1623,6 +1658,7 @@ function ObjectMeasuresTab({
                   <td>{formatPercent(row.grossCost, totalGross)}</td>
                   <td className="wideCell">{row.source}</td>
                   <td><input value={row.status === "k.A." ? "" : row.status} onChange={(event) => updateMeasure(row, "status", event.target.value)} placeholder="k.A." /></td>
+                  <td><button type="button" onClick={(event) => { event.stopPropagation(); setSelectedMeasureId(row.id); }}>Bearbeiten</button></td>
                 </tr>
               ))}
             </tbody>
@@ -1631,28 +1667,6 @@ function ObjectMeasuresTab({
         <MeasureDetailPanel row={selectedRow} />
       </div>
     </div>
-  );
-}
-
-function MeasureCostChart({ rows, onSelect }: { rows: MeasureRow[]; onSelect: (id: string) => void }) {
-  const chartRows = [...rows].filter((row) => row.grossCost !== null).sort((a, b) => (b.grossCost ?? 0) - (a.grossCost ?? 0));
-  const max = Math.max(...chartRows.map((row) => row.grossCost ?? 0), 0);
-  return (
-    <section className="measureChart panel">
-      <div className="panelHeader compactHeader">
-        <div>
-          <h3>Kosten nach Gewerk</h3>
-          <p>Bruttokosten nach erkanntem Massnahmencluster.</p>
-        </div>
-      </div>
-      {chartRows.length === 0 ? <p className="muted">k.A.</p> : chartRows.map((row, index) => (
-        <button className="barRow" type="button" key={row.id} onClick={() => onSelect(row.id)}>
-          <span>{row.cluster}</span>
-          <div><i style={{ width: `${max ? ((row.grossCost ?? 0) / max) * 100 : 0}%` }} className={index === 0 ? "barHighlight" : ""} /></div>
-          <strong>{formatNullableCurrency(row.grossCost)}</strong>
-        </button>
-      ))}
-    </section>
   );
 }
 
@@ -3105,6 +3119,32 @@ function costPerSqmForDocuments(documents: ObjectAnalysis[], grossCost: number |
 
 function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
   return documents.flatMap((document) => {
+    if (document.measureDetails?.length) {
+      return document.measureDetails.map((detail, index) => {
+        const measure = document.clusters.find((entry) => entry.cluster.value === detail.cluster || entry.description.value === detail.abschnitt);
+        const source = detail.quelle || measure?.totalCost.sources[0]?.textSnippet || "k.A.";
+        return {
+          id: `${document.id}-detail-${index}`,
+          documentId: document.id,
+          measureId: measure?.id ?? "",
+          cluster: detail.cluster,
+          description: detail.beschreibung || "k.A.",
+          netCost: null,
+          vatCost: null,
+          grossCost: detail.summe,
+          source,
+          status: fieldOrUnknown(document.dataQuality),
+          section: detail.abschnitt || "k.A.",
+          confidence: measure?.cluster.confidence === null || measure?.cluster.confidence === undefined ? "k.A." : `${Math.round(measure.cluster.confidence * 100)} %`,
+          lineItems: (measure?.lineItems ?? []).map((item) => ({
+            position: item.position,
+            description: item.description,
+            totalPrice: item.totalPrice
+          }))
+        };
+      });
+    }
+
     return document.clusters.map((measure, index) => {
       const cluster = fieldOrUnknown(measure.cluster);
       const detail = document.measureDetails?.find((entry) => entry.cluster === measure.cluster.value || entry.abschnitt === measure.description.value);

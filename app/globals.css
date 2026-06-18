@@ -431,10 +431,11 @@ h4 {
 
 .leafletCard {
   position: relative;
-  height: 380px;
+  min-height: 520px;
+  height: 520px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   background: #eef2f5;
 }
 
@@ -447,21 +448,23 @@ h4 {
   font-family: "Segoe UI", Arial, sans-serif;
 }
 
-.paribusLeafletMarker {
-  width: 24px;
-  height: 24px;
-  border: 3px solid #fff;
-  border-radius: 50%;
+.paribusPinMarker {
+  width: 28px;
+  height: 34px;
+  border-radius: 50% 50% 50% 0;
   background: var(--orange);
+  border: 2px solid #fff;
   box-shadow: 0 8px 18px rgba(255, 110, 66, 0.35);
+  transform: rotate(-45deg);
 }
 
-.paribusLeafletMarker span {
+.paribusPinMarker span {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 10px;
+  height: 10px;
+  margin: 8px 0 0 8px;
   border-radius: 50%;
-  background: var(--orange);
+  background: #fff;
 }
 
 .mapPopup {
@@ -1254,51 +1257,42 @@ select {
   gap: 10px;
 }
 
-.measureChart {
+.tradeChartCard {
   display: grid;
   gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
   margin-bottom: 0;
+  padding: 16px;
 }
 
-.barRow {
+.tradeChart {
+  width: 100%;
+  min-height: 280px;
+}
+
+.tradeTooltip {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) 120px;
-  align-items: center;
-  gap: 12px;
-  border: 0;
-  background: transparent;
-  padding: 4px 0;
-  text-align: left;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.12);
+  padding: 10px;
 }
 
-.barRow span {
-  color: var(--ink);
+.tradeTooltip span {
+  color: var(--muted);
   font-size: 13px;
-  font-weight: 800;
 }
 
-.barRow div {
-  height: 12px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e8edf2;
-}
-
-.barRow i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--navy);
-}
-
-.barRow .barHighlight {
-  background: var(--orange);
-}
-
-.barRow strong {
-  color: var(--ink);
-  font-size: 13px;
-  text-align: right;
+.measureChartEmpty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  padding: 18px;
 }
 
 .measureTable {
@@ -1591,10 +1585,6 @@ select {
   .portfolioDetailGrid,
   .miniItem,
   .unassignedCard {
-    grid-template-columns: 1fr;
-  }
-
-  .barRow {
     grid-template-columns: 1fr;
   }
 
