@@ -255,6 +255,8 @@ export function AnalysisDashboard() {
   const [message, setMessage] = useState<string | null>(null);
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
+  const [uploadDocument, setUploadDocument] = useState<ObjectAnalysis | null>(null);
+  const [objectDraft, setObjectDraft] = useState<ObjectRecord>(() => objectFromDocument());
 
   useEffect(() => {
     const storedObjects = getObjects();
@@ -300,7 +302,8 @@ export function AnalysisDashboard() {
   }, [projects, selectedProjectId]);
 
   const selectedObject = useMemo(() => {
-    return objects.find((object) => object.id === selectedObjectId) ?? objects[0] ?? null;
+    if (!selectedObjectId) return null;
+    return objects.find((object) => object.id === selectedObjectId) ?? null;
   }, [objects, selectedObjectId]);
 
   const unassignedDocuments = filteredDocuments.filter((document) => !assignments[document.id]);
@@ -342,6 +345,10 @@ export function AnalysisDashboard() {
   async function handleAnalyze(files: File[]) {
     setIsAnalyzing(true);
     setMessage(null);
+    setUploadDocument(null);
+    setObjectDraft(objectFromDocument());
+    setSelectedObjectId(null);
+    setSelectedDocumentId(null);
 
     try {
       const formData = new FormData();
@@ -359,14 +366,17 @@ export function AnalysisDashboard() {
 
       const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), data.analysis.objects);
       mergedDocuments.forEach(saveDocument);
+      const currentDocument = data.analysis.objects[0] ?? null;
       setAnalysis(buildAnalysisFromDocuments(mergedDocuments, data.analysis));
-      setSelectedDocumentId(data.analysis.objects[0]?.id ?? mergedDocuments[0]?.id ?? null);
+      setUploadDocument(currentDocument);
+      setObjectDraft(objectFromDocument(currentDocument ?? undefined));
+      setSelectedDocumentId(currentDocument?.id ?? null);
       setAssignments((current) => {
         const next = autoAssignDocuments(mergedDocuments, projects, current);
         saveAssignments(next);
         return next;
       });
-      setMessage("Analyse abgeschlossen. Fehlende Werte bleiben k.A. und koennen rechts korrigiert werden.");
+      setMessage("Dokument analysiert - bitte Daten pruefen.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Analyse fehlgeschlagen.");
     } finally {
@@ -416,6 +426,40 @@ export function AnalysisDashboard() {
     const object = saveObject(objectFromDocument(seed));
     setObjects((current) => [...current.filter((entry) => entry.id !== object.id), object]);
     setSelectedObjectId(object.id);
+    setView("objects");
+  }
+
+  function saveUploadObject() {
+    if (!uploadDocument) return;
+    const object = saveObject({ ...objectDraft, id: `object-${Date.now()}` });
+    setObjects((current) => [...current, object]);
+    setSelectedObjectId(object.id);
+    setUploadDocument(null);
+    setObjectDraft(objectFromDocument());
+    setObjectTab("overview");
+    setView("objects");
+  }
+
+  function assignUploadDocumentToObject(objectId: string) {
+    if (!uploadDocument) return;
+    const object = objects.find((entry) => entry.id === objectId);
+    if (!object) return;
+    const project = saveProject({
+      ...projectFromDocument(uploadDocument, objects),
+      objectId: object.id,
+      object: objectLabel(object),
+      projectName: fieldOrUnknown(uploadDocument.projectSuggestion) !== "k.A." ? fieldOrUnknown(uploadDocument.projectSuggestion) : `Dokument ${fieldOrUnknown(uploadDocument.documentNumber)}`
+    });
+    setProjects((current) => [...current.filter((entry) => entry.id !== project.id), project]);
+    setAssignments((current) => {
+      const next = { ...current, [uploadDocument.id]: project.id };
+      saveAssignments(next);
+      return next;
+    });
+    setSelectedObjectId(object.id);
+    setUploadDocument(null);
+    setObjectDraft(objectFromDocument());
+    setObjectTab("documents");
     setView("objects");
   }
 
@@ -555,7 +599,8 @@ export function AnalysisDashboard() {
   }
 
   const pageTitle = getPageTitle(view);
-  const showDocumentEditor = view === "upload" || view === "projects" || view === "unassigned" || view === "reports" || view === "settings";
+  const showDocumentEditor = view === "projects" || view === "unassigned" || view === "reports" || view === "settings";
+  const showUploadPanel = view === "upload";
 
   return (
     <main className="shell">
@@ -622,7 +667,7 @@ export function AnalysisDashboard() {
             onOpenObjects={() => setView("objects")}
           />
         ) : (
-          <section className={showDocumentEditor ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}>
+          <section className={showDocumentEditor || showUploadPanel ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}>
             <div className="workspaceMain">
               {view === "objects" ? (
               <ObjectsView
@@ -639,7 +684,6 @@ export function AnalysisDashboard() {
                 onCreateEntrance={createEntrance}
                 onDelete={deleteObject}
                 onDeleteEntrance={deleteEntrance}
-                onSelectObject={setSelectedObjectId}
                 onSetTab={setObjectTab}
                 onUpdateObject={updateObject}
                 onUpdateEntrance={updateEntrance}
@@ -725,6 +769,18 @@ export function AnalysisDashboard() {
                 onCreateProject={() => selectedDocument && createProject(selectedDocument)}
                 onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
                 onUpdate={updateDocument}
+              />
+            ) : null}
+            {showUploadPanel ? (
+              <UploadObjectPanel
+                document={uploadDocument}
+                draft={objectDraft}
+                existingObject={findExistingObjectForDraft(objectDraft, objects)}
+                isAnalyzing={isAnalyzing}
+                message={message}
+                onChange={(field, value) => setObjectDraft((current) => ({ ...current, [field]: value }))}
+                onSaveNew={saveUploadObject}
+                onAssignExisting={(objectId) => assignUploadDocumentToObject(objectId)}
               />
             ) : null}
           </section>
@@ -1561,7 +1617,6 @@ function ObjectsView({
   onCreateEntrance,
   onDelete,
   onDeleteEntrance,
-  onSelectObject,
   onSetTab,
   onUpdateObject,
   onUpdateEntrance,
@@ -1583,7 +1638,6 @@ function ObjectsView({
   onCreateEntrance: (objectId: string) => void;
   onDelete: (id: string) => void;
   onDeleteEntrance: (id: string) => void;
-  onSelectObject: (id: string) => void;
   onSetTab: (tab: ObjectTab) => void;
   onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
   onUpdateEntrance: (id: string, field: keyof EntranceRecord, value: string) => void;
@@ -2785,6 +2839,94 @@ function DocumentEditor({
   );
 }
 
+function UploadObjectPanel({
+  document,
+  draft,
+  existingObject,
+  isAnalyzing,
+  message,
+  onChange,
+  onSaveNew,
+  onAssignExisting
+}: {
+  document: ObjectAnalysis | null;
+  draft: ObjectRecord;
+  existingObject: ObjectRecord | null;
+  isAnalyzing: boolean;
+  message: string | null;
+  onChange: (field: keyof ObjectRecord, value: string) => void;
+  onSaveNew: () => void;
+  onAssignExisting: (objectId: string) => void;
+}) {
+  return (
+    <aside className="editorPanel uploadObjectPanel">
+      <div className="panelHeader">
+        <div>
+          <h2>Neues Objekt aus Upload</h2>
+          <p>{document ? "Dokument analysiert - bitte Daten pruefen." : "Nach der Analyse erscheinen hier die KI-erkannten Objektwerte."}</p>
+        </div>
+      </div>
+
+      {isAnalyzing ? (
+        <div className="analysisLoader">
+          <span />
+          <strong>KI analysiert Dokument...</strong>
+          <p>Der rechte Info-Bereich wurde zurueckgesetzt und wird danach neu befuellt.</p>
+        </div>
+      ) : null}
+
+      {message ? <div className="uploadStatus">{message}</div> : null}
+
+      {!isAnalyzing && !document ? (
+        <div className="emptyState">
+          <p>Bitte links ein Dokument hochladen und analysieren.</p>
+        </div>
+      ) : null}
+
+      {document ? (
+        <>
+          {existingObject ? (
+            <div className="possibleMatchBox">
+              <strong>Moeglicherweise vorhandenes Objekt gefunden</strong>
+              <p>{objectLabel(existingObject) || existingObject.address || "k.A."}</p>
+              <div className="editorActions">
+                <button type="button" onClick={() => onAssignExisting(existingObject.id)}>Bestehendem Objekt zuordnen</button>
+                <button type="button" onClick={onSaveNew}>Trotzdem neues Objekt erstellen</button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="uploadExtractSummary">
+            <InfoLine label="Dokument" value={fieldOrUnknown(document.documentType)} />
+            <InfoLine label="Anbieter" value={fieldOrUnknown(document.provider)} />
+            <InfoLine label="Kosten brutto" value={formatCurrency(document.totalCost)} />
+            <InfoLine label="Datenqualitaet" value={fieldOrUnknown(document.dataQuality)} />
+          </div>
+
+          <div className="editForm">
+            <EditInput label="Fonds" value={draft.fund} placeholder="Nicht erkannt" onChange={(value) => onChange("fund", value)} />
+            <EditInput label="Objektnummer" value={draft.objectNumber} placeholder="Nicht erkannt" onChange={(value) => onChange("objectNumber", value)} />
+            <EditInput label="Objektname" value={draft.objectName} placeholder="Nicht erkannt" onChange={(value) => onChange("objectName", value)} />
+            <EditInput label="Adresse / Adressbereich" value={draft.address} placeholder="Nicht erkannt" onChange={(value) => onChange("address", value)} />
+            <EditInput label="PLZ" value={draft.postalCode} placeholder="Nicht erkannt" onChange={(value) => onChange("postalCode", value)} />
+            <EditInput label="Ort" value={draft.city} placeholder="Nicht erkannt" onChange={(value) => onChange("city", value)} />
+            <EditInput label="Bundesland" value={draft.federalState} placeholder="Nicht erkannt" onChange={(value) => onChange("federalState", value)} />
+            <EditInput label="Baujahr" value={draft.constructionYear} placeholder="Nicht erkannt" onChange={(value) => onChange("constructionYear", value)} />
+            <EditInput label="Anzahl Wohneinheiten" value={draft.unitCount} placeholder="Nicht erkannt" onChange={(value) => onChange("unitCount", value)} />
+            <EditInput label="Gesamtwohnflaeche m2" value={draft.totalLivingAreaSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("totalLivingAreaSqm", value)} />
+            <EditInput label="Latitude" value={draft.latitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("latitude", value)} />
+            <EditInput label="Longitude" value={draft.longitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("longitude", value)} />
+          </div>
+
+          <div className="editorActions">
+            <button className="buttonPrimary" type="button" onClick={onSaveNew}>Als neues Objekt speichern</button>
+          </div>
+        </>
+      ) : null}
+    </aside>
+  );
+}
+
 function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
   const debug = document.measureDebug;
   const details = document.measureDetails ?? [];
@@ -2923,14 +3065,26 @@ function ProjectForm({
   );
 }
 
-function EditInput({ label, value, onChange, readOnly }: { label: string; value: string; onChange: (value: string) => void; readOnly?: boolean }) {
+function EditInput({
+  label,
+  value,
+  onChange,
+  readOnly,
+  placeholder = "k.A."
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  readOnly?: boolean;
+  placeholder?: string;
+}) {
   return (
     <label className="filterInput">
       <span>{label}</span>
       <input
         value={value === "k.A." ? "" : value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="k.A."
+        placeholder={placeholder}
         readOnly={readOnly}
       />
     </label>
@@ -2982,6 +3136,20 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
     latitude: "",
     longitude: ""
   };
+}
+
+function findExistingObjectForDraft(draft: ObjectRecord, objects: ObjectRecord[]): ObjectRecord | null {
+  const draftNumber = draft.objectNumber.trim().toLowerCase();
+  const draftAddress = draft.address.trim().toLowerCase();
+  if (!draftNumber && !draftAddress) return null;
+  return objects.find((object) => {
+    const objectNumber = object.objectNumber.trim().toLowerCase();
+    const objectAddress = object.address.trim().toLowerCase();
+    return (
+      (draftNumber && objectNumber && draftNumber === objectNumber) ||
+      (draftAddress && objectAddress && (draftAddress.includes(objectAddress) || objectAddress.includes(draftAddress)))
+    );
+  }) ?? null;
 }
 
 function emptyEntrance(objectId: string): EntranceRecord {
