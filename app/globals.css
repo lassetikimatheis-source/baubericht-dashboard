@@ -2811,6 +2811,11 @@ td:nth-child(13) {
 }
 
 .measureCardDetails .infoLine {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(130px, 0.25fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2819,13 +2824,15 @@ td:nth-child(13) {
 }
 
 .measureCardDetails .infoLine:nth-of-type(n + 2) {
-  grid-column: span 1;
+  grid-column: 1 / -1;
 }
 
 .measureCardDetails .infoLine strong,
 .measureCardDetails .infoLine span {
+  margin: 0;
   overflow-wrap: break-word;
   word-break: normal;
+  white-space: normal;
 }
 
 .measureCardDetails label {
@@ -2853,5 +2860,9 @@ td:nth-child(13) {
 
   .measureCardTop > strong {
     white-space: normal;
+  }
+
+  .measureCardDetails .infoLine {
+    grid-template-columns: 1fr;
   }
 }
