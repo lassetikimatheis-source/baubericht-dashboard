@@ -2503,6 +2503,48 @@ textarea:focus {
   font-size: 16px;
 }
 
+.objectHeroContent,
+.objectHeroTitle,
+.objectMasterGrid,
+.objectHeaderMetrics,
+.costLine {
+  min-width: 0;
+}
+
+.objectMasterGrid .miniItem,
+.objectMasterGrid .unassignedCard,
+.objectMasterGrid > *,
+.costLine {
+  overflow: hidden;
+}
+
+.objectMasterGrid strong,
+.objectMasterGrid p,
+.objectHeroTitle h3,
+.objectHeroTitle p,
+.costLine strong,
+.costLine span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.objectHeaderMetrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.costLine {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 88px;
+}
+
+.costLine strong {
+  display: block;
+  line-height: 1.2;
+}
+
 .tabs {
   gap: 6px;
   padding-bottom: 8px;
