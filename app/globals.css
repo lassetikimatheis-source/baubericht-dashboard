@@ -2756,3 +2756,102 @@ td:nth-child(13) {
     min-height: 320px;
   }
 }
+
+/* Measure card readability fixes */
+.measureCard {
+  align-content: start;
+}
+
+.measureCardTop {
+  grid-template-columns: 36px minmax(0, 1fr) max-content;
+}
+
+.measureCardTop > div,
+.measureCardTop h3,
+.measureCardTop p,
+.measureCardTop strong {
+  min-width: 0;
+}
+
+.measureCardTop h3,
+.measureCardTop p {
+  overflow-wrap: break-word;
+}
+
+.measureCardTop > strong {
+  white-space: nowrap;
+}
+
+.measureCardMetrics {
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+}
+
+.measureCardMetrics .costLine {
+  min-height: 74px;
+  padding: 10px 12px;
+}
+
+.measureCardMetrics .costLine span {
+  margin-bottom: 2px;
+  line-height: 1.25;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.measureCardMetrics .costLine strong {
+  font-size: 15px;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.measureCardDetails {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.measureCardDetails .infoLine {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.measureCardDetails .infoLine:nth-of-type(n + 2) {
+  grid-column: span 1;
+}
+
+.measureCardDetails .infoLine strong,
+.measureCardDetails .infoLine span {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.measureCardDetails label {
+  min-width: 0;
+}
+
+.measureCardDetails input,
+.measureCardDetails textarea,
+.measureCardDetails select {
+  width: 100%;
+}
+
+@media (min-width: 1320px) {
+  .measureCardGrid {
+    grid-template-columns: repeat(2, minmax(360px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .measureCardTop,
+  .measureCardDetails,
+  .measureCardMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .measureCardTop > strong {
+    white-space: normal;
+  }
+}
