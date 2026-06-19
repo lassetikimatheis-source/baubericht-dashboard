@@ -24,8 +24,8 @@ export function ObjectMap({
   return (
     <MapContainer center={mapCenter(entries)} zoom={entries.length === 1 ? 15 : 6} scrollWheelZoom dragging className="leafletMap">
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
       />
       <FitBounds entries={entries} />
       {entries.map((entry) => (

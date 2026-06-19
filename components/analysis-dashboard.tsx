@@ -1039,10 +1039,44 @@ function PortfolioMap({
 }) {
   const entries = buildMapEntries(objects, projects, documents, assignments);
   const [query, setQuery] = useState("");
+  const [geocodedCoordinates, setGeocodedCoordinates] = useState<Record<string, { latitude: number; longitude: number }>>({});
+  const [geocodeStatus, setGeocodeStatus] = useState<Record<string, "loading" | "found" | "missing">>({});
   const filteredEntries = entries.filter((entry) =>
     `${entry.title} ${entry.fund} ${entry.address}`.toLowerCase().includes(query.toLowerCase())
   );
-  const mappedEntries = filteredEntries.filter((entry) => entry.latitude !== null && entry.longitude !== null);
+  useEffect(() => {
+    const unresolved = filteredEntries.filter((entry) =>
+      entry.latitude === null &&
+      entry.longitude === null &&
+      entry.address &&
+      entry.address !== "k.A." &&
+      !geocodedCoordinates[entry.key] &&
+      geocodeStatus[entry.key] !== "loading" &&
+      geocodeStatus[entry.key] !== "missing"
+    );
+
+    unresolved.slice(0, 5).forEach((entry) => {
+      setGeocodeStatus((current) => ({ ...current, [entry.key]: "loading" }));
+      fetch(`/api/geocode?address=${encodeURIComponent(entry.address)}`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (!data.ok || typeof data.latitude !== "number" || typeof data.longitude !== "number") {
+            setGeocodeStatus((current) => ({ ...current, [entry.key]: "missing" }));
+            return;
+          }
+          setGeocodedCoordinates((current) => ({
+            ...current,
+            [entry.key]: { latitude: data.latitude, longitude: data.longitude }
+          }));
+          setGeocodeStatus((current) => ({ ...current, [entry.key]: "found" }));
+        })
+        .catch(() => setGeocodeStatus((current) => ({ ...current, [entry.key]: "missing" })));
+    });
+  }, [filteredEntries, geocodedCoordinates, geocodeStatus]);
+
+  const mappedEntries = filteredEntries.filter((entry) =>
+    (entry.latitude !== null && entry.longitude !== null) || Boolean(geocodedCoordinates[entry.key])
+  );
   const objectMapEntries: ObjectMapEntry[] = mappedEntries.map((entry) => ({
     key: entry.key,
     objectId: entry.objectId,
@@ -1053,15 +1087,22 @@ function PortfolioMap({
     projectCount: entry.projectCount,
     documentCount: entry.documents.length,
     totalCost: entry.totalCost,
-    latitude: entry.latitude as number,
-    longitude: entry.longitude as number
+    latitude: entry.latitude ?? geocodedCoordinates[entry.key]?.latitude ?? 0,
+    longitude: entry.longitude ?? geocodedCoordinates[entry.key]?.longitude ?? 0
   }));
   const missingCount = filteredEntries.length - mappedEntries.length;
+  const loadingCount = Object.values(geocodeStatus).filter((status) => status === "loading").length;
   return (
     <section className="portfolioMap panel">
       <div className="mapSearchBar">
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Objekt oder Adresse suchen..." />
-        <span>{missingCount > 0 ? `${missingCount} Objekt(e): Koordinaten fehlen` : "Koordinaten gepflegt"}</span>
+        <span>
+          {loadingCount > 0
+            ? "Adressen werden markiert..."
+            : missingCount > 0
+              ? `${missingCount} Objekt(e): Adresse/Koordinaten nicht gefunden`
+              : "Alle Objekte markiert"}
+        </span>
       </div>
       <div className="leafletCard">
         {objectMapEntries.length === 0 ? (
