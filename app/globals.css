@@ -2142,3 +2142,569 @@ select {
     display: grid;
   }
 }
+
+/* UI refresh: clean Paribus asset-management look */
+:root {
+  --navy: #466389;
+  --navy-dark: #06213f;
+  --ink: #1f2933;
+  --muted: #667085;
+  --line: #e3e8ef;
+  --panel: #ffffff;
+  --bg: #f6f8fb;
+  --orange: #ff6e42;
+  --green: #4f9a3d;
+  --green-soft: #edf7ed;
+  --orange-soft: #fff3ed;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.shell {
+  grid-template-columns: 244px minmax(0, 1fr);
+  background: var(--bg);
+}
+
+.sidebar {
+  gap: 22px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #06213f;
+  box-shadow: none;
+  padding: 22px 16px;
+}
+
+.brand {
+  gap: 12px;
+}
+
+.brandMark {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+}
+
+.brand strong {
+  font-size: 20px;
+  letter-spacing: 0.08em;
+}
+
+.brand span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+}
+
+.nav {
+  gap: 4px;
+}
+
+.navButton {
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.navButtonActive {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 3px 0 0 var(--orange);
+}
+
+.sideNote {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 16px;
+}
+
+.sideNote strong {
+  font-size: 18px;
+}
+
+.content {
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 18px 22px 32px;
+}
+
+.pageHeader {
+  min-height: 58px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: none;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+
+.pageHeader h1 {
+  color: #142235;
+  font-size: 28px;
+  letter-spacing: 0;
+}
+
+.eyebrow {
+  color: var(--navy);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+button,
+.button,
+.imageUploadButton,
+.smallUploadButton {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: none;
+  color: #324253;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+button:hover,
+.button:hover,
+.imageUploadButton:hover,
+.smallUploadButton:hover {
+  border-color: #b8c4d2;
+  background: #f8fafc;
+  transform: none;
+}
+
+.buttonPrimary,
+.headerActions .buttonPrimary {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fff;
+}
+
+.buttonPrimary:hover,
+.headerActions .buttonPrimary:hover {
+  border-color: #365071;
+  background: #365071;
+  color: #fff;
+}
+
+.panel,
+.kpi,
+.filterBar,
+.dashboardFilterPanel,
+.objectPageHeader,
+.objectDirectory,
+.objectProfile,
+.detectedObjectSection,
+.tradeChartCard,
+.tradeDonutCard,
+.insightCard,
+.aiSummaryCard,
+.measureCard,
+.documentPreviewCard,
+.editorPanel,
+.objectImagesPanel,
+.sectionIntro,
+.entranceCard,
+.uploadBox,
+.objectFormPanel,
+.objectOverviewBoard,
+.tradesBoard,
+.objectDetailHeader {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: none;
+}
+
+.panelHeader,
+.tableHeader {
+  padding: 14px 16px;
+}
+
+.panelHeader h2,
+.panelHeader h3,
+.tableHeader h2,
+.tableHeader h3 {
+  color: #142235;
+  font-size: 18px;
+}
+
+.panelHeader p,
+.tableHeader p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.kpiGrid {
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+}
+
+.kpi {
+  min-height: 92px;
+  padding: 16px 16px 14px 56px;
+}
+
+.kpi::before {
+  left: 14px;
+  top: 16px;
+  width: 32px;
+  height: 32px;
+}
+
+.kpi::after {
+  left: 23px;
+  top: 25px;
+  width: 14px;
+  height: 14px;
+}
+
+.kpi span {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.kpi strong {
+  color: #142235;
+  font-size: 20px;
+}
+
+.dashboardToolbar {
+  align-items: center;
+}
+
+.dashboardToolbar h2 {
+  color: #142235;
+  font-size: 22px;
+}
+
+.dashboardFilters,
+.filterBar,
+.measureFilters,
+.editForm,
+.projectForm,
+.settingsGrid {
+  gap: 10px;
+}
+
+.filterInput span,
+.editForm label span,
+.projectForm label span,
+.settingsGrid label span {
+  color: #667085;
+  font-size: 12px;
+}
+
+input,
+select,
+textarea {
+  min-height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #9bb0ca;
+  outline: 2px solid rgba(70, 99, 137, 0.14);
+}
+
+.mapObjectGrid {
+  gap: 12px;
+}
+
+.portfolioMap {
+  min-height: auto;
+  padding: 12px;
+}
+
+.leafletCard {
+  height: 460px;
+  min-height: 460px;
+  border-radius: 10px;
+}
+
+.dashboardMapGrid .leafletCard {
+  height: 340px;
+  min-height: 340px;
+}
+
+.objectSidePanel {
+  padding: 14px;
+}
+
+.sideObjectRow {
+  min-height: 54px;
+  padding: 8px 0;
+}
+
+.mapPopup {
+  min-width: 220px;
+}
+
+.mapPopup button {
+  width: 100%;
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fff;
+}
+
+.objectManagementLayout {
+  gap: 14px;
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.objectDetailHeader {
+  grid-template-columns: 300px minmax(0, 1fr);
+  border-radius: 12px;
+}
+
+.objectHeroImage,
+.objectHeroImage img,
+.objectHeroImage div {
+  min-height: 230px;
+}
+
+.objectHeroTitle h2 {
+  color: #142235;
+  font-size: 28px;
+}
+
+.objectMasterGrid,
+.aiReportGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.objectHeaderMetrics {
+  gap: 8px;
+}
+
+.costLine {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.costLine span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.costLine strong {
+  color: #142235;
+  font-size: 16px;
+}
+
+.tabs {
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.tabButton {
+  min-height: 32px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.tabButtonActive {
+  border-color: #9bb0ca;
+  background: #eef4fb;
+  color: #233f60;
+}
+
+.measureCardGrid,
+.documentCardGrid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.measureCard,
+.documentPreviewCard {
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.measureCard:hover,
+.documentPreviewCard:hover,
+.objectCard:hover,
+.sideObjectRow:hover {
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.06);
+  transform: none;
+}
+
+.measureCardTop h3,
+.documentPreviewCard h3 {
+  color: #142235;
+  font-size: 17px;
+}
+
+.measureCardMetrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tableWrap {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+  color: #465466;
+  font-size: 12px;
+  text-transform: none;
+}
+
+td,
+th {
+  border-bottom: 1px solid #edf1f5;
+  padding: 10px 12px;
+}
+
+tbody tr:hover {
+  background: #f8fafc;
+}
+
+.moneyStrong,
+td:nth-child(10),
+td:nth-child(11),
+td:nth-child(12),
+td:nth-child(13) {
+  text-align: right;
+}
+
+.dropzone {
+  min-height: 118px;
+  border-color: var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.uploadTypes {
+  gap: 6px;
+}
+
+.pill,
+.status,
+.trafficBadge {
+  min-height: 24px;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.uploadObjectPanel .editForm {
+  grid-template-columns: 1fr;
+}
+
+.analysisLoader {
+  padding: 16px;
+}
+
+.emptyState,
+.imageEmpty,
+.measureChartEmpty,
+.mapEmpty {
+  min-height: auto;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 18px;
+}
+
+.tradeChartCard,
+.tradeDonutCard,
+.insightCard,
+.aiSummaryCard {
+  padding: 14px;
+}
+
+.tradeChart {
+  min-height: 240px;
+}
+
+.objectImageGrid img,
+.imageLightboxButton img {
+  border-radius: 8px;
+}
+
+.imageEmpty {
+  min-height: 180px;
+}
+
+@media (max-width: 1420px) {
+  .kpiGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .content {
+    padding: 16px;
+  }
+
+  .pageHeader {
+    display: grid;
+  }
+
+  .objectManagementLayout,
+  .objectDetailHeader,
+  .objectOverviewBoard,
+  .mapObjectGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .objectDirectory {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .content {
+    padding: 12px;
+  }
+
+  .pageHeader h1 {
+    font-size: 24px;
+  }
+
+  .kpiGrid,
+  .objectMasterGrid,
+  .objectHeaderMetrics,
+  .measureCardMetrics,
+  .aiReportGrid,
+  .uploadExtractSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .leafletCard,
+  .dashboardMapGrid .leafletCard {
+    height: 320px;
+    min-height: 320px;
+  }
+}
