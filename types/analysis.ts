@@ -50,8 +50,24 @@ export interface SourceDocument {
   uploadedAt: string;
   status: ProcessingStatus;
   textLength: number;
+  fileSize?: number;
+  parseDebug?: DocumentParseDebug;
   duplicateOf?: string | null;
   issues: string[];
+}
+
+export interface DocumentParseDebug {
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  textLength: number;
+  textPreview: string;
+  amountMatches: string[];
+  objectNumberMatches: string[];
+  addressMatches: string[];
+  ocrUsed: boolean;
+  ocrAvailable: boolean;
+  status: "read" | "scan_detected" | "ocr_unavailable" | "error";
 }
 
 export interface MeasureItem {

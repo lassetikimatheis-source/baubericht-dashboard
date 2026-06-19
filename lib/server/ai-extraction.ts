@@ -218,7 +218,12 @@ function normalizeObjects(
   issues: string[]
 ): ObjectAnalysis[] {
   const standardOffer = parseStandardOffer(document, issues);
-  const sourceObjects = standardOffer ? [mergeAiObject(standardOffer, objects[0] ?? {})] : objects;
+  const fallbackObject = parseGenericDocument(document, issues);
+  const sourceObjects = standardOffer
+    ? [mergeAiObject(standardOffer, objects[0] ?? {})]
+    : objects.length > 0
+      ? objects.map((object) => enrichAiObjectWithFallback(object, fallbackObject))
+      : [fallbackObject];
 
   return sourceObjects.map((object, objectIndex) => {
     const costDebug = extractCostSummary(document);
@@ -823,6 +828,160 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
   };
 }
 
+function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObjectResult {
+  const text = document.text;
+  const costSummary = extractCostSummary(document);
+  const objectNumber = firstRegex(text, /\b(\d{6})(?:-\d{3,})?\b/);
+  const address = firstAddress(text);
+  const date = firstRegex(text, /\b(\d{2}\.\d{2}\.\d{4})\b/);
+  const documentNumber = firstRegex(text, /\b(?:Rechnung(?:s)?(?:nummer|nr\.?)?|Beleg-Nr\.?|Angebot(?:s)?(?:nummer|nr\.?)?)\s*:?\s*([A-Z]?\d{2,6}[/-]\d{2,6}|[A-Z]\d{4}[/-]\d{4}|\d{4,})/i);
+  const provider = firstProvider(text);
+  const fund = firstRegex(text, /((?:Ampega|Paribus|Tredev|Fonds)[^\n]{0,90})/i);
+  const livingArea = firstNumberRegex(text, /(\d+(?:[.,]\d+)?)\s*(?:m²|m2|qm)\b/i);
+  const apartmentCount = firstNumberRegex(text, /(?:Anzahl\s+sanierte\s+Wohnungen|sanierte\s+WE|Wohnungen\s+betroffen)\D{0,30}(\d{1,4})/i);
+  const documentType = detectDocumentType(text);
+  const measure = detectPrimaryMeasure(text);
+  const gross = costSummary.finalValues.gross.value;
+  const recognized = [
+    objectNumber?.value,
+    address?.value,
+    date?.value,
+    documentNumber?.value,
+    provider?.value,
+    fund?.value,
+    measure?.cluster,
+    costSummary.finalValues.net.value,
+    costSummary.finalValues.vat.value,
+    gross
+  ].filter((value) => value !== null && value !== undefined && value !== "").length;
+
+  if (recognized === 0) {
+    issues.push(`${document.fileName}: Text wurde gelesen, aber keine Objektwerte oder Kostenmuster erkannt.`);
+  }
+
+  return {
+    dokumenttyp: aiField(documentType.value, documentType.evidence),
+    projektart: aiField(measure?.projectType ?? null, measure?.evidence ?? null),
+    anbieter: aiField(provider?.value ?? null, provider?.evidence ?? null),
+    year: aiField(date?.value ? Number(date.value.slice(-4)) : null, date?.evidence ?? null),
+    datum: aiField(date?.value ?? null, date?.evidence ?? null),
+    dokumentnummer: aiField(documentNumber?.value ?? null, documentNumber?.evidence ?? null),
+    fund: aiField(fund?.value ?? null, fund?.evidence ?? null),
+    objectNumber: aiField(objectNumber?.value ?? null, objectNumber?.evidence ?? null),
+    wohnungsnummer: aiField(firstRegex(text, /\b\d{6}-(\d{3,})\b/)?.value ?? null, objectNumber?.evidence ?? null),
+    objectAddress: aiField(address?.value ?? null, address?.evidence ?? null),
+    lage: aiField(firstRegex(text, /\b(\d+\.OG\s+\d+\.?v\.?li|\d+\.OG\s+\d+\.?v\.?re)\b/i)?.value ?? null, objectNumber?.evidence ?? null),
+    renovatedApartmentCount: aiField(apartmentCount?.value ?? null, apartmentCount?.evidence ?? null),
+    renovatedApartments: aiField(null, null),
+    livingAreaSqm: aiField(livingArea?.value ?? null, livingArea?.evidence ?? null),
+    totalAreaSqm: aiField(null, null),
+    renovatedAreaSqm: aiField(null, null),
+    kosten_netto: aiField(costSummary.finalValues.net.value, costSummary.finalValues.net.raw || null),
+    mwst: aiField(costSummary.finalValues.vat.value, costSummary.finalValues.vat.raw || null),
+    kosten_brutto: aiField(gross, costSummary.finalValues.gross.raw || null),
+    totalCost: aiField(gross, costSummary.finalValues.gross.raw || null),
+    costPerApartment: aiField(gross !== null && apartmentCount?.value ? roundMoney(gross / apartmentCount.value) : null, costSummary.finalValues.gross.raw || null),
+    costPerSqm: aiField(gross !== null && livingArea?.value ? roundMoney(gross / livingArea.value) : null, costSummary.finalValues.gross.raw || null),
+    beschreibung_massnahmen: aiField(measure?.description ?? null, measure?.evidence ?? null),
+    datenqualitaet: aiField(recognized > 4 ? "Pruefung empfohlen" : "Manuelle Zuordnung erforderlich", address?.evidence ?? objectNumber?.evidence ?? provider?.evidence ?? null),
+    fehlende_angaben: aiField(missingFromGeneric({ objectNumber, address, gross, provider }), address?.evidence ?? objectNumber?.evidence ?? null),
+    measures: measure ? [{
+      cluster: aiField(measure.cluster, measure.evidence),
+      description: aiField(measure.description, measure.evidence),
+      totalCost: aiField(gross, costSummary.finalValues.gross.raw || null),
+      allocation: aiField(null, null)
+    }] : [],
+    massnahmen_details: measure ? [{
+      abschnitt: measure.description,
+      cluster: measure.cluster,
+      summe: gross,
+      beschreibung: measure.description,
+      quelle: measure.evidence
+    }] : [],
+    measureDebug: measure ? {
+      headings: [],
+      sumLines: [],
+      mappings: [{ section: 0, heading: measure.description, cluster: measure.cluster, value: gross, description: measure.description }],
+      notes: ["Generische Regex-Erkennung aus Rohtext verwendet."]
+    } : null
+  };
+}
+
+function firstRegex(text: string, pattern: RegExp): { value: string; evidence: string } | null {
+  const match = text.match(pattern);
+  if (!match) return null;
+  return { value: (match[1] ?? match[0]).trim(), evidence: match[0].replace(/\s+/g, " ").trim() };
+}
+
+function firstNumberRegex(text: string, pattern: RegExp): { value: number; evidence: string } | null {
+  const match = firstRegex(text, pattern);
+  if (!match) return null;
+  const value = Number(match.value.replace(",", "."));
+  return Number.isFinite(value) ? { value, evidence: match.evidence } : null;
+}
+
+function firstAddress(text: string): { value: string; evidence: string } | null {
+  const patterns = [
+    /\b([A-ZÄÖÜ][A-Za-zÄÖÜäöüß.-]+(?:straße|strasse|weg|allee|platz|ring|damm)\s+\d+[a-z]?(?:\s*,?\s*\d{5}\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß.-]+)?)/i,
+    /\b(Pamirweg\s+\d+[a-z]?(?:\s+in\s+Hamburg|,\s*Hamburg)?)/i
+  ];
+  for (const pattern of patterns) {
+    const match = firstRegex(text, pattern);
+    if (match) return { ...match, value: match.value.replace(/\s+in\s+/i, ", ") };
+  }
+  return null;
+}
+
+function firstProvider(text: string): { value: string; evidence: string } | null {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const line = lines.find((entry) => /\b(GmbH|AG|KG|Gbr|GmbH\s*&\s*Co\.)\b/i.test(entry) && !/Investment|Fonds/i.test(entry));
+  return line ? { value: line.replace(/\s+/g, " "), evidence: line } : null;
+}
+
+function detectDocumentType(text: string): { value: string | null; evidence: string | null } {
+  const types = ["Schlussrechnung", "Teilrechnung", "Rechnung", "Angebot", "Nachtrag", "Gutschrift", "Auftrag", "Freigabe"];
+  const found = types.find((type) => new RegExp(type, "i").test(text));
+  return found ? { value: found, evidence: text.match(new RegExp(found, "i"))?.[0] ?? found } : { value: null, evidence: null };
+}
+
+function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; description: string; projectType: string; evidence: string } | null {
+  const mappings: Array<{ pattern: RegExp; cluster: MeasureCluster; description: string; projectType: string }> = [
+    { pattern: /Dach/i, cluster: "Sonstiges", description: "Dacharbeiten", projectType: "Dacharbeiten" },
+    { pattern: /Fassade/i, cluster: "Sonstiges", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
+    { pattern: /Fenster/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
+    { pattern: /Heizung/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
+    { pattern: /Elektro/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
+    { pattern: /Sanit[aä]r/i, cluster: "Sanitaer / Heizung", description: "Sanitaerarbeiten", projectType: "Sanitaerarbeiten" },
+    { pattern: /Maler/i, cluster: "Maler", description: "Malerarbeiten", projectType: "Malerarbeiten" },
+    { pattern: /Boden/i, cluster: "Boden", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
+    { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
+  ];
+  for (const mapping of mappings) {
+    const match = text.match(mapping.pattern);
+    if (match) return { ...mapping, evidence: match[0] };
+  }
+  return null;
+}
+
+function missingFromGeneric({
+  objectNumber,
+  address,
+  gross,
+  provider
+}: {
+  objectNumber: { value: string; evidence: string } | null;
+  address: { value: string; evidence: string } | null;
+  gross: number | null;
+  provider: { value: string; evidence: string } | null;
+}): string[] | null {
+  const missing: string[] = [];
+  if (!objectNumber) missing.push("Objektnummer");
+  if (!address) missing.push("Objektadresse");
+  if (!provider) missing.push("Lieferant / Firma");
+  if (gross === null) missing.push("Bruttobetrag / Kosten gesamt");
+  return missing.length ? missing : null;
+}
+
 function mergeAiObject(primary: AiObjectResult, secondary: AiObjectResult): AiObjectResult {
   return {
     ...secondary,
@@ -833,6 +992,42 @@ function mergeAiObject(primary: AiObjectResult, secondary: AiObjectResult): AiOb
       : secondary.massnahmen_details,
     measureDebug: primary.measureDebug ?? secondary.measureDebug
   };
+}
+
+function enrichAiObjectWithFallback(primary: AiObjectResult, fallback: AiObjectResult): AiObjectResult {
+  return {
+    ...primary,
+    dokumenttyp: aiFieldWithFallback(primary.dokumenttyp, fallback.dokumenttyp),
+    projektart: aiFieldWithFallback(primary.projektart, fallback.projektart),
+    anbieter: aiFieldWithFallback(primary.anbieter, fallback.anbieter),
+    dokumentnummer: aiFieldWithFallback(primary.dokumentnummer, fallback.dokumentnummer),
+    datum: aiFieldWithFallback(primary.datum, fallback.datum),
+    year: aiFieldWithFallback(primary.year, fallback.year),
+    fund: aiFieldWithFallback(primary.fund, fallback.fund),
+    objectNumber: aiFieldWithFallback(primary.objectNumber, fallback.objectNumber),
+    objectAddress: aiFieldWithFallback(primary.objectAddress, fallback.objectAddress),
+    wohnungsnummer: aiFieldWithFallback(primary.wohnungsnummer, fallback.wohnungsnummer),
+    lage: aiFieldWithFallback(primary.lage, fallback.lage),
+    renovatedApartmentCount: aiFieldWithFallback(primary.renovatedApartmentCount, fallback.renovatedApartmentCount),
+    livingAreaSqm: aiFieldWithFallback(primary.livingAreaSqm, fallback.livingAreaSqm),
+    kosten_netto: aiFieldWithFallback(primary.kosten_netto, fallback.kosten_netto),
+    mwst: aiFieldWithFallback(primary.mwst, fallback.mwst),
+    kosten_brutto: aiFieldWithFallback(primary.kosten_brutto, fallback.kosten_brutto),
+    totalCost: aiFieldWithFallback(primary.totalCost, fallback.totalCost),
+    costPerApartment: aiFieldWithFallback(primary.costPerApartment, fallback.costPerApartment),
+    costPerSqm: aiFieldWithFallback(primary.costPerSqm, fallback.costPerSqm),
+    beschreibung_massnahmen: aiFieldWithFallback(primary.beschreibung_massnahmen, fallback.beschreibung_massnahmen),
+    datenqualitaet: aiFieldWithFallback(primary.datenqualitaet, fallback.datenqualitaet),
+    fehlende_angaben: aiFieldWithFallback(primary.fehlende_angaben, fallback.fehlende_angaben),
+    measures: primary.measures && primary.measures.length > 0 ? primary.measures : fallback.measures,
+    massnahmen_details: primary.massnahmen_details && primary.massnahmen_details.length > 0 ? primary.massnahmen_details : fallback.massnahmen_details,
+    measureDebug: primary.measureDebug ?? fallback.measureDebug
+  };
+}
+
+function aiFieldWithFallback<T>(primary?: AiField<T>, fallback?: AiField<T>): AiField<T> | undefined {
+  if (primary?.value !== null && primary?.value !== undefined && primary?.value !== "") return primary;
+  return fallback ?? primary;
 }
 
 function parseSubject(value: string): { address: string | null; location: string | null } {

@@ -21,7 +21,8 @@ export async function POST(request: Request) {
         fileType: document.fileType,
         textLength: document.text.length,
         preview: document.text.slice(0, 3000),
-        issues: document.issues
+        issues: document.issues,
+        parseDebug: document.parseDebug
       }))
     });
   } catch (error) {

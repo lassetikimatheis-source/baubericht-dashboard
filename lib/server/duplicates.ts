@@ -34,6 +34,8 @@ export function toSourceDocuments(
       uploadedAt: document.uploadedAt,
       status: duplicate ? "duplicate" : document.issues.length > 0 ? "review_required" : "extracted",
       textLength: document.text.length,
+      fileSize: document.fileSize,
+      parseDebug: document.parseDebug,
       duplicateOf: duplicate?.duplicateOf ?? null,
       issues: document.issues
     };

@@ -41,7 +41,7 @@ import {
   type StoredObjectRecord,
   type StoredProjectRecord
 } from "../lib/storage";
-import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState } from "../types/analysis";
+import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState, SourceDocument } from "../types/analysis";
 
 const ObjectMap = dynamic<{ entries: ObjectMapEntry[]; onOpenObject: (id: string) => void }>(
   () => import("./map/ObjectMap").then((module) => module.ObjectMap),
@@ -268,6 +268,7 @@ export function AnalysisDashboard() {
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [uploadDocument, setUploadDocument] = useState<ObjectAnalysis | null>(null);
   const [objectDraft, setObjectDraft] = useState<UploadObjectDraft>(() => uploadDraftFromDocument());
+  const [uploadSourceDocument, setUploadSourceDocument] = useState<SourceDocument | null>(null);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const [uploadedFileName, setUploadedFileName] = useState("");
 
@@ -359,6 +360,7 @@ export function AnalysisDashboard() {
     setIsAnalyzing(true);
     setMessage(null);
     setUploadDocument(null);
+    setUploadSourceDocument(null);
     setObjectDraft(uploadDraftFromDocument(undefined, uploadSourceName(files)));
     setUploadPhase("analyzing");
     setSelectedObjectId(null);
@@ -381,9 +383,11 @@ export function AnalysisDashboard() {
       const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), data.analysis.objects);
       mergedDocuments.forEach(saveDocument);
       const currentDocument = data.analysis.objects[0] ?? null;
+      const currentSourceDocument = data.analysis.sourceDocuments?.[0] ?? null;
       const nextDraft = uploadDraftFromDocument(currentDocument ?? undefined, uploadSourceName(files));
       setAnalysis(buildAnalysisFromDocuments(mergedDocuments, data.analysis));
       setUploadDocument(currentDocument);
+      setUploadSourceDocument(currentSourceDocument);
       setObjectDraft(nextDraft);
       setUploadPhase("analyzed");
       setSelectedDocumentId(currentDocument?.id ?? null);
@@ -405,6 +409,7 @@ export function AnalysisDashboard() {
     setMessage(null);
     setPreviews([]);
     setUploadDocument(null);
+    setUploadSourceDocument(null);
     setSelectedDocumentId(null);
     setSelectedObjectId(null);
     setUploadedFileName(uploadSourceName(files));
@@ -463,6 +468,7 @@ export function AnalysisDashboard() {
     setObjects((current) => [...current, object]);
     setSelectedObjectId(object.id);
     setUploadDocument(null);
+    setUploadSourceDocument(null);
     setObjectDraft(uploadDraftFromDocument());
     setUploadPhase("idle");
     setUploadedFileName("");
@@ -807,6 +813,7 @@ export function AnalysisDashboard() {
             {showUploadPanel ? (
               <UploadObjectPanel
                 document={uploadDocument}
+                sourceDocument={uploadSourceDocument}
                 draft={objectDraft}
                 existingObject={findExistingObjectForDraft(objectDraft, objects)}
                 isAnalyzing={isAnalyzing}
@@ -2878,6 +2885,7 @@ function DocumentEditor({
 
 function UploadObjectPanel({
   document,
+  sourceDocument,
   draft,
   existingObject,
   isAnalyzing,
@@ -2889,6 +2897,7 @@ function UploadObjectPanel({
   onAssignExisting
 }: {
   document: ObjectAnalysis | null;
+  sourceDocument: SourceDocument | null;
   draft: UploadObjectDraft;
   existingObject: ObjectRecord | null;
   isAnalyzing: boolean;
@@ -2926,6 +2935,23 @@ function UploadObjectPanel({
       {uploadedFileName ? (
         <div className="uploadExtractSummary">
           <InfoLine label="Quelle / Dokumentname" value={uploadedFileName} />
+        </div>
+      ) : null}
+
+      {sourceDocument?.parseDebug ? (
+        <div className="debugBlock uploadDebugBlock">
+          <h4>PDF-/Datei-Debug</h4>
+          <InfoLine label="Dateiname" value={sourceDocument.parseDebug.fileName} />
+          <InfoLine label="Dateityp" value={sourceDocument.parseDebug.fileType} />
+          <InfoLine label="Dateigroesse" value={`${sourceDocument.parseDebug.fileSize} Byte`} />
+          <InfoLine label="Textzeichen" value={formatNumber(sourceDocument.parseDebug.textLength)} />
+          <InfoLine label="Status" value={sourceDocument.parseDebug.status} />
+          {sourceDocument.issues.length ? <p className="muted">{sourceDocument.issues.join(" ")}</p> : null}
+          <strong>Erste 1.000 Zeichen</strong>
+          <pre>{sourceDocument.parseDebug.textPreview || "k.A."}</pre>
+          <InfoLine label="Erkannte Betraege" value={sourceDocument.parseDebug.amountMatches.join(", ") || "k.A."} />
+          <InfoLine label="Erkannte Objektnummern" value={sourceDocument.parseDebug.objectNumberMatches.join(", ") || "k.A."} />
+          <InfoLine label="Erkannte Adressen" value={sourceDocument.parseDebug.addressMatches.join(", ") || "k.A."} />
         </div>
       ) : null}
 
