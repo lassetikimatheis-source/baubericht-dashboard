@@ -7,9 +7,10 @@ interface UploadPanelProps {
   message: string | null;
   onAnalyze: (files: File[]) => Promise<void>;
   onPreview: (files: File[]) => Promise<void>;
+  onFilesSelected?: (files: File[]) => void;
 }
 
-export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview }: UploadPanelProps) {
+export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFilesSelected }: UploadPanelProps) {
   const [files, setFiles] = useState<File[]>([]);
 
   return (
@@ -36,7 +37,11 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview }: Uplo
             type="file"
             accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
             multiple
-            onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+            onChange={(event) => {
+              const nextFiles = Array.from(event.target.files ?? []);
+              setFiles(nextFiles);
+              onFilesSelected?.(nextFiles);
+            }}
           />
         </label>
 

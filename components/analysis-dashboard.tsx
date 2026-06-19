@@ -91,6 +91,17 @@ interface ParsedPreview {
 type ObjectRecord = StoredObjectRecord;
 type EntranceRecord = StoredEntranceRecord;
 type ProjectRecord = StoredProjectRecord;
+type UploadPhase = "idle" | "selected" | "analyzing" | "analyzed";
+
+interface UploadObjectDraft extends ObjectRecord {
+  year: string;
+  trade: string;
+  totalCost: string;
+  apartmentCount: string;
+  costPerApartment: string;
+  costPerSqm: string;
+  sourceFile: string;
+}
 
 interface Filters {
   year: string;
@@ -256,7 +267,9 @@ export function AnalysisDashboard() {
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [uploadDocument, setUploadDocument] = useState<ObjectAnalysis | null>(null);
-  const [objectDraft, setObjectDraft] = useState<ObjectRecord>(() => objectFromDocument());
+  const [objectDraft, setObjectDraft] = useState<UploadObjectDraft>(() => uploadDraftFromDocument());
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
+  const [uploadedFileName, setUploadedFileName] = useState("");
 
   useEffect(() => {
     const storedObjects = getObjects();
@@ -346,7 +359,8 @@ export function AnalysisDashboard() {
     setIsAnalyzing(true);
     setMessage(null);
     setUploadDocument(null);
-    setObjectDraft(objectFromDocument());
+    setObjectDraft(uploadDraftFromDocument(undefined, uploadSourceName(files)));
+    setUploadPhase("analyzing");
     setSelectedObjectId(null);
     setSelectedDocumentId(null);
 
@@ -367,25 +381,40 @@ export function AnalysisDashboard() {
       const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), data.analysis.objects);
       mergedDocuments.forEach(saveDocument);
       const currentDocument = data.analysis.objects[0] ?? null;
+      const nextDraft = uploadDraftFromDocument(currentDocument ?? undefined, uploadSourceName(files));
       setAnalysis(buildAnalysisFromDocuments(mergedDocuments, data.analysis));
       setUploadDocument(currentDocument);
-      setObjectDraft(objectFromDocument(currentDocument ?? undefined));
+      setObjectDraft(nextDraft);
+      setUploadPhase("analyzed");
       setSelectedDocumentId(currentDocument?.id ?? null);
       setAssignments((current) => {
         const next = autoAssignDocuments(mergedDocuments, projects, current);
         saveAssignments(next);
         return next;
       });
-      setMessage("Dokument analysiert - bitte Daten pruefen.");
+      setMessage(hasRecognizedUploadValues(nextDraft) ? "Dokument analysiert - bitte Daten pruefen." : "Analyse abgeschlossen - keine Werte erkannt. Bitte manuell ergaenzen.");
     } catch (error) {
+      setUploadPhase(files.length > 0 ? "selected" : "idle");
       setMessage(error instanceof Error ? error.message : "Analyse fehlgeschlagen.");
     } finally {
       setIsAnalyzing(false);
     }
   }
 
+  function handleFilesSelected(files: File[]) {
+    setMessage(null);
+    setPreviews([]);
+    setUploadDocument(null);
+    setSelectedDocumentId(null);
+    setSelectedObjectId(null);
+    setUploadedFileName(uploadSourceName(files));
+    setObjectDraft(uploadDraftFromDocument(undefined, uploadSourceName(files)));
+    setUploadPhase(files.length > 0 ? "selected" : "idle");
+  }
+
   async function handlePreview(files: File[]) {
     setMessage(null);
+    handleFilesSelected(files);
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file));
     const response = await fetch("/api/parse-preview", {
@@ -430,12 +459,13 @@ export function AnalysisDashboard() {
   }
 
   function saveUploadObject() {
-    if (!uploadDocument) return;
-    const object = saveObject({ ...objectDraft, id: `object-${Date.now()}` });
+    const object = saveObject(uploadDraftToObjectRecord(objectDraft, `object-${Date.now()}`));
     setObjects((current) => [...current, object]);
     setSelectedObjectId(object.id);
     setUploadDocument(null);
-    setObjectDraft(objectFromDocument());
+    setObjectDraft(uploadDraftFromDocument());
+    setUploadPhase("idle");
+    setUploadedFileName("");
     setObjectTab("overview");
     setView("objects");
   }
@@ -458,7 +488,9 @@ export function AnalysisDashboard() {
     });
     setSelectedObjectId(object.id);
     setUploadDocument(null);
-    setObjectDraft(objectFromDocument());
+    setObjectDraft(uploadDraftFromDocument());
+    setUploadPhase("idle");
+    setUploadedFileName("");
     setObjectTab("documents");
     setView("objects");
   }
@@ -716,6 +748,7 @@ export function AnalysisDashboard() {
                 message={message}
                 onAnalyze={handleAnalyze}
                 onPreview={handlePreview}
+                onFilesSelected={handleFilesSelected}
               />
               ) : null}
 
@@ -778,6 +811,8 @@ export function AnalysisDashboard() {
                 existingObject={findExistingObjectForDraft(objectDraft, objects)}
                 isAnalyzing={isAnalyzing}
                 message={message}
+                phase={uploadPhase}
+                uploadedFileName={uploadedFileName}
                 onChange={(field, value) => setObjectDraft((current) => ({ ...current, [field]: value }))}
                 onSaveNew={saveUploadObject}
                 onAssignExisting={(objectId) => assignUploadDocumentToObject(objectId)}
@@ -907,13 +942,15 @@ function DocumentUploadView({
   isAnalyzing,
   message,
   onAnalyze,
-  onPreview
+  onPreview,
+  onFilesSelected
 }: {
   previews: ParsedPreview[];
   isAnalyzing: boolean;
   message: string | null;
   onAnalyze: (files: File[]) => Promise<void>;
   onPreview: (files: File[]) => Promise<void>;
+  onFilesSelected: (files: File[]) => void;
 }) {
   return (
     <section className="uploadWorkspace">
@@ -924,7 +961,7 @@ function DocumentUploadView({
         </div>
         <span className="status statusNeutral">KI Arbeitsbereich</span>
       </div>
-      <UploadPanel isAnalyzing={isAnalyzing} message={message} onAnalyze={onAnalyze} onPreview={onPreview} />
+      <UploadPanel isAnalyzing={isAnalyzing} message={message} onAnalyze={onAnalyze} onPreview={onPreview} onFilesSelected={onFilesSelected} />
       <PreviewPanel previews={previews} />
     </section>
   );
@@ -2845,25 +2882,30 @@ function UploadObjectPanel({
   existingObject,
   isAnalyzing,
   message,
+  phase,
+  uploadedFileName,
   onChange,
   onSaveNew,
   onAssignExisting
 }: {
   document: ObjectAnalysis | null;
-  draft: ObjectRecord;
+  draft: UploadObjectDraft;
   existingObject: ObjectRecord | null;
   isAnalyzing: boolean;
   message: string | null;
-  onChange: (field: keyof ObjectRecord, value: string) => void;
+  phase: UploadPhase;
+  uploadedFileName: string;
+  onChange: (field: keyof UploadObjectDraft, value: string) => void;
   onSaveNew: () => void;
   onAssignExisting: (objectId: string) => void;
 }) {
+  const showForm = phase === "analyzed";
   return (
     <aside className="editorPanel uploadObjectPanel">
       <div className="panelHeader">
         <div>
           <h2>Neues Objekt aus Upload</h2>
-          <p>{document ? "Dokument analysiert - bitte Daten pruefen." : "Nach der Analyse erscheinen hier die KI-erkannten Objektwerte."}</p>
+          <p>{phase === "analyzed" ? "Dokument analysiert - bitte Daten pruefen." : phase === "selected" ? "Datei ausgewaehlt - bitte Analyse starten." : "Nach der Analyse erscheinen hier die KI-erkannten Objektwerte."}</p>
         </div>
       </div>
 
@@ -2877,15 +2919,25 @@ function UploadObjectPanel({
 
       {message ? <div className="uploadStatus">{message}</div> : null}
 
-      {!isAnalyzing && !document ? (
+      {phase === "selected" && !isAnalyzing ? (
+        <div className="uploadStatus">Datei ausgewaehlt - bitte Analyse starten.</div>
+      ) : null}
+
+      {uploadedFileName ? (
+        <div className="uploadExtractSummary">
+          <InfoLine label="Quelle / Dokumentname" value={uploadedFileName} />
+        </div>
+      ) : null}
+
+      {phase === "idle" && !isAnalyzing ? (
         <div className="emptyState">
           <p>Bitte links ein Dokument hochladen und analysieren.</p>
         </div>
       ) : null}
 
-      {document ? (
+      {showForm ? (
         <>
-          {existingObject ? (
+          {existingObject && document ? (
             <div className="possibleMatchBox">
               <strong>Moeglicherweise vorhandenes Objekt gefunden</strong>
               <p>{objectLabel(existingObject) || existingObject.address || "k.A."}</p>
@@ -2897,10 +2949,10 @@ function UploadObjectPanel({
           ) : null}
 
           <div className="uploadExtractSummary">
-            <InfoLine label="Dokument" value={fieldOrUnknown(document.documentType)} />
-            <InfoLine label="Anbieter" value={fieldOrUnknown(document.provider)} />
-            <InfoLine label="Kosten brutto" value={formatCurrency(document.totalCost)} />
-            <InfoLine label="Datenqualitaet" value={fieldOrUnknown(document.dataQuality)} />
+            <InfoLine label="Dokument" value={document ? fieldOrUnknown(document.documentType) : "Nicht erkannt"} />
+            <InfoLine label="Anbieter" value={document ? fieldOrUnknown(document.provider) : "Nicht erkannt"} />
+            <InfoLine label="Kosten brutto" value={document ? formatCurrency(document.totalCost) : "Nicht erkannt"} />
+            <InfoLine label="Datenqualitaet" value={document ? fieldOrUnknown(document.dataQuality) : "Nicht erkannt"} />
           </div>
 
           <div className="editForm">
@@ -2908,6 +2960,13 @@ function UploadObjectPanel({
             <EditInput label="Objektnummer" value={draft.objectNumber} placeholder="Nicht erkannt" onChange={(value) => onChange("objectNumber", value)} />
             <EditInput label="Objektname" value={draft.objectName} placeholder="Nicht erkannt" onChange={(value) => onChange("objectName", value)} />
             <EditInput label="Adresse / Adressbereich" value={draft.address} placeholder="Nicht erkannt" onChange={(value) => onChange("address", value)} />
+            <EditInput label="Jahr" value={draft.year} placeholder="Nicht erkannt" onChange={(value) => onChange("year", value)} />
+            <EditInput label="Gewerk / Massnahme" value={draft.trade} placeholder="Nicht erkannt" onChange={(value) => onChange("trade", value)} />
+            <EditInput label="Gesamtkosten" value={draft.totalCost} placeholder="Nicht erkannt" onChange={(value) => onChange("totalCost", value)} />
+            <EditInput label="Anzahl Wohnungen" value={draft.apartmentCount} placeholder="Nicht erkannt" onChange={(value) => onChange("apartmentCount", value)} />
+            <EditInput label="Kosten pro Wohnung" value={draft.costPerApartment} placeholder="Nicht erkannt" onChange={(value) => onChange("costPerApartment", value)} />
+            <EditInput label="Kosten pro m2" value={draft.costPerSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("costPerSqm", value)} />
+            <EditInput label="Quelle / Dokumentname" value={draft.sourceFile} placeholder="Nicht erkannt" onChange={(value) => onChange("sourceFile", value)} />
             <EditInput label="PLZ" value={draft.postalCode} placeholder="Nicht erkannt" onChange={(value) => onChange("postalCode", value)} />
             <EditInput label="Ort" value={draft.city} placeholder="Nicht erkannt" onChange={(value) => onChange("city", value)} />
             <EditInput label="Bundesland" value={draft.federalState} placeholder="Nicht erkannt" onChange={(value) => onChange("federalState", value)} />
@@ -3135,6 +3194,63 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
     portfolioManager: "",
     latitude: "",
     longitude: ""
+  };
+}
+
+function uploadDraftFromDocument(document?: ObjectAnalysis, sourceFile = ""): UploadObjectDraft {
+  const object = objectFromDocument(document);
+  const totalCost = document?.totalCost.value ?? null;
+  const apartmentCount = document?.renovatedApartmentCount.value ?? null;
+  const livingArea = document?.livingAreaSqm.value ?? null;
+  return {
+    ...object,
+    year: document ? emptyIfUnknown(fieldOrUnknown(document.year)) : "",
+    trade: document ? emptyIfUnknown(formatClusters(document)) : "",
+    totalCost: totalCost !== null ? String(totalCost).replace(".", ",") : "",
+    apartmentCount: apartmentCount !== null ? String(apartmentCount).replace(".", ",") : "",
+    costPerApartment: totalCost !== null && apartmentCount ? String(roundMoney(totalCost / apartmentCount)).replace(".", ",") : "",
+    costPerSqm: totalCost !== null && livingArea ? String(roundMoney(totalCost / livingArea)).replace(".", ",") : "",
+    sourceFile
+  };
+}
+
+function uploadSourceName(files: File[]): string {
+  if (files.length === 0) return "";
+  if (files.length === 1) return files[0].name;
+  return files.map((file) => file.name).join(", ");
+}
+
+function hasRecognizedUploadValues(draft: UploadObjectDraft): boolean {
+  return Boolean(
+    draft.objectNumber.trim() ||
+    draft.address.trim() ||
+    draft.fund.trim() ||
+    draft.year.trim() ||
+    draft.trade.trim() ||
+    draft.totalCost.trim() ||
+    draft.apartmentCount.trim() ||
+    draft.costPerApartment.trim() ||
+    draft.costPerSqm.trim()
+  );
+}
+
+function uploadDraftToObjectRecord(draft: UploadObjectDraft, id: string): ObjectRecord {
+  return {
+    id,
+    fund: draft.fund,
+    objectNumber: draft.objectNumber,
+    objectName: draft.objectName,
+    address: draft.address,
+    postalCode: draft.postalCode,
+    city: draft.city,
+    federalState: draft.federalState,
+    constructionYear: draft.constructionYear,
+    unitCount: draft.unitCount,
+    totalLivingAreaSqm: draft.totalLivingAreaSqm,
+    assetManager: draft.assetManager,
+    portfolioManager: draft.portfolioManager,
+    latitude: draft.latitude,
+    longitude: draft.longitude
   };
 }
 
