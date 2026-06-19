@@ -840,7 +840,8 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
   const livingArea = firstNumberRegex(text, /(\d+(?:[.,]\d+)?)\s*(?:m²|m2|qm)\b/i);
   const apartmentCount = firstNumberRegex(text, /(?:Anzahl\s+sanierte\s+Wohnungen|sanierte\s+WE|Wohnungen\s+betroffen)\D{0,30}(\d{1,4})/i);
   const documentType = detectDocumentType(text);
-  const measure = detectPrimaryMeasure(text);
+  const measures = detectMeasures(text);
+  const primaryMeasure = measures[0] ?? null;
   const gross = costSummary.finalValues.gross.value;
   const recognized = [
     objectNumber?.value,
@@ -849,7 +850,7 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
     documentNumber?.value,
     provider?.value,
     fund?.value,
-    measure?.cluster,
+    measures.map((measure) => measure.cluster).join(", "),
     costSummary.finalValues.net.value,
     costSummary.finalValues.vat.value,
     gross
@@ -861,7 +862,7 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
 
   return {
     dokumenttyp: aiField(documentType.value, documentType.evidence),
-    projektart: aiField(measure?.projectType ?? null, measure?.evidence ?? null),
+    projektart: aiField(primaryMeasure?.projectType ?? null, primaryMeasure?.evidence ?? null),
     anbieter: aiField(provider?.value ?? null, provider?.evidence ?? null),
     year: aiField(date?.value ? Number(date.value.slice(-4)) : null, date?.evidence ?? null),
     datum: aiField(date?.value ?? null, date?.evidence ?? null),
@@ -882,27 +883,38 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
     totalCost: aiField(gross, costSummary.finalValues.gross.raw || null),
     costPerApartment: aiField(gross !== null && apartmentCount?.value ? roundMoney(gross / apartmentCount.value) : null, costSummary.finalValues.gross.raw || null),
     costPerSqm: aiField(gross !== null && livingArea?.value ? roundMoney(gross / livingArea.value) : null, costSummary.finalValues.gross.raw || null),
-    beschreibung_massnahmen: aiField(measure?.description ?? null, measure?.evidence ?? null),
+    beschreibung_massnahmen: aiField(measures.length ? measures.map((measure) => measure.description).join(", ") : null, primaryMeasure?.evidence ?? null),
     datenqualitaet: aiField(recognized > 4 ? "Pruefung empfohlen" : "Manuelle Zuordnung erforderlich", address?.evidence ?? objectNumber?.evidence ?? provider?.evidence ?? null),
     fehlende_angaben: aiField(missingFromGeneric({ objectNumber, address, gross, provider }), address?.evidence ?? objectNumber?.evidence ?? null),
-    measures: measure ? [{
+    measures: measures.map((measure) => ({
       cluster: aiField(measure.cluster, measure.evidence),
       description: aiField(measure.description, measure.evidence),
-      totalCost: aiField(gross, costSummary.finalValues.gross.raw || null),
+      totalCost: aiField(measure.sum, measure.sumEvidence),
       allocation: aiField(null, null)
-    }] : [],
-    massnahmen_details: measure ? [{
+    })),
+    massnahmen_details: measures.map((measure) => ({
       abschnitt: measure.description,
       cluster: measure.cluster,
-      summe: gross,
+      summe: measure.sum,
       beschreibung: measure.description,
-      quelle: measure.evidence
-    }] : [],
-    measureDebug: measure ? {
+      quelle: measure.sumEvidence ?? measure.evidence
+    })),
+    measureDebug: measures.length ? {
       headings: [],
-      sumLines: [],
-      mappings: [{ section: 0, heading: measure.description, cluster: measure.cluster, value: gross, description: measure.description }],
-      notes: ["Generische Regex-Erkennung aus Rohtext verwendet."]
+      sumLines: measures.filter((measure) => measure.sum !== null).map((measure, index) => ({
+        section: index + 1,
+        heading: measure.description,
+        value: measure.sum,
+        raw: measure.sumEvidence ?? measure.evidence
+      })),
+      mappings: measures.map((measure, index) => ({
+        section: index + 1,
+        heading: measure.description,
+        cluster: measure.cluster,
+        value: measure.sum,
+        description: measure.description
+      })),
+      notes: ["Generische Regex-Erkennung aus Rohtext verwendet. Alle gefundenen Gewerke wurden uebernommen."]
     } : null
   };
 }
@@ -942,6 +954,62 @@ function detectDocumentType(text: string): { value: string | null; evidence: str
   const types = ["Schlussrechnung", "Teilrechnung", "Rechnung", "Angebot", "Nachtrag", "Gutschrift", "Auftrag", "Freigabe"];
   const found = types.find((type) => new RegExp(type, "i").test(text));
   return found ? { value: found, evidence: text.match(new RegExp(found, "i"))?.[0] ?? found } : { value: null, evidence: null };
+}
+
+function detectMeasures(text: string): Array<{
+  cluster: MeasureCluster;
+  description: string;
+  projectType: string;
+  evidence: string;
+  sum: number | null;
+  sumEvidence: string | null;
+}> {
+  const mappings: Array<{ pattern: RegExp; cluster: MeasureCluster; description: string; projectType: string }> = [
+    { pattern: /Dach(?:arbeiten|sanierung)?/i, cluster: "Sonstiges", description: "Dacharbeiten", projectType: "Dacharbeiten" },
+    { pattern: /Fassade(?:narbeiten|nsanierung)?/i, cluster: "Sonstiges", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
+    { pattern: /Fenster(?:arbeiten|tausch)?/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
+    { pattern: /Heizung(?:sarbeiten)?/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
+    { pattern: /Elektro(?:arbeiten)?/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
+    { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?/i, cluster: "Sanitaer / Heizung", description: "Sanitaerarbeiten", projectType: "Sanitaerarbeiten" },
+    { pattern: /Maler(?:arbeiten)?/i, cluster: "Maler", description: "Malerarbeiten", projectType: "Malerarbeiten" },
+    { pattern: /Boden(?:belagsarbeiten|arbeiten)?/i, cluster: "Boden", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
+    { pattern: /Fliesen(?:arbeiten)?|Estrich/i, cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich", projectType: "Bad- / Fliesenarbeiten" },
+    { pattern: /Tischler(?:arbeiten)?|T(?:ue|\u00fc)ren/i, cluster: "Tueren / Fenster", description: "Tischlerarbeiten / Tueren", projectType: "Tischlerarbeiten" },
+    { pattern: /Reinigung/i, cluster: "Reinigung", description: "Reinigung", projectType: "Reinigung" },
+    { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
+  ];
+  const found = new Map<string, {
+    cluster: MeasureCluster;
+    description: string;
+    projectType: string;
+    evidence: string;
+    sum: number | null;
+    sumEvidence: string | null;
+  }>();
+
+  mappings.forEach((mapping) => {
+    const match = text.match(mapping.pattern);
+    if (!match) return;
+    const sumMatch = findMeasureSum(text, mapping.pattern);
+    found.set(mapping.cluster, {
+      cluster: mapping.cluster,
+      description: mapping.description,
+      projectType: mapping.projectType,
+      evidence: match[0],
+      sum: sumMatch.value,
+      sumEvidence: sumMatch.raw
+    });
+  });
+
+  return Array.from(found.values());
+}
+
+function findMeasureSum(text: string, pattern: RegExp): { value: number | null; raw: string | null } {
+  const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  const money = /([\d.]+,\d{2})\s*(?:\u20ac|EUR|Euro)?/i;
+  const line = lines.find((entry) => /Summe/i.test(entry) && pattern.test(entry) && money.test(entry));
+  if (!line) return { value: null, raw: null };
+  return { value: parseGermanMoney(line.match(money)?.[1] ?? null), raw: line };
 }
 
 function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; description: string; projectType: string; evidence: string } | null {
