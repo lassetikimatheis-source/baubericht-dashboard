@@ -55,6 +55,7 @@ type ViewKey = "dashboard" | "objects" | "map" | "upload" | "projects" | "unassi
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
 type ObjectTab = "overview" | "measures" | "trades" | "documents" | "images" | "entrances" | "ai";
 type OverviewGroup = "object" | "entrance" | "project" | "document";
+type CostViewMode = "comparison" | "offers" | "invoices";
 type TextFieldKey =
   | "fund"
   | "objectNumber"
@@ -2280,15 +2281,23 @@ function ObjectCostsTab({
   allProjects: ProjectRecord[];
   assignments: Record<string, string | null>;
 }) {
+  const [costView, setCostView] = useState<CostViewMode>("comparison");
   const objectTotal = finalGrossCost(documents);
   const offerTotal = sumValues(documents.filter(isOfferDocument).map((document) => document.totalCost.value));
   const progressTotal = sumValues(documents.filter(isProgressInvoiceDocument).map((document) => document.totalCost.value));
   const finalTotal = finalGrossCost(documents);
+  const displayedTotal = costView === "offers"
+    ? offerTotal
+    : costView === "invoices"
+      ? finalTotal
+      : objectTotal;
   const byCluster = groupByCluster(documents);
   const byDocumentType = groupByDocumentType(documents);
   return (
     <div className="costHierarchy">
-      <CostMetric label={`Gesamtkosten Objekt ${object.objectNumber || "k.A."}`} value={formatNullableCurrency(objectTotal)} />
+      <CostViewSwitch value={costView} onChange={setCostView} />
+      <CostMetric label={costView === "offers" ? "Auswertung nach Angeboten" : costView === "invoices" ? "Auswertung nach Rechnungen" : `Gesamtkosten Objekt ${object.objectNumber || "k.A."}`} value={formatNullableCurrency(displayedTotal)} />
+      <CostProgressBars documents={documents} mode={costView} />
       <div className="costSummaryGrid">
         <CostMetric label="Angebote" value={formatNullableCurrency(offerTotal)} />
         <CostMetric label="Abschläge" value={formatNullableCurrency(progressTotal)} />
@@ -2715,24 +2724,111 @@ function ProjectDocumentsTab({
 }
 
 function ProjectCostsTab({ project, documents }: { project: ProjectRecord; documents: ObjectAnalysis[] }) {
+  const [costView, setCostView] = useState<CostViewMode>("comparison");
   const summary = calculateProjectCosts(project, documents);
   return (
-    <div className="costSummaryGrid">
-      <CostMetric label="Summe Angebote netto" value={formatNullableCurrency(summary.offersNet)} />
-      <CostMetric label="Summe Angebote brutto" value={formatNullableCurrency(summary.offersGross)} />
-      <CostMetric label="Summe Abschläge netto" value={formatNullableCurrency(summary.progressNet)} />
-      <CostMetric label="Summe Abschläge brutto" value={formatNullableCurrency(summary.progressGross)} />
-      <CostMetric label="Summe Rechnungen netto" value={formatNullableCurrency(summary.invoicesNet)} />
-      <CostMetric label="Summe Rechnungen brutto" value={formatNullableCurrency(summary.invoicesGross)} />
-      <CostMetric label="Summe Nachtraege netto" value={formatNullableCurrency(summary.supplementsNet)} />
-      <CostMetric label="Summe Nachtraege brutto" value={formatNullableCurrency(summary.supplementsGross)} />
-      <CostMetric label="Summe Schlussrechnungen netto" value={formatNullableCurrency(summary.finalInvoicesNet)} />
-      <CostMetric label="Summe Schlussrechnungen brutto" value={formatNullableCurrency(summary.finalInvoicesGross)} />
-      <CostMetric label="Abweichung Angebot zu Rechnung" value={formatNullableCurrency(summary.offerToInvoiceDelta)} />
-      <CostMetric label="Abweichung Budget zu Ist" value={formatNullableCurrency(summary.budgetToActualDelta)} />
-      <CostMetric label="Kosten pro sanierte Wohnung" value={formatNullableCurrency(summary.costPerApartment)} />
-      <CostMetric label="Kosten pro m2" value={formatNullableCurrency(summary.costPerSqm)} />
+    <div className="projectCostBoard">
+      <CostViewSwitch value={costView} onChange={setCostView} />
+      <CostProgressBars documents={documents} mode={costView} />
+      <div className="costSummaryGrid">
+        <CostMetric label="Summe Angebote netto" value={formatNullableCurrency(summary.offersNet)} />
+        <CostMetric label="Summe Angebote brutto" value={formatNullableCurrency(summary.offersGross)} />
+        <CostMetric label="Summe Abschläge netto" value={formatNullableCurrency(summary.progressNet)} />
+        <CostMetric label="Summe Abschläge brutto" value={formatNullableCurrency(summary.progressGross)} />
+        <CostMetric label="Summe Rechnungen netto" value={formatNullableCurrency(summary.invoicesNet)} />
+        <CostMetric label="Summe Rechnungen brutto" value={formatNullableCurrency(summary.invoicesGross)} />
+        <CostMetric label="Summe Nachträge netto" value={formatNullableCurrency(summary.supplementsNet)} />
+        <CostMetric label="Summe Nachträge brutto" value={formatNullableCurrency(summary.supplementsGross)} />
+        <CostMetric label="Summe Schlussrechnungen netto" value={formatNullableCurrency(summary.finalInvoicesNet)} />
+        <CostMetric label="Summe Schlussrechnungen brutto" value={formatNullableCurrency(summary.finalInvoicesGross)} />
+        <CostMetric label="Abweichung Angebot zu Rechnung" value={formatNullableCurrency(summary.offerToInvoiceDelta)} />
+        <CostMetric label="Abweichung Budget zu Ist" value={formatNullableCurrency(summary.budgetToActualDelta)} />
+        <CostMetric label="Kosten pro sanierte Wohnung" value={formatNullableCurrency(summary.costPerApartment)} />
+        <CostMetric label="Kosten pro m2" value={formatNullableCurrency(summary.costPerSqm)} />
+      </div>
     </div>
+  );
+}
+
+function CostViewSwitch({ value, onChange }: { value: CostViewMode; onChange: (value: CostViewMode) => void }) {
+  return (
+    <div className="costViewSwitch" role="group" aria-label="Kostenbasis auswählen">
+      {[
+        { key: "comparison" as const, label: "Vergleich" },
+        { key: "offers" as const, label: "Angebote" },
+        { key: "invoices" as const, label: "Rechnungen" }
+      ].map((option) => (
+        <button
+          key={option.key}
+          className={value === option.key ? "active" : ""}
+          type="button"
+          onClick={() => onChange(option.key)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CostProgressBars({ documents, mode }: { documents: ObjectAnalysis[]; mode: CostViewMode }) {
+  const offerTotal = sumValues(documents.filter(isOfferDocument).map((document) => document.totalCost.value));
+  const progressDocuments = documents.filter(isProgressInvoiceDocument);
+  const progressTotal = sumValues(progressDocuments.map((document) => document.totalCost.value));
+  const finalTotal = finalGrossCost(documents);
+  const maxValue = Math.max(offerTotal ?? 0, progressTotal ?? 0, finalTotal ?? 0);
+  const rows = buildCostProgressRows(documents, mode);
+
+  if (rows.length === 0 || maxValue <= 0) {
+    return (
+      <section className="costProgressPanel">
+        <div className="panelHeader compactHeader">
+          <div>
+            <h3>Kostenvergleich</h3>
+            <p>Keine passenden Angebots- oder Rechnungswerte vorhanden.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="costProgressPanel">
+      <div className="panelHeader compactHeader">
+        <div>
+          <h3>Kostenvergleich</h3>
+          <p>Angebot als Referenz, Abschläge kumuliert und Schlussrechnung/finale Rechnung daneben.</p>
+        </div>
+      </div>
+      <div className="costProgressTrack">
+        {offerTotal !== null ? (
+          <div className="offerReference" style={{ left: `${Math.min(100, (offerTotal / maxValue) * 100)}%` }}>
+            <span>Angebot</span>
+            <strong>{formatNullableCurrency(offerTotal)}</strong>
+          </div>
+        ) : null}
+        {rows.map((row) => (
+          <div className="costProgressRow" key={row.key}>
+            <div>
+              <strong>{row.label}</strong>
+              <span>{row.meta}</span>
+            </div>
+            <div className="costProgressBarShell">
+              <span
+                className={`costProgressBar ${row.kind}`}
+                style={{ width: `${Math.max(2, Math.min(100, (row.value / maxValue) * 100))}%` }}
+              />
+            </div>
+            <b>{formatNullableCurrency(row.value)}</b>
+          </div>
+        ))}
+      </div>
+      {progressDocuments.length > 0 && finalTotal !== null ? (
+        <p className="costProgressHint">
+          Schlussrechnung vorhanden: Abschläge werden als Zahlungsstand gezeigt, aber nicht zusätzlich auf die finalen Kosten addiert.
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -4194,6 +4290,55 @@ function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
     final: values.final,
     status: values.hasFinal ? "Abgerechnet" : values.hasProgress ? "In Ausführung" : values.hasOffer ? "Angebot" : "Prüfung"
   }));
+}
+
+function buildCostProgressRows(documents: ObjectAnalysis[], mode: CostViewMode) {
+  const rows: Array<{ key: string; label: string; meta: string; value: number; kind: string }> = [];
+  const offerTotal = sumValues(documents.filter(isOfferDocument).map((document) => document.totalCost.value));
+  const progressDocuments = documents.filter(isProgressInvoiceDocument);
+  const finalDocuments = finalCostDocuments(documents);
+
+  if ((mode === "comparison" || mode === "offers") && offerTotal !== null) {
+    rows.push({
+      key: "offer-total",
+      label: "Angebotssumme",
+      meta: `${formatNumber(documents.filter(isOfferDocument).length)} Angebot(e)`,
+      value: offerTotal,
+      kind: "offer"
+    });
+  }
+
+  if (mode === "comparison" || mode === "invoices") {
+    let runningProgress = 0;
+    progressDocuments.forEach((document, index) => {
+      const value = document.totalCost.value;
+      if (value === null) return;
+      runningProgress += value;
+      rows.push({
+        key: `progress-${document.id}`,
+        label: fieldOrUnknown(document.installmentNumber ?? emptyField<string>()) !== "k.A."
+          ? fieldOrUnknown(document.installmentNumber ?? emptyField<string>())
+          : `${index + 1}. Abschlag`,
+        meta: `kumuliert ${formatNullableCurrency(runningProgress)}`,
+        value: runningProgress,
+        kind: "progress"
+      });
+    });
+
+    finalDocuments.forEach((document) => {
+      const value = document.totalCost.value;
+      if (value === null) return;
+      rows.push({
+        key: `final-${document.id}`,
+        label: isFinalInvoiceDocument(document) ? "Schlussrechnung" : "Finale Rechnung",
+        meta: fieldOrUnknown(document.documentNumber),
+        value,
+        kind: "final"
+      });
+    });
+  }
+
+  return rows;
 }
 
 function groupByDocumentType(documents: ObjectAnalysis[]) {

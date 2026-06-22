@@ -1696,6 +1696,134 @@ select {
   gap: 10px;
 }
 
+.projectCostBoard {
+  display: grid;
+  gap: 14px;
+}
+
+.costViewSwitch {
+  display: inline-flex;
+  width: fit-content;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 4px;
+}
+
+.costViewSwitch button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 850;
+  padding: 0 14px;
+}
+
+.costViewSwitch button.active {
+  background: var(--orange);
+  color: #fff;
+}
+
+.costProgressPanel {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.costProgressTrack {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.offerReference {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  border-left: 2px dashed var(--orange);
+  color: var(--orange);
+  transform: translateX(-1px);
+}
+
+.offerReference span,
+.offerReference strong {
+  position: relative;
+  left: 8px;
+  display: block;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.offerReference strong {
+  font-size: 12px;
+}
+
+.costProgressRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(180px, 1fr) minmax(110px, auto);
+  align-items: center;
+  gap: 12px;
+}
+
+.costProgressRow strong {
+  color: var(--navy);
+}
+
+.costProgressRow span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.costProgressRow b {
+  text-align: right;
+  color: var(--navy);
+}
+
+.costProgressBarShell {
+  height: 14px;
+  border-radius: 999px;
+  background: #eef2f6;
+  overflow: hidden;
+}
+
+.costProgressBar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--navy);
+}
+
+.costProgressBar.offer {
+  background: #466389;
+}
+
+.costProgressBar.progress {
+  background: #ffb08f;
+}
+
+.costProgressBar.final {
+  background: var(--orange);
+}
+
+.costProgressHint {
+  margin: 12px 0 0;
+  border-radius: 10px;
+  background: rgba(255, 110, 66, 0.1);
+  color: #8a3a1a;
+  font-weight: 750;
+  padding: 10px 12px;
+}
+
 .costSplitGrid,
 .measureGrid {
   display: grid;
