@@ -128,6 +128,7 @@ export interface ObjectAnalysis {
   projectSuggestion: ExtractedField<string>;
   assignmentSuggestion: ExtractedField<string>;
   documentType: ExtractedField<string>;
+  installmentNumber: ExtractedField<string>;
   projectType: ExtractedField<string>;
   provider: ExtractedField<string>;
   year: ExtractedField<number>;

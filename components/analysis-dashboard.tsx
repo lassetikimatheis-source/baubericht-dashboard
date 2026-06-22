@@ -136,6 +136,8 @@ interface KpiShape {
 interface ProjectCostSummary {
   offersNet: number | null;
   offersGross: number | null;
+  progressNet: number | null;
+  progressGross: number | null;
   invoicesNet: number | null;
   invoicesGross: number | null;
   supplementsNet: number | null;
@@ -330,8 +332,8 @@ export function AnalysisDashboard() {
     : [];
 
   const kpis = useMemo<KpiShape>(() => {
-    const gross = sumValues(filteredDocuments.map((document) => document.totalCost.value));
-    const net = sumValues(filteredDocuments.map((document) => document.netCost.value));
+    const gross = finalGrossCost(filteredDocuments);
+    const net = finalNetCost(filteredDocuments);
     const apartments = sumValues(filteredDocuments.map((document) => document.renovatedApartmentCount.value));
     const area = sumValues(filteredDocuments.map((document) => document.livingAreaSqm.value));
     const hasActiveFilters = hasFilters(filters);
@@ -1704,7 +1706,7 @@ function DocumentTable({
                 <td>{fieldOrUnknown(document.objectNumber)}</td>
                 <td className="wideCell">{fieldOrUnknown(document.objectAddress)}</td>
                 <td>{fieldOrUnknown(document.projectType)}</td>
-                <td>{fieldOrUnknown(document.documentType)}</td>
+                <td><span className={`documentTypeBadge ${documentTypeBadgeClass(document)}`}>{documentTypeValue(document)}</span></td>
                 <td>{fieldOrUnknown(document.provider)}</td>
                 <td>{fieldOrUnknown(document.documentDate)}</td>
                 <td>{formatApartment(document)}</td>
@@ -1815,7 +1817,7 @@ function ObjectsView({
               >
                 <strong>{objectLabel(object) || "k.A."}</strong>
                 <span>{object.address || "Adressbereich k.A."}</span>
-                <em>{formatNullableCurrency(sumValues(objectDocuments.map((document) => document.totalCost.value)))}</em>
+                <em>{formatNullableCurrency(finalGrossCost(objectDocuments))}</em>
                 <span className="objectListChips">
                   <small>{formatNumber(objectMeasures)} Gewerke</small>
                   <small>{formatNumber(objectDocuments.length)} Dokumente</small>
@@ -1904,7 +1906,7 @@ function ObjectsView({
             <p>{group.address || "k.A."}</p>
             <div className="costLine costLineStrong">
               <span>Brutto</span>
-              <strong>{formatNullableCurrency(sumValues(group.documents.map((document) => document.totalCost.value)))}</strong>
+              <strong>{formatNullableCurrency(finalGrossCost(group.documents))}</strong>
             </div>
             <DetectedObjectImages
               images={objectImages[group.key] ?? []}
@@ -1935,7 +1937,7 @@ function ObjectDetailHeader({
   documents: ObjectAnalysis[];
   images: string[];
 }) {
-  const grossCost = sumValues(documents.map((document) => document.totalCost.value));
+  const grossCost = finalGrossCost(documents);
   const measureCount = buildMeasureRows(documents).length || documents.reduce((sum, document) => sum + document.clusters.length, 0);
   const status = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Aktiv" : "k.A.";
   const dataQuality = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
@@ -2111,9 +2113,10 @@ function ObjectDocumentsTab({ documents, onSelect }: { documents: ObjectAnalysis
       <div className="documentCardGrid">
         {filteredDocuments.length === 0 ? <div className="emptyState"><p>k.A.</p></div> : filteredDocuments.map((document) => (
           <article className="documentPreviewCard" key={document.id} onClick={() => onSelect(document.id)}>
-            <span>{fieldOrUnknown(document.documentType)}</span>
+            <span className={`documentTypeBadge ${documentTypeBadgeClass(document)}`}>{documentTypeValue(document)}</span>
             <h3>{fieldOrUnknown(document.provider)}</h3>
             <p>{fieldOrUnknown(document.documentNumber)} - {fieldOrUnknown(document.documentDate)}</p>
+            {isProgressInvoiceDocument(document) ? <p>{fieldOrUnknown(document.installmentNumber ?? emptyField<string>())}</p> : null}
             <strong>{formatCurrency(document.totalCost)}</strong>
             <em>{formatKiStatus(document)}</em>
             <button type="button">PDF ansehen</button>
@@ -2145,7 +2148,7 @@ function ObjectMeasuresTab({
       (!filters.documentType || fieldOrUnknown(document.documentType).toLowerCase().includes(filters.documentType.toLowerCase()))
     );
   });
-  const rows = buildMeasureRows(filteredDocuments);
+  const rows = buildMeasureRows(costDisplayDocuments(filteredDocuments));
   const totalGross = sumValues(rows.map((row) => row.grossCost));
   const selectedRow = rows.find((row) => row.id === selectedMeasureId) ?? rows[0] ?? null;
 
@@ -2277,19 +2280,30 @@ function ObjectCostsTab({
   allProjects: ProjectRecord[];
   assignments: Record<string, string | null>;
 }) {
-  const objectTotal = sumValues(documents.map((document) => document.totalCost.value));
+  const objectTotal = finalGrossCost(documents);
+  const offerTotal = sumValues(documents.filter(isOfferDocument).map((document) => document.totalCost.value));
+  const progressTotal = sumValues(documents.filter(isProgressInvoiceDocument).map((document) => document.totalCost.value));
+  const finalTotal = finalGrossCost(documents);
   const byCluster = groupByCluster(documents);
   const byDocumentType = groupByDocumentType(documents);
   return (
     <div className="costHierarchy">
       <CostMetric label={`Gesamtkosten Objekt ${object.objectNumber || "k.A."}`} value={formatNullableCurrency(objectTotal)} />
       <div className="costSummaryGrid">
-        <CostMetric label="Kosten netto" value={formatNullableCurrency(sumValues(documents.map((document) => document.netCost.value)))} />
-        <CostMetric label="MwSt" value={formatNullableCurrency(sumValues(documents.map((document) => document.vatCost.value)))} />
+        <CostMetric label="Angebote" value={formatNullableCurrency(offerTotal)} />
+        <CostMetric label="Abschläge" value={formatNullableCurrency(progressTotal)} />
+        <CostMetric label="Finale Kosten" value={formatNullableCurrency(finalTotal)} />
+        <CostMetric label="Kosten netto" value={formatNullableCurrency(finalNetCost(documents))} />
+        <CostMetric label="MwSt" value={formatNullableCurrency(finalVatCost(documents))} />
         <CostMetric label="Kosten brutto" value={formatNullableCurrency(objectTotal)} />
         <CostMetric label="Kosten je sanierte WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, objectTotal))} />
         <CostMetric label="Kosten je m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, objectTotal))} />
       </div>
+      {documents.some(isProgressInvoiceDocument) && documents.some(isFinalInvoiceDocument) ? (
+        <div className="uploadStatus">
+          Schlussrechnung enthält vermutlich bereits vorherige Abschlagszahlungen. Bitte keine doppelte Kostenaddition vornehmen.
+        </div>
+      ) : null}
       <div className="tableWrap compactTable">
         <table>
           <thead>
@@ -2305,7 +2319,7 @@ function ObjectCostsTab({
                   <td>{entranceLabel(entrance) || "k.A."}</td>
                   <td>{formatNumber(entranceProjects.length)}</td>
                   <td>{formatNumber(entranceDocuments.length)}</td>
-                  <td>{formatNullableCurrency(sumValues(entranceDocuments.map((document) => document.totalCost.value)))}</td>
+                  <td>{formatNullableCurrency(finalGrossCost(entranceDocuments))}</td>
                 </tr>
               );
             })}
@@ -2317,7 +2331,7 @@ function ObjectCostsTab({
                   <td>{project.projectName || "k.A."}</td>
                   <td>1</td>
                   <td>{formatNumber(projectDocuments.length)}</td>
-                  <td>{formatNullableCurrency(sumValues(projectDocuments.map((document) => document.totalCost.value)))}</td>
+                  <td>{formatNullableCurrency(finalGrossCost(projectDocuments))}</td>
                 </tr>
               );
             })}
@@ -2352,7 +2366,7 @@ function ObjectCostsTab({
 
 function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
   const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
-  const rows = buildMeasureRows(documents);
+  const rows = buildMeasureRows(costDisplayDocuments(documents));
   const totalGross = sumValues(rows.map((row) => row.grossCost));
   const chartRows: TradeCostChartRow[] = rows.map((row) => ({
     id: row.id,
@@ -2669,7 +2683,7 @@ function ProjectDocumentsTab({
           ) : documents.map((document) => (
             <tr key={document.id}>
               <td>{sourceLabel(document.totalCost).split(" - ")[0]}</td>
-              <td>{fieldOrUnknown(document.documentType)}</td>
+              <td><span className={`documentTypeBadge ${documentTypeBadgeClass(document)}`}>{documentTypeValue(document)}</span></td>
               <td>{fieldOrUnknown(document.provider)}</td>
               <td>{fieldOrUnknown(document.documentNumber)}</td>
               <td>{fieldOrUnknown(document.documentDate)}</td>
@@ -2706,6 +2720,8 @@ function ProjectCostsTab({ project, documents }: { project: ProjectRecord; docum
     <div className="costSummaryGrid">
       <CostMetric label="Summe Angebote netto" value={formatNullableCurrency(summary.offersNet)} />
       <CostMetric label="Summe Angebote brutto" value={formatNullableCurrency(summary.offersGross)} />
+      <CostMetric label="Summe Abschläge netto" value={formatNullableCurrency(summary.progressNet)} />
+      <CostMetric label="Summe Abschläge brutto" value={formatNullableCurrency(summary.progressGross)} />
       <CostMetric label="Summe Rechnungen netto" value={formatNullableCurrency(summary.invoicesNet)} />
       <CostMetric label="Summe Rechnungen brutto" value={formatNullableCurrency(summary.invoicesGross)} />
       <CostMetric label="Summe Nachtraege netto" value={formatNullableCurrency(summary.supplementsNet)} />
@@ -2721,21 +2737,24 @@ function ProjectCostsTab({ project, documents }: { project: ProjectRecord; docum
 }
 
 function ProjectMeasuresTab({ documents }: { documents: ObjectAnalysis[] }) {
-  const byCluster = groupByCluster(documents);
+  const byCluster = groupByMeasureCostRole(documents);
   return (
     <div className="tableWrap compactTable">
       <table>
         <thead>
-          <tr><th>Maßnahmencluster</th><th>Dokumente</th><th>Kosten brutto</th></tr>
+          <tr><th>Maßnahmencluster</th><th>Dokumente</th><th>Angebot</th><th>Abschläge</th><th>Finale Kosten</th><th>Status</th></tr>
         </thead>
         <tbody>
           {byCluster.length === 0 ? (
-            <tr><td colSpan={3}>k.A.</td></tr>
+            <tr><td colSpan={6}>k.A.</td></tr>
           ) : byCluster.map((entry) => (
             <tr key={entry.cluster}>
               <td>{entry.cluster}</td>
               <td>{entry.count}</td>
-              <td>{formatNullableCurrency(entry.total)}</td>
+              <td>{formatNullableCurrency(entry.offer)}</td>
+              <td>{formatNullableCurrency(entry.progress)}</td>
+              <td>{formatNullableCurrency(entry.final)}</td>
+              <td>{entry.status}</td>
             </tr>
           ))}
         </tbody>
@@ -2743,12 +2762,11 @@ function ProjectMeasuresTab({ documents }: { documents: ObjectAnalysis[] }) {
     </div>
   );
 }
-
 function ProjectAiTab({ documents }: { documents: ObjectAnalysis[] }) {
   const rows = buildMeasureRows(documents);
   const trades = Array.from(new Set(rows.map((row) => row.cluster).filter((value) => value !== "k.A.")));
   const apartments = collectApartments(documents);
-  const gross = sumValues(documents.map((document) => document.totalCost.value));
+  const gross = finalGrossCost(documents);
   return (
     <div className="aiReportBoard">
       <section className="panel aiSummaryCard">
@@ -2866,7 +2884,7 @@ function ReportsView({
         <ReportCard label="Projekte" value={formatNumber(projects.length)} />
         <ReportCard label="Dokumente" value={formatNumber(documents.length)} />
         <ReportCard label="Zugeordnet" value={formatNumber(Object.values(assignments).filter(Boolean).length)} />
-        <ReportCard label="Brutto" value={formatNullableCurrency(sumValues(documents.map((document) => document.totalCost.value)))} />
+        <ReportCard label="Finale Kosten" value={formatNullableCurrency(finalGrossCost(documents))} />
       </div>
       <div className="tableWrap compactTable">
         <table>
@@ -2972,6 +2990,7 @@ function DocumentEditor({
         <EditInput label="Objektadresse" value={fieldOrUnknown(document.objectAddress)} onChange={(value) => setText("objectAddress", value)} />
         <EditInput label="Projektart" value={fieldOrUnknown(document.projectType)} onChange={(value) => setText("projectType", value)} />
         <EditInput label="Dokumenttyp" value={fieldOrUnknown(document.documentType)} onChange={(value) => setText("documentType", value)} />
+        <EditInput label="Abschlagsnummer" value={fieldOrUnknown(document.installmentNumber ?? emptyField<string>())} onChange={(value) => onUpdate(document.id, (current) => ({ ...current, installmentNumber: manualField(value) }))} />
         <EditInput label="Anbieter" value={fieldOrUnknown(document.provider)} onChange={(value) => setText("provider", value)} />
         <EditInput label="Dokumentnummer" value={fieldOrUnknown(document.documentNumber)} onChange={(value) => setText("documentNumber", value)} />
         <EditInput label="Datum" value={fieldOrUnknown(document.documentDate)} onChange={(value) => setText("documentDate", value)} />
@@ -3564,17 +3583,18 @@ function buildAnalysisFromDocuments(
   documents: ObjectAnalysis[],
   base: PortfolioAnalysisState = emptyAnalysisState
 ): PortfolioAnalysisState {
+  const costDocuments = finalCostDocuments(documents);
   return {
     ...base,
     objects: documents,
     clusterSummary: documents.flatMap((document) => document.clusters),
-    totalCost: aggregateNumberField(documents.map((document) => document.totalCost)),
+    totalCost: aggregateNumberField(costDocuments.map((document) => document.totalCost)),
     averageCostPerApartment: aggregateAverageField(
-      documents.map((document) => document.totalCost),
+      costDocuments.map((document) => document.totalCost),
       documents.map((document) => document.renovatedApartmentCount)
     ),
     averageCostPerSqm: aggregateAverageField(
-      documents.map((document) => document.totalCost),
+      costDocuments.map((document) => document.totalCost),
       documents.map((document) => document.livingAreaSqm)
     ),
     reviewRequiredCount: countReviewCases(documents),
@@ -3609,6 +3629,7 @@ function mergeDocumentPreferManual(existing: ObjectAnalysis, incoming: ObjectAna
     projectSuggestion: mergeFieldPreferManual(existing.projectSuggestion, incoming.projectSuggestion),
     assignmentSuggestion: mergeFieldPreferManual(existing.assignmentSuggestion, incoming.assignmentSuggestion),
     documentType: mergeFieldPreferManual(existing.documentType, incoming.documentType),
+    installmentNumber: mergeFieldPreferManual(existing.installmentNumber ?? emptyField<string>(), incoming.installmentNumber ?? emptyField<string>()),
     projectType: mergeFieldPreferManual(existing.projectType, incoming.projectType),
     provider: mergeFieldPreferManual(existing.provider, incoming.provider),
     year: mergeFieldPreferManual(existing.year, incoming.year),
@@ -3774,20 +3795,23 @@ function uniqueOptions(values: string[]): string[] {
 }
 
 function calculateProjectCosts(project: ProjectRecord, documents: ObjectAnalysis[]): ProjectCostSummary {
-  const offers = documents.filter((document) => /angebot/i.test(fieldOrUnknown(document.documentType)));
-  const invoices = documents.filter((document) => /rechnung/i.test(fieldOrUnknown(document.documentType)) && !/schluss/i.test(fieldOrUnknown(document.documentType)));
-  const supplements = documents.filter((document) => /nachtrag/i.test(fieldOrUnknown(document.documentType)));
-  const finalInvoices = documents.filter((document) => /schlussrechnung|schluss/i.test(fieldOrUnknown(document.documentType)));
+  const offers = documents.filter(isOfferDocument);
+  const progressInvoices = documents.filter(isProgressInvoiceDocument);
+  const invoices = documents.filter(isInvoiceDocument);
+  const supplements = documents.filter((document) => /nachtrag/i.test(documentTypeValue(document)));
+  const finalInvoices = documents.filter(isFinalInvoiceDocument);
   const offersNet = sumValues(offers.map((document) => document.netCost.value));
   const offersGross = sumValues(offers.map((document) => document.totalCost.value));
+  const progressNet = sumValues(progressInvoices.map((document) => document.netCost.value));
+  const progressGross = sumValues(progressInvoices.map((document) => document.totalCost.value));
   const invoicesNet = sumValues(invoices.map((document) => document.netCost.value));
   const invoicesGross = sumValues(invoices.map((document) => document.totalCost.value));
   const supplementsNet = sumValues(supplements.map((document) => document.netCost.value));
   const supplementsGross = sumValues(supplements.map((document) => document.totalCost.value));
   const finalInvoicesNet = sumValues(finalInvoices.map((document) => document.netCost.value));
   const finalInvoicesGross = sumValues(finalInvoices.map((document) => document.totalCost.value));
-  const actualGross = firstNumber(finalInvoicesGross, invoicesGross, sumValues(documents.map((document) => document.totalCost.value)));
-  const actualNet = firstNumber(finalInvoicesNet, invoicesNet, sumValues(documents.map((document) => document.netCost.value)));
+  const actualGross = firstNumber(finalInvoicesGross, invoicesGross);
+  const actualNet = firstNumber(finalInvoicesNet, invoicesNet);
   const renovatedApartments = parseGermanNumber(project.renovatedApartmentCount) ?? sumValues(documents.map((document) => document.renovatedApartmentCount.value));
   const livingArea = parseGermanNumber(project.livingAreaSqm) ?? sumValues(documents.map((document) => document.livingAreaSqm.value));
   const budgetGross = parseGermanNumber(project.budgetGross);
@@ -3801,6 +3825,8 @@ function calculateProjectCosts(project: ProjectRecord, documents: ObjectAnalysis
   return {
     offersNet,
     offersGross,
+    progressNet,
+    progressGross,
     invoicesNet,
     invoicesGross,
     supplementsNet,
@@ -3939,8 +3965,8 @@ function overviewRowFromDocuments({
   const firstDocument = documents[0] ?? null;
   const assignedProject = firstDocument ? projects.find((entry) => entry.id === assignments[firstDocument.id]) : null;
   const rowProject = project ?? assignedProject;
-  const netCost = sumValues(documents.map((document) => document.netCost.value));
-  const grossCost = sumValues(documents.map((document) => document.totalCost.value));
+  const netCost = finalNetCost(documents);
+  const grossCost = finalGrossCost(documents);
   const renovatedCount = firstNumber(manualRenovatedCount, sumValues(documents.map((document) => document.renovatedApartmentCount.value)));
   const livingArea = firstNumber(manualLivingArea, sumValues(documents.map((document) => document.livingAreaSqm.value)));
   const apartments = collectApartments(documents, rowProject);
@@ -4039,7 +4065,7 @@ function buildMapEntries(
       fund: object.fund || "k.A.",
       projectCount: objectProjects.length,
       documents: objectDocuments,
-      totalCost: sumValues(objectDocuments.map((document) => document.totalCost.value)),
+      totalCost: finalGrossCost(objectDocuments),
       latitude: parseCoordinate(object.latitude ?? ""),
       longitude: parseCoordinate(object.longitude ?? "")
     };
@@ -4056,7 +4082,7 @@ function buildMapEntries(
     fund: fieldOrUnknown(group.documents[0].fund),
     projectCount: 0,
     documents: group.documents,
-    totalCost: sumValues(group.documents.map((document) => document.totalCost.value)),
+    totalCost: finalGrossCost(group.documents),
     latitude: null,
     longitude: null
   }));
@@ -4122,6 +4148,54 @@ function groupByCluster(documents: ObjectAnalysis[]) {
   return Array.from(groups.entries()).map(([cluster, values]) => ({ cluster, ...values }));
 }
 
+function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
+  const groups = new Map<string, {
+    count: number;
+    offer: number | null;
+    progress: number | null;
+    final: number | null;
+    hasFinal: boolean;
+    hasProgress: boolean;
+    hasOffer: boolean;
+  }>();
+
+  documents.forEach((document) => {
+    const clusters = document.clusters.length ? document.clusters : [{ cluster: manualField("k.A."), totalCost: document.totalCost }];
+    clusters.forEach((cluster) => {
+      const name = fieldOrUnknown(cluster.cluster as ExtractedField<string>);
+      const current = groups.get(name) ?? {
+        count: 0,
+        offer: null,
+        progress: null,
+        final: null,
+        hasFinal: false,
+        hasProgress: false,
+        hasOffer: false
+      };
+      const value = cluster.totalCost.value ?? document.totalCost.value;
+      groups.set(name, {
+        ...current,
+        count: current.count + 1,
+        offer: isOfferDocument(document) ? sumValues([current.offer, value]) : current.offer,
+        progress: isProgressInvoiceDocument(document) ? sumValues([current.progress, value]) : current.progress,
+        final: (isFinalInvoiceDocument(document) || isInvoiceDocument(document)) ? sumValues([current.final, value]) : current.final,
+        hasFinal: current.hasFinal || isFinalInvoiceDocument(document) || isInvoiceDocument(document),
+        hasProgress: current.hasProgress || isProgressInvoiceDocument(document),
+        hasOffer: current.hasOffer || isOfferDocument(document)
+      });
+    });
+  });
+
+  return Array.from(groups.entries()).map(([cluster, values]) => ({
+    cluster,
+    count: values.count,
+    offer: values.offer,
+    progress: values.progress,
+    final: values.final,
+    status: values.hasFinal ? "Abgerechnet" : values.hasProgress ? "In Ausführung" : values.hasOffer ? "Angebot" : "Prüfung"
+  }));
+}
+
 function groupByDocumentType(documents: ObjectAnalysis[]) {
   const groups = new Map<string, { count: number; total: number | null }>();
   documents.forEach((document) => {
@@ -4137,7 +4211,7 @@ function groupByDocumentType(documents: ObjectAnalysis[]) {
 
 function groupByYear(documents: ObjectAnalysis[]) {
   const groups = new Map<string, number | null>();
-  documents.forEach((document) => {
+  finalCostDocuments(documents).forEach((document) => {
     const year = fieldOrUnknown(document.year);
     if (year === "k.A." || document.totalCost.value === null) return;
     groups.set(year, sumValues([groups.get(year) ?? null, document.totalCost.value]));
@@ -4309,6 +4383,65 @@ function parseGermanNumber(value: string): number | null {
 
 function firstNumber(...values: Array<number | null>): number | null {
   return values.find((value): value is number => typeof value === "number") ?? null;
+}
+
+function documentTypeValue(document: ObjectAnalysis): string {
+  return germanizeUiText(fieldOrUnknown(document.documentType));
+}
+
+function isOfferDocument(document: ObjectAnalysis): boolean {
+  return /angebot/i.test(documentTypeValue(document));
+}
+
+function isProgressInvoiceDocument(document: ObjectAnalysis): boolean {
+  return /abschlag|teilrechnung|teilzahlung|akonto|vorauszahlung/i.test(documentTypeValue(document));
+}
+
+function isFinalInvoiceDocument(document: ObjectAnalysis): boolean {
+  return /schlussrechnung|schluss|final/i.test(documentTypeValue(document));
+}
+
+function isCreditDocument(document: ObjectAnalysis): boolean {
+  return /gutschrift/i.test(documentTypeValue(document));
+}
+
+function isInvoiceDocument(document: ObjectAnalysis): boolean {
+  const type = documentTypeValue(document);
+  return /rechnung/i.test(type) && !isProgressInvoiceDocument(document) && !isFinalInvoiceDocument(document);
+}
+
+function documentTypeBadgeClass(document: ObjectAnalysis): string {
+  if (isFinalInvoiceDocument(document)) return "documentTypeFinal";
+  if (isProgressInvoiceDocument(document)) return "documentTypeProgress";
+  if (isOfferDocument(document)) return "documentTypeOffer";
+  if (isCreditDocument(document)) return "documentTypeCredit";
+  if (isInvoiceDocument(document)) return "documentTypeInvoice";
+  return "documentTypeOther";
+}
+
+function finalCostDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
+  const finalInvoices = documents.filter(isFinalInvoiceDocument);
+  if (finalInvoices.length > 0) return finalInvoices;
+  const invoices = documents.filter((document) => isInvoiceDocument(document) || isCreditDocument(document));
+  if (invoices.length > 0) return invoices;
+  return [];
+}
+
+function costDisplayDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
+  const finalDocuments = finalCostDocuments(documents);
+  return finalDocuments.length > 0 ? finalDocuments : documents;
+}
+
+function finalGrossCost(documents: ObjectAnalysis[]): number | null {
+  return sumValues(finalCostDocuments(documents).map((document) => document.totalCost.value));
+}
+
+function finalNetCost(documents: ObjectAnalysis[]): number | null {
+  return sumValues(finalCostDocuments(documents).map((document) => document.netCost.value));
+}
+
+function finalVatCost(documents: ObjectAnalysis[]): number | null {
+  return sumValues(finalCostDocuments(documents).map((document) => document.vatCost.value));
 }
 
 function emptyIfUnknown(value: string): string {

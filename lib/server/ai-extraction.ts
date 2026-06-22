@@ -36,6 +36,7 @@ interface AiObjectResult {
   projektvorschlag?: AiField<string>;
   zuordnungsvorschlag?: AiField<string>;
   dokumenttyp?: AiField<string>;
+  abschlagsnummer?: AiField<string>;
   projektart?: AiField<string>;
   anbieter?: AiField<string>;
   dokumentnummer?: AiField<string>;
@@ -172,8 +173,9 @@ async function runOpenAiExtractionPerDocument(
           role: "user",
           content: [
             "Extrahiere diese JSON-Struktur:",
-            "{ objects: [{ confidenceScore:{value,evidence,confidence}, projektvorschlag:{value,evidence,confidence}, zuordnungsvorschlag:{value,evidence,confidence}, dokumenttyp:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
-            "Erlaubte dokumenttyp-Werte: Angebot, Rechnung, Teilrechnung, Schlussrechnung, Nachtrag, Gutschrift, Auftrag, Freigabe, Sonstiges.",
+            "{ objects: [{ confidenceScore:{value,evidence,confidence}, projektvorschlag:{value,evidence,confidence}, zuordnungsvorschlag:{value,evidence,confidence}, dokumenttyp:{value,evidence,confidence}, abschlagsnummer:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
+            "Erlaubte dokumenttyp-Werte: Angebot, Auftrag, Abschlagsrechnung, Teilrechnung, Schlussrechnung, Rechnung, Gutschrift, Nachtrag, Freigabe, Sonstiges.",
+            "Erkenne Abschlagsrechnungen streng: Abschlagsrechnung, 1. Abschlagsrechnung, 2. Abschlagsrechnung, Teilrechnung, Teilzahlung, Akonto, Vorauszahlung, Zahlung gemaess Baufortschritt oder Abschlag. Wenn erkennbar, dokumenttyp Abschlagsrechnung und abschlagsnummer z.B. 1. Abschlag setzen.",
             "Erlaubte cluster: Boden, Maler, Bad / Fliesen, Sanitär / Heizung, Elektro, Türen / Fenster, Reinigung, Planung / Dokumentation, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
             "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitär - Heizungsarbeiten -> Sanitär / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Türen / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
@@ -277,7 +279,8 @@ function normalizeObjects(
       confidenceScore,
       projectSuggestion,
       assignmentSuggestion,
-      documentType: verifiedField(object.dokumenttyp, document, "Dokumenttyp", issues),
+      documentType: verifiedField(classifyDocumentTypeField(object.dokumenttyp, document), document, "Dokumenttyp", issues),
+      installmentNumber: metaStringField(object.abschlagsnummer, document, detectInstallmentNumber(document.text)?.value ?? null),
       projectType: verifiedField(object.projektart, document, "Projektart", issues),
       provider: verifiedField(object.anbieter, document, "Anbieter", issues),
       year: verifiedField(object.year, document, "Jahr", issues),
@@ -370,6 +373,19 @@ function verifiedField<T>(
   };
 }
 
+function classifyDocumentTypeField(field: AiField<string> | undefined, document: ParsedDocument): AiField<string> | undefined {
+  const detected = detectDocumentType(document.text);
+  if (!detected.value) return field;
+  if (!field?.value || /rechnung/i.test(field.value) || /teilrechnung/i.test(field.value)) {
+    return {
+      value: detected.value,
+      evidence: detected.evidence,
+      confidence: detected.value === "Abschlagsrechnung" ? 0.98 : field?.confidence ?? 0.9
+    };
+  }
+  return field;
+}
+
 function documentContainsEvidence(text: string, evidence: string): boolean {
   const normalizedText = normalizeText(text);
   const normalizedEvidence = normalizeText(evidence);
@@ -435,6 +451,7 @@ function mergeObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
       assignmentSuggestion: preferField(existing.assignmentSuggestion, object.assignmentSuggestion),
       year: preferField(existing.year, object.year),
       documentType: preferField(existing.documentType, object.documentType),
+      installmentNumber: preferField(existing.installmentNumber, object.installmentNumber),
       projectType: preferField(existing.projectType, object.projectType),
       provider: preferField(existing.provider, object.provider),
       fund: preferField(existing.fund, object.fund),
@@ -802,6 +819,7 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
 
   return {
     dokumenttyp: aiField("Angebot", "Angebot"),
+    abschlagsnummer: aiField(null, null),
     projektart: aiField("Wohnungssanierung", subjectEvidence),
     anbieter: aiField(provider?.[1] ?? null, provider?.[0] ?? null),
     year: aiField(year, date?.[0] ?? documentNumber?.[0] ?? null),
@@ -844,6 +862,7 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
   const livingArea = firstNumberRegex(text, /(\d+(?:[.,]\d+)?)\s*(?:m²|m2|qm)\b/i);
   const apartmentCount = firstNumberRegex(text, /(?:Anzahl\s+sanierte\s+Wohnungen|sanierte\s+WE|Wohnungen\s+betroffen)\D{0,30}(\d{1,4})/i);
   const documentType = detectDocumentType(text);
+  const installmentNumber = detectInstallmentNumber(text);
   const measures = detectMeasures(text);
   const primaryMeasure = measures[0] ?? null;
   const gross = costSummary.finalValues.gross.value;
@@ -866,6 +885,7 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
 
   return {
     dokumenttyp: aiField(documentType.value, documentType.evidence),
+    abschlagsnummer: aiField(installmentNumber?.value ?? null, installmentNumber?.evidence ?? null),
     projektart: aiField(primaryMeasure?.projectType ?? null, primaryMeasure?.evidence ?? null),
     anbieter: aiField(provider?.value ?? null, provider?.evidence ?? null),
     year: aiField(date?.value ? Number(date.value.slice(-4)) : null, date?.evidence ?? null),
@@ -955,9 +975,31 @@ function firstProvider(text: string): { value: string; evidence: string } | null
 }
 
 function detectDocumentType(text: string): { value: string | null; evidence: string | null } {
-  const types = ["Schlussrechnung", "Teilrechnung", "Rechnung", "Angebot", "Nachtrag", "Gutschrift", "Auftrag", "Freigabe"];
-  const found = types.find((type) => new RegExp(type, "i").test(text));
-  return found ? { value: found, evidence: text.match(new RegExp(found, "i"))?.[0] ?? found } : { value: null, evidence: null };
+  const patterns: Array<{ value: string; pattern: RegExp }> = [
+    { value: "Schlussrechnung", pattern: /\b(?:schlussrechnung|end(?:ab)?rechnung|finale\s+rechnung)\b/i },
+    { value: "Abschlagsrechnung", pattern: /\b(?:\d+\.\s*)?(?:abschlagsrechnung|abschlag(?:s)?(?:zahlung|rechnung)?|teilrechnung|teilzahlung|akonto|vorauszahlung|zahlung\s+gem(?:aess|äß|\.?)\s+baufortschritt)\b/i },
+    { value: "Angebot", pattern: /\bangebot(?:snummer|snr\.?)?\b/i },
+    { value: "Auftrag", pattern: /\bauftrag(?:snummer|snr\.?)?\b/i },
+    { value: "Gutschrift", pattern: /\bgutschrift\b/i },
+    { value: "Nachtrag", pattern: /\bnachtrag\b/i },
+    { value: "Freigabe", pattern: /\bfreigabe\b/i },
+    { value: "Rechnung", pattern: /\brechnung(?:snummer|snr\.?)?\b/i }
+  ];
+  for (const entry of patterns) {
+    const match = text.match(entry.pattern);
+    if (match) return { value: entry.value, evidence: match[0] };
+  }
+  return { value: null, evidence: null };
+}
+
+function detectInstallmentNumber(text: string): { value: string; evidence: string } | null {
+  const match = text.match(/\b(\d{1,2})\.\s*(?:abschlagsrechnung|abschlag|teilrechnung|teilzahlung)\b/i);
+  if (match) return { value: `${match[1]}. Abschlag`, evidence: match[0] };
+  if (/\b(?:abschlagsrechnung|abschlag|teilrechnung|teilzahlung|akonto|vorauszahlung)\b/i.test(text)) {
+    const evidence = text.match(/\b(?:abschlagsrechnung|abschlag|teilrechnung|teilzahlung|akonto|vorauszahlung)\b/i)?.[0] ?? "Abschlag";
+    return { value: "Abschlag", evidence };
+  }
+  return null;
 }
 
 function detectMeasures(text: string): Array<{
@@ -1347,7 +1389,8 @@ function calculatePortfolioTotals(objects: ObjectAnalysis[]): Pick<
   PortfolioAnalysisState,
   "year" | "fund" | "totalCost" | "averageCostPerApartment" | "averageCostPerSqm"
 > {
-  const totalCost = sumField(objects.map((object) => object.totalCost));
+  const costObjects = finalCostObjects(objects);
+  const totalCost = sumField(costObjects.map((object) => object.totalCost));
   const renovatedApartments = sumField(objects.map((object) => object.renovatedApartmentCount));
   const renovatedArea = sumField(objects.map((object) => object.renovatedAreaSqm));
   const source = firstSource(objects);
@@ -1365,6 +1408,15 @@ function calculatePortfolioTotals(objects: ObjectAnalysis[]): Pick<
         ? field(totalCost / renovatedArea, source)
         : emptyField<number>()
   };
+}
+
+function finalCostObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
+  const finalInvoices = objects.filter((object) => /schlussrechnung|schluss|final/i.test(String(object.documentType.value ?? "")));
+  if (finalInvoices.length > 0) return finalInvoices;
+  return objects.filter((object) => {
+    const type = String(object.documentType.value ?? "");
+    return /rechnung/i.test(type) && !/abschlag|teilrechnung|teilzahlung|akonto|vorauszahlung/i.test(type);
+  });
 }
 
 function field<T>(value: T | null, source: FieldSource): ExtractedField<T> {

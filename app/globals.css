@@ -1334,6 +1334,51 @@ tbody tr:hover,
   min-width: 620px;
 }
 
+.documentTypeBadge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 3px 9px;
+  border: 1px solid #e3e8ef;
+  background: #f8fafc;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.documentTypeOffer {
+  border-color: rgba(70, 99, 137, 0.25);
+  background: #eef4fb;
+  color: var(--navy);
+}
+
+.documentTypeProgress {
+  border-color: rgba(255, 110, 66, 0.28);
+  background: rgba(255, 110, 66, 0.11);
+  color: #a23d18;
+}
+
+.documentTypeFinal {
+  border-color: rgba(47, 125, 70, 0.22);
+  background: #eaf6ee;
+  color: #1f6b39;
+}
+
+.documentTypeCredit {
+  border-color: rgba(150, 54, 54, 0.18);
+  background: #fff1f1;
+  color: #963636;
+}
+
+.documentTypeInvoice,
+.documentTypeOther {
+  border-color: #e3e8ef;
+  background: #fff;
+  color: var(--muted);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
