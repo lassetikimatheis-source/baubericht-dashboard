@@ -1763,6 +1763,7 @@ function ObjectsView({
           {filteredObjects.map((object) => {
             const objectDocuments = documents.filter((document) => documentBelongsToObject(document, object, projects, assignments));
             const objectProjects = projects.filter((project) => project.objectId === object.id);
+            const objectMeasures = buildMeasureRows(objectDocuments).length || objectDocuments.reduce((sum, document) => sum + document.clusters.length, 0);
             return (
               <button
                 key={object.id}
@@ -1772,8 +1773,12 @@ function ObjectsView({
               >
                 <strong>{objectLabel(object) || "k.A."}</strong>
                 <span>{object.address || "Adressbereich k.A."}</span>
-                <span>{object.fund || "Fonds k.A."} - {objectProjects.length} P - {objectDocuments.length} D</span>
                 <em>{formatNullableCurrency(sumValues(objectDocuments.map((document) => document.totalCost.value)))}</em>
+                <span className="objectListChips">
+                  <small>{formatNumber(objectMeasures)} Gewerke</small>
+                  <small>{formatNumber(objectDocuments.length)} Dokumente</small>
+                  <small>{formatNumber(objectProjects.length)} Projekte</small>
+                </span>
               </button>
             );
           })}
@@ -1891,11 +1896,14 @@ function ObjectDetailHeader({
   const grossCost = sumValues(documents.map((document) => document.totalCost.value));
   const measureCount = buildMeasureRows(documents).length || documents.reduce((sum, document) => sum + document.clusters.length, 0);
   const status = countReviewCases(documents) > 0 ? "Pruefung" : documents.length > 0 ? "Aktiv" : "k.A.";
+  const dataQuality = countReviewCases(documents) > 0 ? "Pruefung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
   return (
-    <div className="objectDetailHeader">
-      <div className="objectHeroImage">
-        {images[0] ? <img src={images[0]} alt={objectLabel(object) || "Objektbild"} /> : <div>Objektbild</div>}
-      </div>
+    <div className={images[0] ? "objectDetailHeader objectDetailHeaderWithImage" : "objectDetailHeader objectDetailHeaderNoImage"}>
+      {images[0] ? (
+        <div className="objectHeroImage">
+          <img src={images[0]} alt={objectLabel(object) || "Objektbild"} />
+        </div>
+      ) : null}
       <div className="objectHeroContent">
         <div className="objectHeroTitle">
           <div>
@@ -1916,10 +1924,12 @@ function ObjectDetailHeader({
           <InfoLine label="Gesamtflaeche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "k.A."} />
         </div>
         <div className="objectHeaderMetrics">
-          <CostMetric label="Gesamtkosten Sanierung" value={formatNullableCurrency(grossCost)} />
-          <CostMetric label="Kosten pro Wohnung" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
+          <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
+          <CostMetric label="Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
           <CostMetric label="Kosten pro m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, grossCost))} />
-          <CostMetric label="Massnahmen" value={formatNumber(measureCount)} />
+          <CostMetric label="Dokumente" value={formatNumber(documents.length)} />
+          <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
+          <CostMetric label="Datenqualitaet" value={dataQuality} />
         </div>
       </div>
     </div>
@@ -2095,15 +2105,6 @@ function ObjectMeasuresTab({
   });
   const rows = buildMeasureRows(filteredDocuments);
   const totalGross = sumValues(rows.map((row) => row.grossCost));
-  const chartRows: TradeCostChartRow[] = rows.map((row) => ({
-    id: row.id,
-    cluster: row.cluster,
-    beschreibung: row.description,
-    kosten_brutto: row.grossCost,
-    anteil_prozent: row.grossCost !== null && totalGross ? (row.grossCost / totalGross) * 100 : null,
-    quelle: row.source,
-    status: row.status
-  }));
   const selectedRow = rows.find((row) => row.id === selectedMeasureId) ?? rows[0] ?? null;
 
   function updateMeasure(row: MeasureRow, field: "cluster" | "description" | "grossCost" | "status", value: string) {
@@ -2134,58 +2135,79 @@ function ObjectMeasuresTab({
         <label className="filterInput"><span>Jahr</span><input value={filters.year} onChange={(event) => setFilters({ ...filters, year: event.target.value })} placeholder="Alle" /></label>
         <label className="filterInput"><span>Dokumenttyp</span><input value={filters.documentType} onChange={(event) => setFilters({ ...filters, documentType: event.target.value })} placeholder="Alle" /></label>
       </div>
-      <div className="measureCardGrid">
-        {rows.length === 0 ? <div className="emptyState"><p>k.A.</p></div> : rows.map((row) => {
-          const open = selectedRow?.id === row.id;
-          return (
-            <article key={row.id} className={open ? "measureCard measureCardOpen" : "measureCard"} onClick={() => setSelectedMeasureId(row.id)}>
-              <div className="measureCardTop">
-                <span className="tradeIcon">{tradeIcon(row.cluster)}</span>
-                <div>
-                  <h3>{row.cluster}</h3>
-                  <p>{row.description}</p>
-                </div>
-                <strong>{formatNullableCurrency(row.grossCost)}</strong>
-              </div>
-              <div className="measureCardMetrics">
-                <CostMetric label="Jahr" value={extractYearFromMeasure(row, documents)} />
-                <CostMetric label="Wohnungen betroffen" value={collectApartments(documents)} />
-                <CostMetric label="Dokumente" value={formatNumber(documents.length)} />
-                <CostMetric label="Anteil" value={formatPercent(row.grossCost, totalGross)} />
-              </div>
-              {open ? (
-                <div className="measureCardDetails">
-                  <EditInput label="Gewerk" value={row.cluster === "k.A." ? "" : row.cluster} onChange={(value) => updateMeasure(row, "cluster", value)} />
-                  <EditInput label="Beschreibung" value={row.description === "k.A." ? "" : row.description} onChange={(value) => updateMeasure(row, "description", value)} />
-                  <EditInput label="Kosten brutto" value={row.grossCost === null ? "" : String(row.grossCost).replace(".", ",")} onChange={(value) => updateMeasure(row, "grossCost", value)} />
-                  <InfoLine label="Quelle" value={row.source} />
-                  <InfoLine label="Status" value={row.status} />
-                  <InfoLine label="Rechnungen / Dokumente" value={documents.map((document) => fieldOrUnknown(document.documentNumber)).filter((value) => value !== "k.A.").join(", ") || "k.A."} />
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
+      <div className="tableWrap compactTable measureListTable">
+        <table>
+          <thead>
+            <tr><th>Gewerk</th><th>Beschreibung</th><th>Jahr</th><th>Wohnungen</th><th>Dokumente</th><th>Kosten brutto</th><th>Anteil</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? <tr><td colSpan={8}>k.A.</td></tr> : rows.map((row) => (
+              <tr key={row.id} onClick={() => setSelectedMeasureId(row.id)}>
+                <td>{tradeIcon(row.cluster)} {row.cluster}</td>
+                <td>{row.description}</td>
+                <td>{extractYearFromMeasure(row, documents)}</td>
+                <td>{collectApartments(documents)}</td>
+                <td>{formatNumber(documents.length)}</td>
+                <td>{formatNullableCurrency(row.grossCost)}</td>
+                <td>{formatPercent(row.grossCost, totalGross)}</td>
+                <td>{row.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-      <div className="measureGrid">
-        <TradeCostBarChart rows={chartRows} onSelect={setSelectedMeasureId} />
-        <MeasureDetailPanel row={selectedRow} />
-      </div>
+      {selectedMeasureId ? (
+        <MeasureDetailPanel
+          row={selectedRow}
+          totalGross={totalGross}
+          documents={documents}
+          onClose={() => setSelectedMeasureId(null)}
+          onUpdate={updateMeasure}
+        />
+      ) : null}
     </div>
   );
 }
 
-function MeasureDetailPanel({ row }: { row: MeasureRow | null }) {
-  if (!row) return <aside className="measureDetail"><p className="muted">Kein Gewerk ausgewaehlt.</p></aside>;
+function MeasureDetailPanel({
+  row,
+  totalGross,
+  documents,
+  onClose,
+  onUpdate
+}: {
+  row: MeasureRow | null;
+  totalGross?: number | null;
+  documents?: ObjectAnalysis[];
+  onClose: () => void;
+  onUpdate?: (row: MeasureRow, field: "cluster" | "description" | "grossCost" | "status", value: string) => void;
+}) {
+  if (!row) return null;
   return (
-    <aside className="measureDetail">
-      <h3>{row.cluster}</h3>
+    <aside className="measureSlideOver" aria-label="Massnahmen-Details">
+      <div className="slideOverHeader">
+        <div>
+          <span className="eyebrow">Detail</span>
+          <h3>{row.cluster}</h3>
+        </div>
+        <button type="button" onClick={onClose}>Schliessen</button>
+      </div>
+      {onUpdate ? (
+        <div className="measureCardDetails">
+          <EditInput label="Gewerk" value={row.cluster === "k.A." ? "" : row.cluster} onChange={(value) => onUpdate(row, "cluster", value)} />
+          <EditInput label="Beschreibung" value={row.description === "k.A." ? "" : row.description} onChange={(value) => onUpdate(row, "description", value)} />
+          <EditInput label="Kosten brutto" value={row.grossCost === null ? "" : String(row.grossCost).replace(".", ",")} onChange={(value) => onUpdate(row, "grossCost", value)} />
+        </div>
+      ) : null}
       <InfoLine label="Beschreibung" value={row.description} />
       <InfoLine label="Abschnitt" value={row.section} />
       <InfoLine label="Kosten" value={formatNullableCurrency(row.grossCost)} />
+      <InfoLine label="Anteil" value={formatPercent(row.grossCost, totalGross ?? null)} />
+      <InfoLine label="Betroffene Wohnungen" value={documents ? collectApartments(documents) : "k.A."} />
+      <InfoLine label="Dokumente" value={documents ? formatNumber(documents.length) : "k.A."} />
       <InfoLine label="Quelle" value={row.source} />
       <InfoLine label="KI-Sicherheit" value={row.confidence} />
-      <button type="button">Bearbeiten</button>
+      <button type="button" className="buttonPrimary">Bearbeiten</button>
       <h4>Erkannte Positionen</h4>
       {row.lineItems.length === 0 ? <p className="muted">k.A.</p> : (
         <ul>
@@ -2287,6 +2309,7 @@ function ObjectCostsTab({
 }
 
 function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
+  const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
   const rows = buildMeasureRows(documents);
   const totalGross = sumValues(rows.map((row) => row.grossCost));
   const chartRows: TradeCostChartRow[] = rows.map((row) => ({
@@ -2302,10 +2325,11 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
     ...entry,
     share: entry.total !== null && totalGross ? (entry.total / totalGross) * 100 : null
   }));
+  const selectedRow = rows.find((row) => row.id === selectedMeasureId || row.cluster === selectedMeasureId) ?? null;
 
   return (
     <div className="tradesBoard">
-      <TradeCostBarChart rows={chartRows} />
+      <TradeCostBarChart rows={chartRows} onSelect={setSelectedMeasureId} />
       <section className="panel tradeDonutCard">
         <div className="panelHeader compactHeader">
           <div>
@@ -2334,7 +2358,7 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
             <thead><tr><th>Gewerk</th><th>Gesamtkosten</th><th>Anteil</th><th>Anzahl Rechnungen</th></tr></thead>
             <tbody>
               {groups.length === 0 ? <tr><td colSpan={4}>k.A.</td></tr> : groups.map((entry) => (
-                <tr key={entry.cluster}>
+                <tr key={entry.cluster} onClick={() => setSelectedMeasureId(entry.cluster)}>
                   <td>{tradeIcon(entry.cluster)} {entry.cluster}</td>
                   <td>{formatNullableCurrency(entry.total)}</td>
                   <td>{entry.share === null ? "k.A." : `${formatNullableNumber(roundMoney(entry.share))} %`}</td>
@@ -2345,6 +2369,14 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
           </table>
         </div>
       </section>
+      {selectedRow ? (
+        <MeasureDetailPanel
+          row={selectedRow}
+          totalGross={totalGross}
+          documents={documents}
+          onClose={() => setSelectedMeasureId(null)}
+        />
+      ) : null}
     </div>
   );
 }
