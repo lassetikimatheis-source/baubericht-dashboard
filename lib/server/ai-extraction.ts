@@ -92,9 +92,7 @@ export async function extractPortfolioData(
   }
 
   const deterministicIssues: string[] = [];
-  const deterministicObjects = mergeObjects(
-    readableDocuments.flatMap((document) => normalizeObjects([], document, deterministicIssues))
-  );
+  const deterministicObjects = readableDocuments.flatMap((document) => normalizeObjects([], document, deterministicIssues));
 
   if (!process.env.OPENAI_API_KEY) {
     const totals = calculatePortfolioTotals(deterministicObjects);
@@ -117,10 +115,8 @@ export async function extractPortfolioData(
 
   const extractionResults = await runOpenAiExtractionPerDocument(readableDocuments);
   const validationIssues: string[] = [];
-  const objects = mergeObjects(
-    extractionResults.flatMap(({ result, document }) =>
-      normalizeObjects(result.objects ?? [], document, validationIssues)
-    )
+  const objects = extractionResults.flatMap(({ result, document }) =>
+    normalizeObjects(result.objects ?? [], document, validationIssues)
   );
   const totals = calculatePortfolioTotals(objects);
 
@@ -148,7 +144,8 @@ async function runOpenAiExtractionPerDocument(
   const results: Array<{ document: ParsedDocument; result: AiExtractionResult }> = [];
 
   for (const document of documents) {
-    const response = await openai.chat.completions.create({
+    try {
+      const response = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       temperature: 0,
       response_format: { type: "json_object" },
@@ -205,8 +202,15 @@ async function runOpenAiExtractionPerDocument(
       ]
     });
 
-    const content = response.choices[0]?.message?.content || "{}";
-    results.push({ document, result: JSON.parse(content) as AiExtractionResult });
+      const content = response.choices[0]?.message?.content || "{}";
+      results.push({ document, result: JSON.parse(content) as AiExtractionResult });
+    } catch (error) {
+      const issues = [
+        `${document.fileName}: KI-Analyse fehlgeschlagen (${error instanceof Error ? error.message : "Unbekannter Fehler"}). Regex-Fallback verwendet.`
+      ];
+      const fallbackObject = parseStandardOffer(document, issues) ?? parseGenericDocument(document, issues);
+      results.push({ document, result: { objects: [fallbackObject], issues } });
+    }
   }
 
   return results;

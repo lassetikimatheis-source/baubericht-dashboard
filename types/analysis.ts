@@ -50,6 +50,7 @@ export interface SourceDocument {
   uploadedAt: string;
   status: ProcessingStatus;
   textLength: number;
+  extractedText?: string;
   fileSize?: number;
   parseDebug?: DocumentParseDebug;
   duplicateOf?: string | null;

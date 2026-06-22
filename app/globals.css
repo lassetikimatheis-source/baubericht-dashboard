@@ -1281,6 +1281,59 @@ tbody tr:hover,
   padding: 12px;
 }
 
+.uploadDocumentList {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px;
+}
+
+.uploadDocumentList h4 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 14px;
+}
+
+.uploadDocumentItem {
+  border: 1px solid #e3e8ef;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.uploadDocumentItem[open] {
+  border-color: rgba(255, 110, 66, 0.35);
+  background: #fff;
+}
+
+.uploadDocumentItem summary {
+  display: grid;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--navy);
+}
+
+.uploadDocumentItem summary span {
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.uploadDocumentItem .uploadExtractSummary {
+  margin-top: 10px;
+}
+
+.uploadDocumentList .tableWrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.uploadDocumentList table {
+  min-width: 620px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

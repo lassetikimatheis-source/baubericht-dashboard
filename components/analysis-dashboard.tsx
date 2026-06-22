@@ -269,8 +269,10 @@ export function AnalysisDashboard() {
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [uploadDocument, setUploadDocument] = useState<ObjectAnalysis | null>(null);
+  const [uploadDocuments, setUploadDocuments] = useState<ObjectAnalysis[]>([]);
   const [objectDraft, setObjectDraft] = useState<UploadObjectDraft>(() => uploadDraftFromDocument());
   const [uploadSourceDocument, setUploadSourceDocument] = useState<SourceDocument | null>(null);
+  const [uploadSourceDocuments, setUploadSourceDocuments] = useState<SourceDocument[]>([]);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const [uploadedFileName, setUploadedFileName] = useState("");
 
@@ -362,7 +364,9 @@ export function AnalysisDashboard() {
     setIsAnalyzing(true);
     setMessage(null);
     setUploadDocument(null);
+    setUploadDocuments([]);
     setUploadSourceDocument(null);
+    setUploadSourceDocuments([]);
     setObjectDraft(uploadDraftFromDocument(undefined, uploadSourceName(files)));
     setUploadPhase("analyzing");
     setSelectedObjectId(null);
@@ -389,7 +393,9 @@ export function AnalysisDashboard() {
       const nextDraft = uploadDraftFromDocument(currentDocument ?? undefined, uploadSourceName(files));
       setAnalysis(buildAnalysisFromDocuments(mergedDocuments, data.analysis));
       setUploadDocument(currentDocument);
+      setUploadDocuments(data.analysis.objects ?? []);
       setUploadSourceDocument(currentSourceDocument);
+      setUploadSourceDocuments(data.analysis.sourceDocuments ?? []);
       setObjectDraft(nextDraft);
       setUploadPhase("analyzed");
       setSelectedDocumentId(currentDocument?.id ?? null);
@@ -398,7 +404,8 @@ export function AnalysisDashboard() {
         saveAssignments(next);
         return next;
       });
-      setMessage(hasRecognizedUploadValues(nextDraft) ? "Dokument analysiert - bitte Daten pruefen." : "Analyse abgeschlossen - keine Werte erkannt. Bitte manuell ergaenzen.");
+      const analyzedCount = (data.analysis.objects ?? []).length;
+      setMessage(hasRecognizedUploadValues(nextDraft) ? `${formatNumber(analyzedCount)} Dokument(e) analysiert - bitte Daten prüfen.` : "Analyse abgeschlossen - keine Werte erkannt. Bitte manuell ergänzen.");
     } catch (error) {
       setUploadPhase(files.length > 0 ? "selected" : "idle");
       setMessage(error instanceof Error ? error.message : "Analyse fehlgeschlagen.");
@@ -411,7 +418,9 @@ export function AnalysisDashboard() {
     setMessage(null);
     setPreviews([]);
     setUploadDocument(null);
+    setUploadDocuments([]);
     setUploadSourceDocument(null);
+    setUploadSourceDocuments([]);
     setSelectedDocumentId(null);
     setSelectedObjectId(null);
     setUploadedFileName(uploadSourceName(files));
@@ -467,10 +476,31 @@ export function AnalysisDashboard() {
 
   function saveUploadObject() {
     const object = saveObject(uploadDraftToObjectRecord(objectDraft, `object-${Date.now()}`));
+    const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
+    const createdProjects = documentsToAssign.map((document, index) => saveProject({
+      ...projectFromDocument(document, objects),
+      id: `project-${Date.now()}-${index}`,
+      objectId: object.id,
+      object: objectLabel(object),
+      projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
+    }));
     setObjects((current) => [...current, object]);
+    setProjects((current) => [...current, ...createdProjects]);
+    if (documentsToAssign.length) {
+      setAssignments((current) => {
+        const next = { ...current };
+        documentsToAssign.forEach((document, index) => {
+          next[document.id] = createdProjects[index]?.id ?? null;
+        });
+        saveAssignments(next);
+        return next;
+      });
+    }
     setSelectedObjectId(object.id);
     setUploadDocument(null);
+    setUploadDocuments([]);
     setUploadSourceDocument(null);
+    setUploadSourceDocuments([]);
     setObjectDraft(uploadDraftFromDocument());
     setUploadPhase("idle");
     setUploadedFileName("");
@@ -479,23 +509,31 @@ export function AnalysisDashboard() {
   }
 
   function assignUploadDocumentToObject(objectId: string) {
-    if (!uploadDocument) return;
+    const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
+    if (!documentsToAssign.length) return;
     const object = objects.find((entry) => entry.id === objectId);
     if (!object) return;
-    const project = saveProject({
-      ...projectFromDocument(uploadDocument, objects),
+    const createdProjects = documentsToAssign.map((document, index) => saveProject({
+      ...projectFromDocument(document, objects),
+      id: `project-${Date.now()}-${index}`,
       objectId: object.id,
       object: objectLabel(object),
-      projectName: fieldOrUnknown(uploadDocument.projectSuggestion) !== "k.A." ? fieldOrUnknown(uploadDocument.projectSuggestion) : `Dokument ${fieldOrUnknown(uploadDocument.documentNumber)}`
-    });
-    setProjects((current) => [...current.filter((entry) => entry.id !== project.id), project]);
+      projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
+    }));
+    setProjects((current) => [...current, ...createdProjects]);
     setAssignments((current) => {
-      const next = { ...current, [uploadDocument.id]: project.id };
+      const next = { ...current };
+      documentsToAssign.forEach((document, index) => {
+        next[document.id] = createdProjects[index]?.id ?? null;
+      });
       saveAssignments(next);
       return next;
     });
     setSelectedObjectId(object.id);
     setUploadDocument(null);
+    setUploadDocuments([]);
+    setUploadSourceDocument(null);
+    setUploadSourceDocuments([]);
     setObjectDraft(uploadDraftFromDocument());
     setUploadPhase("idle");
     setUploadedFileName("");
@@ -815,7 +853,9 @@ export function AnalysisDashboard() {
             {showUploadPanel ? (
               <UploadObjectPanel
                 document={uploadDocument}
+                documents={uploadDocuments}
                 sourceDocument={uploadSourceDocument}
+                sourceDocuments={uploadSourceDocuments}
                 draft={objectDraft}
                 existingObject={findExistingObjectForDraft(objectDraft, objects)}
                 isAnalyzing={isAnalyzing}
@@ -2960,7 +3000,9 @@ function DocumentEditor({
 
 function UploadObjectPanel({
   document,
+  documents,
   sourceDocument,
+  sourceDocuments,
   draft,
   existingObject,
   isAnalyzing,
@@ -2972,7 +3014,9 @@ function UploadObjectPanel({
   onAssignExisting
 }: {
   document: ObjectAnalysis | null;
+  documents: ObjectAnalysis[];
   sourceDocument: SourceDocument | null;
+  sourceDocuments: SourceDocument[];
   draft: UploadObjectDraft;
   existingObject: ObjectRecord | null;
   isAnalyzing: boolean;
@@ -2984,20 +3028,24 @@ function UploadObjectPanel({
   onAssignExisting: (objectId: string) => void;
 }) {
   const showForm = phase === "analyzed";
+  const visibleDocuments = documents.length ? documents : document ? [document] : [];
+  const visibleSourceDocuments = sourceDocuments.length ? sourceDocuments : sourceDocument ? [sourceDocument] : [];
+  const groupedUploadRows = buildUploadGroupRows(visibleDocuments);
+
   return (
     <aside className="editorPanel uploadObjectPanel">
       <div className="panelHeader">
         <div>
           <h2>Neues Objekt aus Upload</h2>
-          <p>{phase === "analyzed" ? "Dokument analysiert - bitte Daten pruefen." : phase === "selected" ? "Datei ausgewählt - bitte Analyse starten." : "Nach der Analyse erscheinen hier die KI-erkannten Objektwerte."}</p>
+          <p>{phase === "analyzed" ? "Dokumente analysiert - bitte Daten prüfen." : phase === "selected" ? "Datei ausgewählt - bitte Analyse starten." : "Nach der Analyse erscheinen hier die KI-erkannten Objektwerte."}</p>
         </div>
       </div>
 
       {isAnalyzing ? (
         <div className="analysisLoader">
           <span />
-          <strong>KI analysiert Dokument...</strong>
-          <p>Der rechte Info-Bereich wurde zurueckgesetzt und wird danach neu befuellt.</p>
+          <strong>KI analysiert Dokumente...</strong>
+          <p>Der rechte Info-Bereich wurde zurückgesetzt und wird danach neu befüllt.</p>
         </div>
       ) : null}
 
@@ -3013,26 +3061,68 @@ function UploadObjectPanel({
         </div>
       ) : null}
 
-      {sourceDocument?.parseDebug ? (
-        <div className="debugBlock uploadDebugBlock">
-          <h4>PDF-/Datei-Debug</h4>
-          <InfoLine label="Dateiname" value={sourceDocument.parseDebug.fileName} />
-          <InfoLine label="Dateityp" value={sourceDocument.parseDebug.fileType} />
-          <InfoLine label="Dateigroesse" value={`${sourceDocument.parseDebug.fileSize} Byte`} />
-          <InfoLine label="Textzeichen" value={formatNumber(sourceDocument.parseDebug.textLength)} />
-          <InfoLine label="Status" value={sourceDocument.parseDebug.status} />
-          {sourceDocument.issues.length ? <p className="muted">{sourceDocument.issues.join(" ")}</p> : null}
-          <strong>Erste 1.000 Zeichen</strong>
-          <pre>{sourceDocument.parseDebug.textPreview || "k.A."}</pre>
-          <InfoLine label="Erkannte Betraege" value={sourceDocument.parseDebug.amountMatches.join(", ") || "k.A."} />
-          <InfoLine label="Erkannte Objektnummern" value={sourceDocument.parseDebug.objectNumberMatches.join(", ") || "k.A."} />
-          <InfoLine label="Erkannte Adressen" value={sourceDocument.parseDebug.addressMatches.join(", ") || "k.A."} />
+      {visibleSourceDocuments.length > 0 ? (
+        <div className="uploadDocumentList">
+          <h4>Dokumentanalyse je Datei</h4>
+          {visibleSourceDocuments.map((source, index) => {
+            const analyzedDocument = visibleDocuments.find((entry) => entry.sourceDocumentIds.includes(source.id)) ?? visibleDocuments[index] ?? null;
+            return (
+              <details key={source.id} className="uploadDocumentItem" open={index === 0}>
+                <summary>
+                  <strong>Dokument {index + 1}: {uploadDocumentStatusLabel(source, analyzedDocument)}</strong>
+                  <span>{source.fileName}</span>
+                </summary>
+                <div className="uploadExtractSummary">
+                  <InfoLine label="Dateiname" value={source.fileName} />
+                  <InfoLine label="Dateityp" value={source.fileType} />
+                  <InfoLine label="Dokumenttyp" value={analyzedDocument ? fieldOrUnknown(analyzedDocument.documentType) : "Nicht erkannt"} />
+                  <InfoLine label="Objektnummer" value={analyzedDocument ? fieldOrUnknown(analyzedDocument.objectNumber) : "Nicht erkannt"} />
+                  <InfoLine label="Adresse" value={analyzedDocument ? fieldOrUnknown(analyzedDocument.objectAddress) : "Nicht erkannt"} />
+                  <InfoLine label="Lieferant" value={analyzedDocument ? fieldOrUnknown(analyzedDocument.provider) : "Nicht erkannt"} />
+                  <InfoLine label="Dokumentnummer" value={analyzedDocument ? fieldOrUnknown(analyzedDocument.documentNumber) : "Nicht erkannt"} />
+                  <InfoLine label="Datum" value={analyzedDocument ? fieldOrUnknown(analyzedDocument.documentDate) : "Nicht erkannt"} />
+                  <InfoLine label="Gewerk / Maßnahme" value={analyzedDocument ? formatClusters(analyzedDocument) : "Nicht erkannt"} />
+                  <InfoLine label="Netto" value={analyzedDocument ? formatCurrency(analyzedDocument.netCost) : "Nicht erkannt"} />
+                  <InfoLine label="Brutto" value={analyzedDocument ? formatCurrency(analyzedDocument.totalCost) : "Nicht erkannt"} />
+                  <InfoLine label="Wohnungen betroffen" value={analyzedDocument ? collectApartments([analyzedDocument]) : "Nicht erkannt"} />
+                  <InfoLine label="KI-Sicherheit" value={analyzedDocument ? formatKiStatus(analyzedDocument) : "Nicht erkannt"} />
+                  <InfoLine label="Fehlerstatus" value={source.issues.join(" ") || (analyzedDocument ? "Keine Fehler" : "Nicht erkannt")} />
+                </div>
+                {source.parseDebug ? (
+                  <div className="uploadExtractSummary">
+                    <InfoLine label="Erfolgreich gelesen" value={source.parseDebug.status === "read" ? "Ja" : "Nein"} />
+                    <InfoLine label="Textzeichen" value={formatNumber(source.parseDebug.textLength)} />
+                    <InfoLine label="OCR verwendet" value={source.parseDebug.ocrUsed ? "Ja" : "Nein"} />
+                    <InfoLine label="Erkannte Beträge" value={source.parseDebug.amountMatches.join(", ") || "k.A."} />
+                    <InfoLine label="Erkannte Objektnummer" value={source.parseDebug.objectNumberMatches.join(", ") || "k.A."} />
+                    <InfoLine label="KI-Sicherheit" value={analyzedDocument ? formatKiStatus(analyzedDocument) : "k.A."} />
+                  </div>
+                ) : null}
+              </details>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {groupedUploadRows.length > 0 ? (
+        <div className="uploadDocumentList">
+          <h4>Zusammenfassung nach Objekt / Gewerk / Jahr / Dokumenttyp</h4>
+          <div className="tableWrap compactTable">
+            <table>
+              <thead><tr><th>Objekt</th><th>Gewerk</th><th>Maßnahme</th><th>Jahr</th><th>Typ</th><th>Dokumente</th><th>Brutto</th></tr></thead>
+              <tbody>
+                {groupedUploadRows.map((row) => (
+                  <tr key={row.key}><td>{row.object}</td><td>{row.trade}</td><td>{row.measure}</td><td>{row.year}</td><td>{row.type}</td><td>{formatNumber(row.count)}</td><td>{formatNullableCurrency(row.gross)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 
       {phase === "idle" && !isAnalyzing ? (
         <div className="emptyState">
-          <p>Bitte links ein Dokument hochladen und analysieren.</p>
+          <p>Bitte links Dokumente hochladen und analysieren.</p>
         </div>
       ) : null}
 
@@ -3040,7 +3130,7 @@ function UploadObjectPanel({
         <>
           {existingObject && document ? (
             <div className="possibleMatchBox">
-              <strong>Moeglicherweise vorhandenes Objekt gefunden</strong>
+              <strong>Möglicherweise vorhandenes Objekt gefunden</strong>
               <p>{objectLabel(existingObject) || existingObject.address || "k.A."}</p>
               <div className="editorActions">
                 <button type="button" onClick={() => onAssignExisting(existingObject.id)}>Bestehendem Objekt zuordnen</button>
@@ -3050,6 +3140,7 @@ function UploadObjectPanel({
           ) : null}
 
           <div className="uploadExtractSummary">
+            <InfoLine label="Dokumente analysiert" value={formatNumber(visibleDocuments.length)} />
             <InfoLine label="Dokument" value={document ? fieldOrUnknown(document.documentType) : "Nicht erkannt"} />
             <InfoLine label="Anbieter" value={document ? fieldOrUnknown(document.provider) : "Nicht erkannt"} />
             <InfoLine label="Kosten brutto" value={document ? formatCurrency(document.totalCost) : "Nicht erkannt"} />
@@ -3073,7 +3164,7 @@ function UploadObjectPanel({
             <EditInput label="Bundesland" value={draft.federalState} placeholder="Nicht erkannt" onChange={(value) => onChange("federalState", value)} />
             <EditInput label="Baujahr" value={draft.constructionYear} placeholder="Nicht erkannt" onChange={(value) => onChange("constructionYear", value)} />
             <EditInput label="Anzahl Wohneinheiten" value={draft.unitCount} placeholder="Nicht erkannt" onChange={(value) => onChange("unitCount", value)} />
-            <EditInput label="Gesamtwohnflaeche m2" value={draft.totalLivingAreaSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("totalLivingAreaSqm", value)} />
+            <EditInput label="Gesamtwohnfläche m2" value={draft.totalLivingAreaSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("totalLivingAreaSqm", value)} />
             <EditInput label="Latitude" value={draft.latitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("latitude", value)} />
             <EditInput label="Longitude" value={draft.longitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("longitude", value)} />
           </div>
@@ -3086,7 +3177,6 @@ function UploadObjectPanel({
     </aside>
   );
 }
-
 function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
   const debug = document.measureDebug;
   const details = document.measureDetails ?? [];
@@ -3321,6 +3411,47 @@ function uploadSourceName(files: File[]): string {
   return files.map((file) => file.name).join(", ");
 }
 
+function buildUploadGroupRows(documents: ObjectAnalysis[]) {
+  const groups = new Map<string, {
+    key: string;
+    object: string;
+    trade: string;
+    measure: string;
+    year: string;
+    type: string;
+    count: number;
+    gross: number | null;
+  }>();
+
+  documents.forEach((document) => {
+    const object = firstKnown(fieldOrUnknown(document.objectNumber), fieldOrUnknown(document.objectAddress)) || "k.A.";
+    const trade = formatClusters(document);
+    const measure = fieldOrUnknown(document.measureDescription);
+    const year = fieldOrUnknown(document.year);
+    const type = fieldOrUnknown(document.documentType);
+    const key = [object, trade, measure, year, type].join("||");
+    const current = groups.get(key) ?? { key, object, trade, measure, year, type, count: 0, gross: null };
+    groups.set(key, {
+      ...current,
+      count: current.count + 1,
+      gross: sumValues([current.gross, document.totalCost.value])
+    });
+  });
+
+  return Array.from(groups.values());
+}
+
+function uploadDocumentStatusLabel(source: SourceDocument, document: ObjectAnalysis | null): string {
+  if (source.parseDebug?.status === "error") return "Fehler / OCR nötig";
+  if (source.parseDebug?.status === "ocr_unavailable" || source.parseDebug?.status === "scan_detected") {
+    return document ? "teilweise erkannt / OCR prüfen" : "OCR nötig";
+  }
+  if (!document) return "nicht erkannt";
+  const status = formatKiStatus(document).toLowerCase();
+  if (/prüfung|pruefung|manuell|k\.a\.|unsicher/.test(status)) return "teilweise erkannt";
+  return "erfolgreich analysiert";
+}
+
 function hasRecognizedUploadValues(draft: UploadObjectDraft): boolean {
   return Boolean(
     draft.objectNumber.trim() ||
@@ -3520,7 +3651,13 @@ function hasManualSource<T>(field: ExtractedField<T>): boolean {
 }
 
 function documentIdentity(document: ObjectAnalysis): string {
-  const fileName = sourceLabel(document.totalCost).split(" - ")[0];
+  const fileName = firstKnown(...[
+    ...document.documentNumber.sources,
+    ...document.totalCost.sources,
+    ...document.netCost.sources,
+    ...document.objectAddress.sources,
+    ...document.provider.sources
+  ].map((source) => source.fileName));
   const identity = [
     fieldOrUnknown(document.documentNumber),
     fieldOrUnknown(document.provider),
