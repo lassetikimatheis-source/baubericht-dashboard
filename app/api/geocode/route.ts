@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     const result = results[0];
 
     if (!result?.lat || !result?.lon) {
-      return NextResponse.json({ ok: false, message: "Keine Koordinaten fuer diese Adresse gefunden." }, { status: 404 });
+      return NextResponse.json({ ok: false, message: "Keine Koordinaten für diese Adresse gefunden." }, { status: 404 });
     }
 
     return NextResponse.json({

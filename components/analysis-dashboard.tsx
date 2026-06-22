@@ -233,20 +233,20 @@ const navItems: Array<{ key: ViewKey; label: string }> = [
 ];
 
 const projectTabs: Array<{ key: ProjectTab; label: string }> = [
-  { key: "overview", label: "Uebersicht" },
+  { key: "overview", label: "Übersicht" },
   { key: "documents", label: "Dokumente" },
   { key: "costs", label: "Kosten" },
-  { key: "measures", label: "Massnahmen" },
-  { key: "ai", label: "KI-Pruefung" }
+  { key: "measures", label: "Maßnahmen" },
+  { key: "ai", label: "KI-Prüfung" }
 ];
 
 const objectTabs: Array<{ key: ObjectTab; label: string }> = [
-  { key: "overview", label: "Uebersicht" },
-  { key: "measures", label: "Massnahmen" },
+  { key: "overview", label: "Übersicht" },
+  { key: "measures", label: "Maßnahmen" },
   { key: "trades", label: "Gewerke" },
   { key: "documents", label: "Dokumente" },
   { key: "images", label: "Bilder" },
-  { key: "entrances", label: "Haeuser / Hauseingaenge" },
+  { key: "entrances", label: "Häuser / Hauseingänge" },
   { key: "ai", label: "KI-Auswertung" }
 ];
 
@@ -966,7 +966,7 @@ function DocumentUploadView({
       <div className="panelHeader uploadTitle">
         <div>
           <h2>Dokument Upload / KI</h2>
-          <p>Hier landen Upload, Textpruefung und die Analyse mit der PARIBUS Baukosten KI. Das Dashboard bleibt nur fuer Objekte und Portfolio-Kennzahlen.</p>
+          <p>Hier landen Upload, Textprüfung und die Analyse mit der PARIBUS Baukosten KI. Das Dashboard bleibt nur für Objekte und Portfolio-Kennzahlen.</p>
         </div>
         <span className="status statusNeutral">KI Arbeitsbereich</span>
       </div>
@@ -1209,10 +1209,10 @@ function SelectedPortfolioDetail({ document }: { document: ObjectAnalysis | null
           <InfoLine label="Objektnummer" value={fieldOrUnknown(document.objectNumber)} />
           <InfoLine label="Fonds" value={fieldOrUnknown(document.fund)} />
           <InfoLine label="Wohnung / Lage" value={formatApartment(document)} />
-          <InfoLine label="Wohnflaeche" value={formatSqm(document.livingAreaSqm)} />
+          <InfoLine label="Wohnfläche" value={formatSqm(document.livingAreaSqm)} />
         </div>
         <div className="infoCard">
-          <h3>Kostenuebersicht</h3>
+          <h3>Kostenübersicht</h3>
           <InfoLine label="Netto" value={formatCurrency(document.netCost)} />
           <InfoLine label="MwSt" value={formatCurrency(document.vatCost)} />
           <InfoLine label="Brutto" value={formatCurrency(document.totalCost)} />
@@ -1221,7 +1221,7 @@ function SelectedPortfolioDetail({ document }: { document: ObjectAnalysis | null
           </div>
         </div>
         <div className="infoCard">
-          <h3>KI-Pruefung</h3>
+          <h3>KI-Prüfung</h3>
           <InfoLine label="Agent" value={fieldOrUnknown(document.aiAgentName)} />
           <InfoLine label="Status" value={formatKiStatus(document)} />
           <InfoLine label="Projektvorschlag" value={fieldOrUnknown(document.projectSuggestion)} />
@@ -1232,7 +1232,7 @@ function SelectedPortfolioDetail({ document }: { document: ObjectAnalysis | null
         <table>
           <thead>
             <tr>
-              <th>Massnahme</th>
+              <th>Maßnahme</th>
               <th>Beschreibung</th>
               <th>Kosten</th>
               <th>Art</th>
@@ -1350,7 +1350,7 @@ function KpiGrid({ kpis }: { kpis: KpiShape }) {
       <Kpi label="Sanierte Wohnungen" value={formatNullableNumber(kpis.apartments)} />
       <Kpi label="Kosten pro Wohnung" value={formatNullableCurrency(kpis.costPerApartment)} />
       <Kpi label="Kosten pro m2" value={formatNullableCurrency(kpis.costPerSqm)} />
-      <Kpi label="Offene Prueffaelle" value={formatNumber(kpis.reviewCases)} warning />
+      <Kpi label="Offene Prüffälle" value={formatNumber(kpis.reviewCases)} warning />
       <Kpi label="k.A.-Felder" value={formatNumber(kpis.unknownFields)} warning />
     </section>
   );
@@ -1402,8 +1402,8 @@ function DashboardFilterPanel({
         <FilterSelect label="Anbieter" value={filters.provider} options={options.providers} onChange={(value) => setFilters({ ...filters, provider: value })} />
         <FilterSelect label="Wohnung" value={filters.apartmentNumber} options={options.apartments} onChange={(value) => setFilters({ ...filters, apartmentNumber: value })} />
         <FilterSelect label="Lage" value={filters.location} options={options.locations} onChange={(value) => setFilters({ ...filters, location: value })} />
-        <FilterSelect label="Massnahme" value={filters.cluster} options={options.clusters} onChange={(value) => setFilters({ ...filters, cluster: value })} />
-        <FilterSelect label="Datenqualitaet" value={filters.dataQuality} options={options.qualities} onChange={(value) => setFilters({ ...filters, dataQuality: value })} />
+        <FilterSelect label="Maßnahme" value={filters.cluster} options={options.clusters} onChange={(value) => setFilters({ ...filters, cluster: value })} />
+        <FilterSelect label="Datenqualität" value={filters.dataQuality} options={options.qualities} onChange={(value) => setFilters({ ...filters, dataQuality: value })} />
         <FilterSelect label="Status" value={filters.status} options={options.statuses} onChange={(value) => setFilters({ ...filters, status: value })} />
       </div>
     </section>
@@ -1459,7 +1459,7 @@ function PortfolioOverviewTable({
     <section className="panel panelFlush overviewPanel">
       <div className="panelHeader tableHeader">
         <div>
-          <h2>Objektuebersicht</h2>
+          <h2>Objektübersicht</h2>
           <p>Umschaltbar nach Gesamtobjekt, Hauseingang, Projekt oder Dokument.</p>
         </div>
         <div className="segmentedControl" aria-label="Gruppierung">
@@ -1491,14 +1491,14 @@ function PortfolioOverviewTable({
               <th>Hauseingang</th>
               <th>Welche WE / Wohnungen saniert</th>
               <th>Anzahl sanierte WE</th>
-              <th>Massnahmencluster</th>
+              <th>Maßnahmencluster</th>
               <th>Kurzbeschreibung</th>
               <th>Kosten netto</th>
               <th>Kosten brutto</th>
               <th>Durchschnitt pro WE</th>
               <th>Kosten pro m2</th>
               <th>Anzahl Dokumente</th>
-              <th>Datenqualitaet / Prueffall</th>
+              <th>Datenqualität / Prüffall</th>
             </tr>
           </thead>
           <tbody>
@@ -1549,8 +1549,8 @@ function FilterBar({ filters, setFilters }: { filters: Filters; setFilters: (val
         ["provider", "Anbieter"],
         ["apartmentNumber", "Wohnungsnummer"],
         ["location", "Lage"],
-        ["cluster", "Massnahmencluster"],
-        ["dataQuality", "Datenqualitaet"],
+        ["cluster", "Maßnahmencluster"],
+        ["dataQuality", "Datenqualität"],
         ["status", "Status"]
       ] as Array<[keyof Filters, string]>).map(([key, label]) => (
         <label className="filterInput" key={key}>
@@ -1574,7 +1574,7 @@ function PreviewPanel({ previews }: { previews: ParsedPreview[] }) {
       <div className="panelHeader">
         <div>
           <h2>Textvorschau</h2>
-          <p>Rohtext-Pruefung vor der KI-Auswertung.</p>
+          <p>Rohtext-Prüfung vor der KI-Auswertung.</p>
         </div>
       </div>
       <div className="previewList">
@@ -1632,7 +1632,7 @@ function DocumentTable({
               <th>Anbieter</th>
               <th>Datum</th>
               <th>Wohnung / Lage</th>
-              <th>Wohnflaeche</th>
+              <th>Wohnfläche</th>
               <th>Cluster</th>
               <th>Netto</th>
               <th>MwSt</th>
@@ -1746,7 +1746,7 @@ function ObjectsView({
       <div className="panelHeader objectPageHeader">
         <div>
           <h2>Objekte</h2>
-          <p>Wirtschaftseinheiten, Hauseingaenge, Projekte, Dokumente, Kosten und Bilder in einer sauberen Objektakte.</p>
+          <p>Wirtschaftseinheiten, Hauseingänge, Projekte, Dokumente, Kosten und Bilder in einer sauberen Objektakte.</p>
         </div>
         <button className="buttonPrimary" type="button" onClick={onCreate}>Objekt erstellen</button>
       </div>
@@ -1755,7 +1755,7 @@ function ObjectsView({
         <CostMetric label="Objekte" value={formatNumber(objects.length)} />
         <CostMetric label="Projekte" value={formatNumber(projects.length)} />
         <CostMetric label="Dokumente" value={formatNumber(documents.length)} />
-        <CostMetric label="Prueffaelle" value={formatNumber(countReviewCases(documents))} />
+        <CostMetric label="Prüffälle" value={formatNumber(countReviewCases(documents))} />
       </div>
 
       <div className="objectManagementLayout">
@@ -1849,7 +1849,7 @@ function ObjectsView({
               </div>
             </>
           ) : (
-            <div className="emptyState"><p>Kein Objekt ausgewaehlt.</p></div>
+            <div className="emptyState"><p>Kein Objekt ausgewählt.</p></div>
           )}
         </div>
       </div>
@@ -1897,8 +1897,8 @@ function ObjectDetailHeader({
 }) {
   const grossCost = sumValues(documents.map((document) => document.totalCost.value));
   const measureCount = buildMeasureRows(documents).length || documents.reduce((sum, document) => sum + document.clusters.length, 0);
-  const status = countReviewCases(documents) > 0 ? "Pruefung" : documents.length > 0 ? "Aktiv" : "k.A.";
-  const dataQuality = countReviewCases(documents) > 0 ? "Pruefung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
+  const status = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Aktiv" : "k.A.";
+  const dataQuality = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
   return (
     <div className={images[0] ? "objectDetailHeader objectDetailHeaderWithImage" : "objectDetailHeader objectDetailHeaderNoImage"}>
       {images[0] ? (
@@ -1913,7 +1913,7 @@ function ObjectDetailHeader({
             <h3>{object.objectNumber || object.objectName || "k.A."}</h3>
             <p>{object.address || "Adressbereich k.A."}</p>
           </div>
-          <span className={status === "Pruefung" ? "trafficBadge trafficYellow" : status === "Aktiv" ? "trafficBadge trafficGreen" : "trafficBadge"}>
+          <span className={status === "Prüfung" ? "trafficBadge trafficYellow" : status === "Aktiv" ? "trafficBadge trafficGreen" : "trafficBadge"}>
             {status}
           </span>
         </div>
@@ -1923,15 +1923,15 @@ function ObjectDetailHeader({
           <InfoLine label="Baujahr" value={object.constructionYear || "k.A."} />
           <InfoLine label="Wohneinheiten" value={object.unitCount || "k.A."} />
           <InfoLine label="Gewerbeeinheiten" value="k.A." />
-          <InfoLine label="Gesamtflaeche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "k.A."} />
+          <InfoLine label="Gesamtfläche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "k.A."} />
         </div>
         <div className="objectHeaderMetrics">
           <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
-          <CostMetric label="Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
+          <CostMetric label="Ø Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
           <CostMetric label="Kosten pro m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, grossCost))} />
           <CostMetric label="Dokumente" value={formatNumber(documents.length)} />
           <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
-          <CostMetric label="Datenqualitaet" value={dataQuality} />
+          <CostMetric label="Datenqualität" value={dataQuality} />
         </div>
       </div>
     </div>
@@ -1972,13 +1972,13 @@ function ObjectOverviewTab({
         <div className="panelHeader compactHeader">
           <div>
             <h3>Stammdaten</h3>
-            <p>Koordinaten fuer die Karte werden hier gepflegt.</p>
+            <p>Koordinaten für die Karte werden hier gepflegt.</p>
           </div>
         </div>
         <ObjectForm object={object} onChange={onUpdateObject} />
       </section>
       <section className="panel insightCard">
-        <h3>Zusammenfassung der Massnahmen</h3>
+        <h3>Zusammenfassung der Maßnahmen</h3>
         {rows.length === 0 ? <p className="muted">k.A.</p> : (
           <div className="measurePillGrid">
             {rows.slice(0, 8).map((row) => (
@@ -2009,12 +2009,12 @@ function EntrancesTab({
     <div className="stackSection">
       <div className="panelHeader compactHeader">
         <div>
-          <h3>Hauseingaenge</h3>
+          <h3>Hauseingänge</h3>
           <p>Ein Objekt kann eine ganze Wirtschaftseinheit wie Pamirweg 1-14 umfassen.</p>
         </div>
         <button className="buttonPrimary" type="button" onClick={onCreate}>Hauseingang anlegen</button>
       </div>
-      {entrances.length === 0 ? <div className="emptyState"><p>Noch keine Hauseingaenge angelegt.</p></div> : null}
+      {entrances.length === 0 ? <div className="emptyState"><p>Noch keine Hauseingänge angelegt.</p></div> : null}
       <div className="entranceGrid">
         {entrances.map((entrance) => (
           <article className="entranceCard" key={entrance.id}>
@@ -2186,7 +2186,7 @@ function MeasureDetailPanel({
 }) {
   if (!row) return null;
   return (
-    <aside className="measureSlideOver" aria-label="Massnahmen-Details">
+    <aside className="measureSlideOver" aria-label="Maßnahmen-Details">
       <div className="slideOverHeader">
         <div>
           <span className="eyebrow">Detail</span>
@@ -2256,7 +2256,7 @@ function ObjectCostsTab({
             <tr><th>Ebene</th><th>Bezeichnung</th><th>Projekte</th><th>Dokumente</th><th>Kosten brutto</th></tr>
           </thead>
           <tbody>
-            {entrances.length === 0 ? <tr><td colSpan={5}>Keine Hauseingaenge angelegt.</td></tr> : entrances.map((entrance) => {
+            {entrances.length === 0 ? <tr><td colSpan={5}>Keine Hauseingänge angelegt.</td></tr> : entrances.map((entrance) => {
               const entranceProjects = projects.filter((project) => project.entranceId === entrance.id);
               const entranceDocuments = documents.filter((document) => documentBelongsToEntrance(document, entrance, allProjects, assignments));
               return (
@@ -2420,7 +2420,7 @@ function ObjectImageUpload({ images, onAdd }: { images: string[]; onAdd: (files:
       <div className="panelHeader compactHeader">
         <div>
           <h3>Objektbilder</h3>
-          <p>Bilder lokal auswaehlen und als Vorschau am Objekt anzeigen.</p>
+          <p>Bilder lokal auswählen und als Vorschau am Objekt anzeigen.</p>
         </div>
         <label className="imageUploadButton">
           Bilder hochladen
@@ -2438,7 +2438,7 @@ function ObjectImageUpload({ images, onAdd }: { images: string[]; onAdd: (files:
         </label>
       </div>
       {images.length === 0 ? (
-        <div className="imageEmpty">Noch keine Bilder fuer dieses Objekt ausgewaehlt.</div>
+        <div className="imageEmpty">Noch keine Bilder für dieses Objekt ausgewählt.</div>
       ) : (
         <div className="imageGallerySections">
           {(["Vor Sanierung", "Waehrend Sanierung", "Nach Sanierung"] as const).map((section, sectionIndex) => {
@@ -2579,7 +2579,7 @@ function ProjectsView({
               ) : null}
             </>
           ) : (
-            <div className="emptyState"><p>Kein Projekt ausgewaehlt.</p></div>
+            <div className="emptyState"><p>Kein Projekt ausgewählt.</p></div>
           )}
         </div>
       </div>
@@ -2686,7 +2686,7 @@ function ProjectMeasuresTab({ documents }: { documents: ObjectAnalysis[] }) {
     <div className="tableWrap compactTable">
       <table>
         <thead>
-          <tr><th>Massnahmencluster</th><th>Dokumente</th><th>Kosten brutto</th></tr>
+          <tr><th>Maßnahmencluster</th><th>Dokumente</th><th>Kosten brutto</th></tr>
         </thead>
         <tbody>
           {byCluster.length === 0 ? (
@@ -2790,7 +2790,7 @@ function UnassignedView({
               <button type="button" onClick={() => onSelect(document.id)}>Ansehen</button>
               <button type="button" onClick={() => onSelect(document.id)}>Erkannte Daten bearbeiten</button>
               <select onChange={(event) => onAssign(document.id, event.target.value || null)} defaultValue="">
-                <option value="">Projekt auswaehlen</option>
+                <option value="">Projekt auswählen</option>
                 {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
               </select>
               <button type="button" onClick={() => onCreateProject(document)}>Neues Projekt aus Dokument</button>
@@ -2819,7 +2819,7 @@ function ReportsView({
       <div className="panelHeader">
         <div>
           <h2>Auswertungen</h2>
-          <p>Kosten nach Objekt, Projekt und Massnahmencluster.</p>
+          <p>Kosten nach Objekt, Projekt und Maßnahmencluster.</p>
         </div>
       </div>
       <div className="objectGrid">
@@ -2854,14 +2854,14 @@ function SettingsView() {
       <div className="panelHeader">
         <div>
           <h2>Einstellungen</h2>
-          <p>OpenAI API-Key und Analyse-Regeln werden ueber Server-Umgebung und Backend gesteuert.</p>
+          <p>OpenAI API-Key und Analyse-Regeln werden über Server-Umgebung und Backend gesteuert.</p>
         </div>
       </div>
       <div className="settingsGrid">
         <div className="metric"><span>KI-Agent</span><strong>PARIBUS Baukosten KI</strong><small>Dokument verstehen, Stammdatenabgleich vorbereiten, Confidence bewerten, Nutzerentscheidung offen lassen.</small></div>
         <div className="metric"><span>KI-Modus</span><strong>Dokumentbasierte Extraktion</strong><small>Keine Fantasiewerte, k.A. bei fehlenden Angaben.</small></div>
         <div className="metric"><span>Zuordnung</span><strong>Vorschlag statt Entscheidung</strong><small>Der Nutzer entscheidet. Manuelle Eingaben haben Vorrang.</small></div>
-        <div className="metric"><span>Summen</span><strong>Regex, Tabellenanalyse, KI-Pruefung</strong><small>Mehrere Summen werden im Debug erklaert.</small></div>
+        <div className="metric"><span>Summen</span><strong>Regex, Tabellenanalyse, KI-Prüfung</strong><small>Mehrere Summen werden im Debug erklärt.</small></div>
       </div>
     </section>
   );
@@ -2888,7 +2888,7 @@ function DocumentEditor({
     return (
       <aside className="editorPanel">
         <h2>KI-Daten bearbeiten</h2>
-        <div className="emptyState"><p>Kein Dokument ausgewaehlt.</p></div>
+        <div className="emptyState"><p>Kein Dokument ausgewählt.</p></div>
       </aside>
     );
   }
@@ -2939,13 +2939,13 @@ function DocumentEditor({
         <EditInput label="Wohnungsnummer" value={fieldOrUnknown(document.apartmentNumber)} onChange={(value) => setText("apartmentNumber", value)} />
         <EditInput label="Lage" value={fieldOrUnknown(document.location)} onChange={(value) => setText("location", value)} />
         <EditInput label="Anzahl sanierte Wohnungen" value={fieldOrUnknown(document.renovatedApartmentCount)} onChange={(value) => setNumber("renovatedApartmentCount", value)} />
-        <EditInput label="Wohnflaeche m2" value={fieldOrUnknown(document.livingAreaSqm)} onChange={(value) => setNumber("livingAreaSqm", value)} />
-        <EditInput label="Massnahmencluster" value={formatClusters(document)} onChange={(value) => setCluster(document.id, value, onUpdate)} />
+        <EditInput label="Wohnfläche m2" value={fieldOrUnknown(document.livingAreaSqm)} onChange={(value) => setNumber("livingAreaSqm", value)} />
+        <EditInput label="Maßnahmencluster" value={formatClusters(document)} onChange={(value) => setCluster(document.id, value, onUpdate)} />
         <EditInput label="Beschreibung" value={fieldOrUnknown(document.measureDescription)} onChange={(value) => setText("measureDescription", value)} />
         <EditInput label="Netto" value={fieldOrUnknown(document.netCost)} onChange={(value) => setNumber("netCost", value)} />
         <EditInput label="MwSt" value={fieldOrUnknown(document.vatCost)} onChange={(value) => setNumber("vatCost", value)} />
         <EditInput label="Brutto" value={fieldOrUnknown(document.totalCost)} onChange={(value) => setNumber("totalCost", value)} />
-        <EditInput label="Datenqualitaet" value={fieldOrUnknown(document.dataQuality)} onChange={(value) => setText("dataQuality", value)} />
+        <EditInput label="Datenqualität" value={fieldOrUnknown(document.dataQuality)} onChange={(value) => setText("dataQuality", value)} />
       </div>
 
       <div className="debugBlock">
@@ -2989,7 +2989,7 @@ function UploadObjectPanel({
       <div className="panelHeader">
         <div>
           <h2>Neues Objekt aus Upload</h2>
-          <p>{phase === "analyzed" ? "Dokument analysiert - bitte Daten pruefen." : phase === "selected" ? "Datei ausgewaehlt - bitte Analyse starten." : "Nach der Analyse erscheinen hier die KI-erkannten Objektwerte."}</p>
+          <p>{phase === "analyzed" ? "Dokument analysiert - bitte Daten pruefen." : phase === "selected" ? "Datei ausgewählt - bitte Analyse starten." : "Nach der Analyse erscheinen hier die KI-erkannten Objektwerte."}</p>
         </div>
       </div>
 
@@ -3004,7 +3004,7 @@ function UploadObjectPanel({
       {message ? <div className="uploadStatus">{message}</div> : null}
 
       {phase === "selected" && !isAnalyzing ? (
-        <div className="uploadStatus">Datei ausgewaehlt - bitte Analyse starten.</div>
+        <div className="uploadStatus">Datei ausgewählt - bitte Analyse starten.</div>
       ) : null}
 
       {uploadedFileName ? (
@@ -3053,7 +3053,7 @@ function UploadObjectPanel({
             <InfoLine label="Dokument" value={document ? fieldOrUnknown(document.documentType) : "Nicht erkannt"} />
             <InfoLine label="Anbieter" value={document ? fieldOrUnknown(document.provider) : "Nicht erkannt"} />
             <InfoLine label="Kosten brutto" value={document ? formatCurrency(document.totalCost) : "Nicht erkannt"} />
-            <InfoLine label="Datenqualitaet" value={document ? fieldOrUnknown(document.dataQuality) : "Nicht erkannt"} />
+            <InfoLine label="Datenqualität" value={document ? fieldOrUnknown(document.dataQuality) : "Nicht erkannt"} />
           </div>
 
           <div className="editForm">
@@ -3062,7 +3062,7 @@ function UploadObjectPanel({
             <EditInput label="Objektname" value={draft.objectName} placeholder="Nicht erkannt" onChange={(value) => onChange("objectName", value)} />
             <EditInput label="Adresse / Adressbereich" value={draft.address} placeholder="Nicht erkannt" onChange={(value) => onChange("address", value)} />
             <EditInput label="Jahr" value={draft.year} placeholder="Nicht erkannt" onChange={(value) => onChange("year", value)} />
-            <EditInput label="Gewerk / Massnahme" value={draft.trade} placeholder="Nicht erkannt" onChange={(value) => onChange("trade", value)} />
+            <EditInput label="Gewerk / Maßnahme" value={draft.trade} placeholder="Nicht erkannt" onChange={(value) => onChange("trade", value)} />
             <EditInput label="Gesamtkosten" value={draft.totalCost} placeholder="Nicht erkannt" onChange={(value) => onChange("totalCost", value)} />
             <EditInput label="Anzahl Wohnungen" value={draft.apartmentCount} placeholder="Nicht erkannt" onChange={(value) => onChange("apartmentCount", value)} />
             <EditInput label="Kosten pro Wohnung" value={draft.costPerApartment} placeholder="Nicht erkannt" onChange={(value) => onChange("costPerApartment", value)} />
@@ -3094,10 +3094,10 @@ function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
 
   return (
     <div className="debugBlock">
-      <h4>Massnahmen-Erkennung</h4>
+      <h4>Maßnahmen-Erkennung</h4>
       <div className="measureDebugGrid">
         <div>
-          <strong>Abschnittsueberschriften</strong>
+          <strong>Abschnittsüberschriften</strong>
           <ul>
             {debug?.headings.length ? debug.headings.map((entry) => (
               <li key={`heading-${entry.section}`}>{entry.section}. {entry.heading}</li>
@@ -3169,7 +3169,7 @@ function EntranceForm({ entrance, onChange }: { entrance: EntranceRecord; onChan
         ["suffix", "Zusatz"],
         ["postalCode", "PLZ"],
         ["city", "Ort"],
-        ["livingAreaSqm", "Wohnflaeche"],
+        ["livingAreaSqm", "Wohnfläche"],
         ["unitCount", "Anzahl WE"]
       ] as Array<[keyof EntranceRecord, string]>).map(([field, label]) => (
         <EditInput key={field} label={label} value={String(entrance[field] ?? "")} onChange={(value) => onChange(field, value)} />
@@ -3220,7 +3220,7 @@ function ProjectForm({
       <EditInput label="Wohnungsnummer" value={project.apartmentNumber} onChange={(value) => onChange("apartmentNumber", value)} />
       <EditInput label="Lage" value={project.location} onChange={(value) => onChange("location", value)} />
       <EditInput label="Anzahl sanierte Wohnungen" value={project.renovatedApartmentCount} onChange={(value) => onChange("renovatedApartmentCount", value)} />
-      <EditInput label="Wohnflaeche m2" value={project.livingAreaSqm} onChange={(value) => onChange("livingAreaSqm", value)} />
+      <EditInput label="Wohnfläche m2" value={project.livingAreaSqm} onChange={(value) => onChange("livingAreaSqm", value)} />
     </div>
   );
 }
@@ -3402,7 +3402,7 @@ function projectFromDocument(document?: ObjectAnalysis, objects: ObjectRecord[] 
     object: objectText,
     entranceId: "",
     entrance: "",
-    status: "Pruefung",
+    status: "Prüfung",
     budgetNet: "",
     budgetGross: "",
     startDate: "",
@@ -3844,7 +3844,7 @@ function collectClusters(documents: ObjectAnalysis[]): string {
   const values = new Set<string>();
   documents.forEach((document) => {
     document.clusters.forEach((cluster) => {
-      if (cluster.cluster.value) values.add(cluster.cluster.value);
+      if (cluster.cluster.value) values.add(germanizeUiText(cluster.cluster.value));
     });
   });
   return values.size > 0 ? Array.from(values).join(", ") : "k.A.";
@@ -3864,7 +3864,7 @@ function collectQuality(documents: ObjectAnalysis[]): string {
   if (documents.length === 0) return "k.A.";
   const values = new Set(documents.map(formatKiStatus).filter((value) => value && value !== "k.A."));
   if (values.size === 0) return "k.A.";
-  if (Array.from(values).some((value) => /pruefung|manuell|unsicher|k\.a\./i.test(value))) return "Prueffall";
+  if (Array.from(values).some((value) => /prüfung|pruefung|manuell|unsicher|k\.a\./i.test(value))) return "Prüffall";
   return Array.from(values).join(", ");
 }
 
@@ -4019,7 +4019,7 @@ function tradeIcon(cluster: string): string {
   const normalized = cluster.toLowerCase();
   if (normalized.includes("dach")) return "D";
   if (normalized.includes("fassade")) return "F";
-  if (normalized.includes("fenster") || normalized.includes("tuer")) return "T";
+  if (normalized.includes("fenster") || normalized.includes("tuer") || normalized.includes("tür")) return "T";
   if (normalized.includes("heizung")) return "H";
   if (normalized.includes("elektro")) return "E";
   if (normalized.includes("sanitaer") || normalized.includes("sanit")) return "S";
@@ -4066,13 +4066,13 @@ function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
           id: `${document.id}-detail-${index}`,
           documentId: document.id,
           measureId: measure?.id ?? "",
-          cluster: detail.cluster,
-          description: detail.beschreibung || "k.A.",
+          cluster: germanizeUiText(detail.cluster),
+          description: germanizeUiText(detail.beschreibung || "k.A."),
           netCost: null,
           vatCost: null,
           grossCost: detail.summe,
           source,
-          status: fieldOrUnknown(document.dataQuality),
+          status: germanizeUiText(fieldOrUnknown(document.dataQuality)),
           section: detail.abschnitt || "k.A.",
           confidence: measure?.cluster.confidence === null || measure?.cluster.confidence === undefined ? "k.A." : `${Math.round(measure.cluster.confidence * 100)} %`,
           lineItems: (measure?.lineItems ?? []).map((item) => ({
@@ -4085,7 +4085,7 @@ function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
     }
 
     return document.clusters.map((measure, index) => {
-      const cluster = fieldOrUnknown(measure.cluster);
+      const cluster = germanizeUiText(fieldOrUnknown(measure.cluster));
       const detail = document.measureDetails?.find((entry) => entry.cluster === measure.cluster.value || entry.abschnitt === measure.description.value);
       const source = measure.totalCost.sources[0]?.textSnippet
         ?? detail?.quelle
@@ -4095,13 +4095,13 @@ function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
         documentId: document.id,
         measureId: measure.id,
         cluster,
-        description: fieldOrUnknown(measure.description),
+        description: germanizeUiText(fieldOrUnknown(measure.description)),
         netCost: null,
         vatCost: null,
         grossCost: measure.totalCost.value,
         source,
-        status: fieldOrUnknown(document.dataQuality),
-        section: detail?.abschnitt ?? fieldOrUnknown(measure.description),
+        status: germanizeUiText(fieldOrUnknown(document.dataQuality)),
+        section: germanizeUiText(detail?.abschnitt ?? fieldOrUnknown(measure.description)),
         confidence: measure.cluster.confidence === null ? "k.A." : `${Math.round(measure.cluster.confidence * 100)} %`,
         lineItems: (measure.lineItems ?? []).map((item) => ({
           position: item.position,
@@ -4202,15 +4202,35 @@ function formatApartment(document: ObjectAnalysis): string {
 }
 
 function formatClusters(document: ObjectAnalysis): string {
-  const clusters = Array.from(new Set(document.clusters.map((cluster) => cluster.cluster.value).filter(Boolean)));
+  const clusters = Array.from(new Set(document.clusters.map((cluster) => cluster.cluster.value ? germanizeUiText(cluster.cluster.value) : null).filter(Boolean)));
   return clusters.length === 0 ? "k.A." : clusters.join(", ");
 }
 
 function formatKiStatus(document: ObjectAnalysis): string {
-  const quality = fieldOrUnknown(document.dataQuality);
+  const quality = germanizeUiText(fieldOrUnknown(document.dataQuality));
   const score = document.confidenceScore.value;
   if (score === null) return quality;
   return `${quality} (${Math.round(score)} %)`;
+}
+
+function germanizeUiText(value: string): string {
+  return value
+    .replace(/Sanitaer/g, "Sanitär")
+    .replace(/sanitaer/g, "sanitär")
+    .replace(/Tueren/g, "Türen")
+    .replace(/Tuer/g, "Tür")
+    .replace(/tueren/g, "türen")
+    .replace(/tuer/g, "tür")
+    .replace(/Kueche/g, "Küche")
+    .replace(/Pruefung/g, "Prüfung")
+    .replace(/Prueffall/g, "Prüffall")
+    .replace(/Prueffaelle/g, "Prüffälle")
+    .replace(/Datenqualitaet/g, "Datenqualität")
+    .replace(/Massnahmen/g, "Maßnahmen")
+    .replace(/Massnahme/g, "Maßnahme")
+    .replace(/Flaeche/g, "Fläche")
+    .replace(/Haeuser/g, "Häuser")
+    .replace(/Hauseingaenge/g, "Hauseingänge");
 }
 
 function sumValues(values: Array<number | null>): number | null {
@@ -4225,7 +4245,7 @@ function roundMoney(value: number): number {
 
 function countReviewCases(documents: ObjectAnalysis[]): number {
   return documents.filter((document) =>
-    /pruefung|unsicher|k\.a\.|manuelle/i.test(String(document.dataQuality.value ?? "")) ||
+    /prüfung|pruefung|unsicher|k\.a\.|manuelle/i.test(String(document.dataQuality.value ?? "")) ||
     document.missingInformation.value?.length
   ).length;
 }

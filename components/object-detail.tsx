@@ -30,7 +30,7 @@ export function ObjectDetail({ object }: ObjectDetailProps) {
       {!object ? (
         <div className="emptyState">
           <div>
-            <strong>Kein Objekt ausgewaehlt</strong>
+            <strong>Kein Objekt ausgewählt</strong>
             <p>Sobald Dokumentdaten extrahiert wurden, erscheint hier die Objektkarte.</p>
           </div>
         </div>

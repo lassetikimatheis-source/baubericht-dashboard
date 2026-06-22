@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PARIBUS Baukosten Analyse",
-  description: "Dashboard-Prototyp fuer Dokumenten-Upload und Baukostenanalyse"
+  description: "Dashboard-Prototyp für Dokumenten-Upload und Baukostenanalyse"
 };
 
 export default function RootLayout({

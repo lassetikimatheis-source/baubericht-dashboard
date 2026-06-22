@@ -29,7 +29,7 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
       <div className="uploadBox">
         <label className="dropzone">
           <span>
-            <strong>Dateien auswaehlen</strong>
+            <strong>Dateien auswählen</strong>
             <br />
             <span className="muted">PDF, XLSX, XLS, CSV, PNG oder JPG</span>
           </span>
@@ -46,17 +46,17 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
         </label>
 
         <div className="uploadTypes" aria-label="Erlaubte Dateitypen">
-          <span className="pill">OCR fuer Scans</span>
+          <span className="pill">OCR für Scans</span>
           <span className="pill">PDF Analyse</span>
           <span className="pill">Excel Analyse</span>
           <span className="pill">KI Extraktion</span>
-          <span className="pill">Dublettenpruefung</span>
+          <span className="pill">Dublettenprüfung</span>
           <span className="pill">Quellen je Feld</span>
         </div>
 
         <div className="uploadFooter">
           <div>
-            <strong>{files.length}</strong> Datei(en) ausgewaehlt
+            <strong>{files.length}</strong> Datei(en) ausgewählt
             {message ? <p className="muted">{message}</p> : null}
           </div>
           <button

@@ -24,8 +24,8 @@ export async function POST(request: Request) {
     { header: "Lage", key: "location", width: 18 },
     { header: "Sanierte Wohnungen", key: "renovatedApartmentCount", width: 22 },
     { header: "Welche Wohnungen", key: "renovatedApartments", width: 28 },
-    { header: "Gesamtflaeche qm", key: "totalAreaSqm", width: 18 },
-    { header: "Sanierte Flaeche qm", key: "renovatedAreaSqm", width: 20 },
+    { header: "Gesamtfläche qm", key: "totalAreaSqm", width: 18 },
+    { header: "Sanierte Fläche qm", key: "renovatedAreaSqm", width: 20 },
     { header: "Kosten netto", key: "netCost", width: 18 },
     { header: "MwSt.", key: "vatCost", width: 18 },
     { header: "Gesamtkosten", key: "totalCost", width: 18 },
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     });
   });
 
-  const measuresSheet = workbook.addWorksheet("Massnahmen");
+  const measuresSheet = workbook.addWorksheet("Maßnahmen");
   measuresSheet.columns = [
     { header: "Objekt", key: "object", width: 34 },
     { header: "Cluster", key: "cluster", width: 18 },

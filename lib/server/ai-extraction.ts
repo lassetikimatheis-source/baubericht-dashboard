@@ -157,7 +157,7 @@ async function runOpenAiExtractionPerDocument(
           role: "system",
           content: [
             `Du bist ${PARIBUS_AI_AGENT_NAME}.`,
-            "Du bist das Herzstueck eines professionellen Baukosten-, CapEx- und Sanierungsmanagement-Systems fuer Wohnimmobilienportfolios.",
+            "Du bist das Herzstueck eines professionellen Baukosten-, CapEx- und Sanierungsmanagement-Systems für Wohnimmobilienportfolios.",
             "Du unterstuetzt den Nutzer, ersetzt ihn aber nicht. Die manuelle Eingabe des Nutzers hat immer Vorrang vor KI-Ergebnissen.",
             "Arbeite in 4 Schritten: 1 Dokument verstehen, 2 Stammdatenabgleich vorbereiten, 3 Confidence Score vergeben, 4 Nutzerentscheidung offen lassen.",
             "Analysiere genau EIN Dokument. Verwende ausschliesslich Informationen, die tatsaechlich im Dokument stehen.",
@@ -165,9 +165,9 @@ async function runOpenAiExtractionPerDocument(
             "Jedes Feld muss als Objekt mit value, evidence und confidence geliefert werden.",
             "evidence muss ein kurzer Originalausschnitt aus dem Dokument sein, der den Wert belegt.",
             "Wenn du keinen Originalausschnitt findest, setze value:null, evidence:null, confidence:null.",
-            "Vermische niemals Adresse, Wohnung, Massnahme oder Kosten aus anderen Objekten.",
-            "Confidence-Regel: 0.95-1.00 Sicher erkannt, 0.80-0.94 Wahrscheinlich erkannt, 0.60-0.79 Pruefung empfohlen, unter 0.60 Manuelle Zuordnung erforderlich.",
-            "Lieber Pruefung erforderlich als einen falschen Wert speichern.",
+            "Vermische niemals Adresse, Wohnung, Maßnahme oder Kosten aus anderen Objekten.",
+            "Confidence-Regel: 0.95-1.00 Sicher erkannt, 0.80-0.94 Wahrscheinlich erkannt, 0.60-0.79 Prüfung empfohlen, unter 0.60 Manuelle Zuordnung erforderlich.",
+            "Lieber Prüfung erforderlich als einen falschen Wert speichern.",
             "Antworte ausschliesslich als valides JSON."
           ].join(" ")
         },
@@ -177,22 +177,22 @@ async function runOpenAiExtractionPerDocument(
             "Extrahiere diese JSON-Struktur:",
             "{ objects: [{ confidenceScore:{value,evidence,confidence}, projektvorschlag:{value,evidence,confidence}, zuordnungsvorschlag:{value,evidence,confidence}, dokumenttyp:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
             "Erlaubte dokumenttyp-Werte: Angebot, Rechnung, Teilrechnung, Schlussrechnung, Nachtrag, Gutschrift, Auftrag, Freigabe, Sonstiges.",
-            "Erlaubte cluster: Boden, Maler, Bad / Fliesen, Sanitaer / Heizung, Elektro, Tueren / Fenster, Reinigung, Planung / Dokumentation, Sonstiges.",
+            "Erlaubte cluster: Boden, Maler, Bad / Fliesen, Sanitär / Heizung, Elektro, Türen / Fenster, Reinigung, Planung / Dokumentation, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
-            "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitaer - Heizungsarbeiten -> Sanitaer / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Tueren / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
+            "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitär - Heizungsarbeiten -> Sanitär / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Türen / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
             "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
             "Wenn im Betreff eine Lage wie 2.OG 3.v.li steht, als lage speichern.",
             "Projektart aus dem Dokument ableiten, z.B. Wohnungssanierung, Fassadensanierung, Dacharbeiten oder Elektroarbeiten, aber nur bei belegbarer Quelle.",
-            "Wohnflaeche m2 nur fuellen, wenn eine Wohnflaeche im Dokument ausdruecklich genannt wird.",
+            "Wohnfläche m2 nur fuellen, wenn eine Wohnfläche im Dokument ausdruecklich genannt wird.",
             "Summenlogik: Regex-Erkennung und Backend-Validierung haben Vorrang. Wenn du Summen erkennst, belege sie mit Originalausschnitt. Erklaere in issues, wenn mehrere Summen gefunden wurden und welche du fachlich verwenden wuerdest.",
             "Erkenne: Nettosumme, Umsatzsteuer, MwSt, Gesamtsumme, Bruttosumme, Rechnungsbetrag.",
-            "Wenn keine Wohnflaeche im Dokument steht, costPerSqm null und fehlende_angaben enthaelt Wohnflaeche in m2.",
-            "Nicht jede Einzelposition als Hauptobjekt uebernehmen. Die Haupttabelle fasst je Dokument und Objekt zusammen.",
-            "Rechnungsbetrag nur als totalCost uebernehmen, wenn er im selben Dokument eindeutig zu dieser Adresse oder Massnahme gehoert.",
+            "Wenn keine Wohnfläche im Dokument steht, costPerSqm null und fehlende_angaben enthaelt Wohnfläche in m2.",
+            "Nicht jede Einzelposition als Hauptobjekt übernehmen. Die Haupttabelle fasst je Dokument und Objekt zusammen.",
+            "Rechnungsbetrag nur als totalCost übernehmen, wenn er im selben Dokument eindeutig zu dieser Adresse oder Maßnahme gehoert.",
             "Wenn Elektroarbeiten genannt sind, aber keine passende Adresse oder kein passender Preis direkt belegbar ist: nur belegte Felder fuellen, Rest null.",
             "Stammdatenabgleich vorbereiten: pruefe gedanklich Objektnummer, Adresse, Fonds, Wohnungsnummer und Projektart. Erzeuge nur einen zuordnungsvorschlag, keine endgueltige Entscheidung.",
             "Wenn kein passendes Projekt erkennbar ist, erzeuge einen projektvorschlag, z.B. Wohnungssanierung WE 1008. Der Nutzer entscheidet spaeter.",
-            "datenqualitaet muss eines dieser Labels sein: Sicher erkannt, Wahrscheinlich erkannt, Pruefung empfohlen, Manuelle Zuordnung erforderlich.",
+            "datenqualitaet muss eines dieser Labels sein: Sicher erkannt, Wahrscheinlich erkannt, Prüfung empfohlen, Manuelle Zuordnung erforderlich.",
             "",
             `documentId: ${document.id}`,
             `fileName: ${document.fileName}`,
@@ -291,15 +291,15 @@ function normalizeObjects(
         "Welche Wohnungen saniert wurden",
         issues
       ),
-      livingAreaSqm: verifiedField(object.livingAreaSqm, document, "Wohnflaeche", issues),
-      totalAreaSqm: verifiedField(object.totalAreaSqm, document, "Gesamtflaeche", issues),
-      renovatedAreaSqm: verifiedField(object.renovatedAreaSqm, document, "Sanierte Flaeche", issues),
+      livingAreaSqm: verifiedField(object.livingAreaSqm, document, "Wohnfläche", issues),
+      totalAreaSqm: verifiedField(object.totalAreaSqm, document, "Gesamtfläche", issues),
+      renovatedAreaSqm: verifiedField(object.renovatedAreaSqm, document, "Sanierte Fläche", issues),
       netCost,
       vatCost,
       totalCost,
       costPerApartment,
       costPerSqm: verifiedField(object.costPerSqm, document, "Kosten pro qm", issues),
-      measureDescription: verifiedField(object.beschreibung_massnahmen, document, "Beschreibung Massnahmen", issues),
+      measureDescription: verifiedField(object.beschreibung_massnahmen, document, "Beschreibung Maßnahmen", issues),
       dataQuality,
       missingInformation: verifiedField(object.fehlende_angaben, document, "Fehlende Angaben", issues),
       costDebug,
@@ -321,9 +321,9 @@ function normalizeMeasure(
 ): MeasureItem {
   return {
     id,
-    cluster: verifiedField(measure.cluster, document, "Massnahmencluster", issues),
-    description: verifiedField(measure.description, document, "Massnahmenbeschreibung", issues),
-    totalCost: verifiedField(measure.totalCost, document, "Massnahmenkosten", issues),
+    cluster: verifiedField(measure.cluster, document, "Maßnahmencluster", issues),
+    description: verifiedField(measure.description, document, "Maßnahmenbeschreibung", issues),
+    totalCost: verifiedField(measure.totalCost, document, "Maßnahmenkosten", issues),
     allocation: verifiedField(measure.allocation, document, "GE/SE", issues),
     sourceDocumentId: document.id,
     lineItems: (measure.lineItems ?? []).map((item) => ({
@@ -577,7 +577,7 @@ function qualityFromScore(score: number | null): string | null {
   if (score === null) return null;
   if (score >= 95) return "Sicher erkannt";
   if (score >= 80) return "Wahrscheinlich erkannt";
-  if (score >= 60) return "Pruefung empfohlen";
+  if (score >= 60) return "Prüfung empfohlen";
   return "Manuelle Zuordnung erforderlich";
 }
 
@@ -793,7 +793,7 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
   const missing: string[] = [];
 
   if (!/wohnfl[aä]che|m² wohnfl|m2 wohnfl/i.test(text)) {
-    missing.push("Wohnflaeche in m2");
+    missing.push("Wohnfläche in m2");
   }
 
   return {
@@ -884,7 +884,7 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
     costPerApartment: aiField(gross !== null && apartmentCount?.value ? roundMoney(gross / apartmentCount.value) : null, costSummary.finalValues.gross.raw || null),
     costPerSqm: aiField(gross !== null && livingArea?.value ? roundMoney(gross / livingArea.value) : null, costSummary.finalValues.gross.raw || null),
     beschreibung_massnahmen: aiField(measures.length ? measures.map((measure) => measure.description).join(", ") : null, primaryMeasure?.evidence ?? null),
-    datenqualitaet: aiField(recognized > 4 ? "Pruefung empfohlen" : "Manuelle Zuordnung erforderlich", address?.evidence ?? objectNumber?.evidence ?? provider?.evidence ?? null),
+    datenqualitaet: aiField(recognized > 4 ? "Prüfung empfohlen" : "Manuelle Zuordnung erforderlich", address?.evidence ?? objectNumber?.evidence ?? provider?.evidence ?? null),
     fehlende_angaben: aiField(missingFromGeneric({ objectNumber, address, gross, provider }), address?.evidence ?? objectNumber?.evidence ?? null),
     measures: measures.map((measure) => ({
       cluster: aiField(measure.cluster, measure.evidence),
@@ -914,7 +914,7 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
         value: measure.sum,
         description: measure.description
       })),
-      notes: ["Generische Regex-Erkennung aus Rohtext verwendet. Alle gefundenen Gewerke wurden uebernommen."]
+      notes: ["Generische Regex-Erkennung aus Rohtext verwendet. Alle gefundenen Gewerke wurden übernommen."]
     } : null
   };
 }
@@ -970,11 +970,11 @@ function detectMeasures(text: string): Array<{
     { pattern: /Fenster(?:arbeiten|tausch)?/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung(?:sarbeiten)?/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro(?:arbeiten)?/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
-    { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?/i, cluster: "Sanitaer / Heizung", description: "Sanitaerarbeiten", projectType: "Sanitaerarbeiten" },
+    { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?/i, cluster: "Sanitär / Heizung", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
     { pattern: /Maler(?:arbeiten)?/i, cluster: "Maler", description: "Malerarbeiten", projectType: "Malerarbeiten" },
     { pattern: /Boden(?:belagsarbeiten|arbeiten)?/i, cluster: "Boden", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
     { pattern: /Fliesen(?:arbeiten)?|Estrich/i, cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich", projectType: "Bad- / Fliesenarbeiten" },
-    { pattern: /Tischler(?:arbeiten)?|T(?:ue|\u00fc)ren/i, cluster: "Tueren / Fenster", description: "Tischlerarbeiten / Tueren", projectType: "Tischlerarbeiten" },
+    { pattern: /Tischler(?:arbeiten)?|T(?:ue|\u00fc)ren/i, cluster: "Türen / Fenster", description: "Tischlerarbeiten / Türen", projectType: "Tischlerarbeiten" },
     { pattern: /Reinigung/i, cluster: "Reinigung", description: "Reinigung", projectType: "Reinigung" },
     { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
   ];
@@ -1019,7 +1019,7 @@ function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; descript
     { pattern: /Fenster/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
-    { pattern: /Sanit[aä]r/i, cluster: "Sanitaer / Heizung", description: "Sanitaerarbeiten", projectType: "Sanitaerarbeiten" },
+    { pattern: /Sanit[aä]r/i, cluster: "Sanitär / Heizung", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
     { pattern: /Maler/i, cluster: "Maler", description: "Malerarbeiten", projectType: "Malerarbeiten" },
     { pattern: /Boden/i, cluster: "Boden", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
     { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
@@ -1129,7 +1129,7 @@ function parseOfferMeasures(text: string): {
   const headings = findOfferSectionHeadings(text, definitions);
   const sumLines = findOfferSectionSums(text, definitions);
   const notes: string[] = [];
-  if (headings.length === 0) notes.push("Keine nummerierten Massnahmen-Abschnittsueberschriften gefunden.");
+  if (headings.length === 0) notes.push("Keine nummerierten Maßnahmen-Abschnittsüberschriften gefunden.");
   if (sumLines.length === 0) notes.push("Keine Abschnitts-Summenzeilen gefunden.");
 
   const measures: AiMeasureResult[] = [];
@@ -1186,9 +1186,9 @@ function offerMeasureDefinitions(): Array<{
     { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelagsarbeiten/i], cluster: "Boden", description: "Bodenbelagsarbeiten" },
     { section: 3, heading: "Malerarbeiten", aliases: [/Malerarbeiten/i], cluster: "Maler", description: "Malerarbeiten" },
     { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesenarbeiten(?:\s+und\s+Estrich)?/i, /Estrich/i], cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich" },
-    { section: 5, heading: "Sanitaer - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i], cluster: "Sanitaer / Heizung", description: "Sanitaer- und Heizungsarbeiten" },
+    { section: 5, heading: "Sanitär - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i], cluster: "Sanitär / Heizung", description: "Sanitär- und Heizungsarbeiten" },
     { section: 6, heading: "Elektroarbeiten", aliases: [/Elektroarbeiten/i], cluster: "Elektro", description: "Elektroarbeiten" },
-    { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Tueren / Fenster", description: "Tischlerarbeiten" },
+    { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Türen / Fenster", description: "Tischlerarbeiten" },
     { section: 8, heading: "Reinigung", aliases: [/Reinigung/i], cluster: "Reinigung", description: "Reinigung" },
     { section: 9, heading: "Zusatzarbeiten", aliases: [/(?:Stundenlohn\s+)?Zusatzarbeiten/i], cluster: "Sonstiges", description: "Zusatzarbeiten" }
   ];
@@ -1266,9 +1266,9 @@ function parseOfferMeasuresLegacy(text: string): AiMeasureResult[] {
     { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Boden", description: "Bodenbelagsarbeiten" },
     { section: 3, heading: /Summe\s+3\.\s+Malerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Maler", description: "Malerarbeiten" },
     { section: 4, heading: /Summe\s+4\.\s+Fliesenarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich" },
-    { section: 5, heading: /Summe\s+5\.\s+Sanit[aä]r\s*-\s*Heizungsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sanitaer / Heizung", description: "Sanitaer- und Heizungsarbeiten" },
+    { section: 5, heading: /Summe\s+5\.\s+Sanit[aä]r\s*-\s*Heizungsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sanitär / Heizung", description: "Sanitär- und Heizungsarbeiten" },
     { section: 6, heading: /Summe\s+6\.\s+Elektroarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Elektro", description: "Elektroarbeiten" },
-    { section: 7, heading: /Summe\s+7\.\s+Tischlerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Tueren / Fenster", description: "Tischlerarbeiten" },
+    { section: 7, heading: /Summe\s+7\.\s+Tischlerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Türen / Fenster", description: "Tischlerarbeiten" },
     { section: 8, heading: /Summe\s+8\.\s+Reinigung\s+([\d.]+,\d{2})\s*€/i, cluster: "Reinigung", description: "Reinigung" },
     { section: 9, heading: /Summe\s+9\.\s+(?:Stundenlohn\s+)?Zusatzarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Zusatzarbeiten" }
   ];

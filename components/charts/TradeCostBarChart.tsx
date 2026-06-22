@@ -35,7 +35,7 @@ export function TradeCostBarChart({
     return (
       <section className="measureChartEmpty">
         <h3>Kosten nach Gewerk</h3>
-        <p>Keine Massnahmen mit Kosten vorhanden.</p>
+        <p>Keine Maßnahmen mit Kosten vorhanden.</p>
       </section>
     );
   }
@@ -45,7 +45,7 @@ export function TradeCostBarChart({
       <div className="panelHeader compactHeader">
         <div>
           <h3>Kosten nach Gewerk</h3>
-          <p>Bruttokosten nach erkanntem Massnahmencluster.</p>
+          <p>Bruttokosten nach erkanntem Maßnahmencluster.</p>
         </div>
       </div>
       <div className="tradeChart">
