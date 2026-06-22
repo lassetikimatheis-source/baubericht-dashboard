@@ -56,6 +56,16 @@ type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
 type ObjectTab = "overview" | "measures" | "trades" | "documents" | "images" | "entrances" | "ai";
 type OverviewGroup = "object" | "entrance" | "project" | "document";
 type CostViewMode = "comparison" | "offers" | "invoices";
+type CostBasisMode =
+  | "all"
+  | "offers"
+  | "orders"
+  | "incomingInvoices"
+  | "progressInvoices"
+  | "finalInvoices"
+  | "finalOnly"
+  | "withoutProgress"
+  | "manual";
 type TextFieldKey =
   | "fund"
   | "objectNumber"
@@ -253,6 +263,18 @@ const objectTabs: Array<{ key: ObjectTab; label: string }> = [
   { key: "ai", label: "KI-Auswertung" }
 ];
 
+const costBasisOptions: Array<{ value: CostBasisMode; label: string }> = [
+  { value: "all", label: "Alle Dokumente" },
+  { value: "offers", label: "Nur Angebote" },
+  { value: "orders", label: "Nur Aufträge" },
+  { value: "incomingInvoices", label: "Nur Eingangsrechnungen" },
+  { value: "progressInvoices", label: "Nur Abschlagsrechnungen" },
+  { value: "finalInvoices", label: "Nur Schlussrechnungen" },
+  { value: "finalOnly", label: "Nur finale Rechnungen" },
+  { value: "withoutProgress", label: "Ohne Abschlagsrechnungen" },
+  { value: "manual", label: "Manuelle Auswahl" }
+];
+
 export function AnalysisDashboard() {
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("dashboard");
@@ -333,8 +355,8 @@ export function AnalysisDashboard() {
     : [];
 
   const kpis = useMemo<KpiShape>(() => {
-    const gross = finalGrossCost(filteredDocuments);
-    const net = finalNetCost(filteredDocuments);
+    const gross = sumValues(filteredDocuments.map((document) => document.totalCost.value));
+    const net = sumValues(filteredDocuments.map((document) => document.netCost.value));
     const apartments = sumValues(filteredDocuments.map((document) => document.renovatedApartmentCount.value));
     const area = sumValues(filteredDocuments.map((document) => document.livingAreaSqm.value));
     const hasActiveFilters = hasFilters(filters);
@@ -1777,6 +1799,8 @@ function ObjectsView({
   onOpenObject: (id: string) => void;
 }) {
   const [objectSearch, setObjectSearch] = useState("");
+  const [costBasis, setCostBasis] = useState<CostBasisMode>("all");
+  const [manualCostDocumentIds, setManualCostDocumentIds] = useState<Set<string>>(new Set());
   const detectedGroups = groupByObject(documents);
   const filteredObjects = objects.filter((object) =>
     `${object.objectNumber} ${object.objectName} ${object.address} ${object.fund}`.toLowerCase().includes(objectSearch.toLowerCase())
@@ -1784,6 +1808,15 @@ function ObjectsView({
   const selectedEntrances = selectedObject ? entrances.filter((entrance) => entrance.objectId === selectedObject.id) : [];
   const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
   const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
+  const selectedCostDocuments = applyCostBasis(selectedDocuments, costBasis, manualCostDocumentIds);
+  const toggleManualCostDocument = (documentId: string, checked: boolean) => {
+    setManualCostDocumentIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(documentId);
+      else next.delete(documentId);
+      return next;
+    });
+  };
   return (
     <section className="objectWorkspace">
       <div className="panelHeader objectPageHeader">
@@ -1818,7 +1851,7 @@ function ObjectsView({
               >
                 <strong>{objectLabel(object) || "k.A."}</strong>
                 <span>{object.address || "Adressbereich k.A."}</span>
-                <em>{formatNullableCurrency(finalGrossCost(objectDocuments))}</em>
+                <em>{formatNullableCurrency(sumValues(objectDocuments.map((document) => document.totalCost.value)))}</em>
                 <span className="objectListChips">
                   <small>{formatNumber(objectMeasures)} Gewerke</small>
                   <small>{formatNumber(objectDocuments.length)} Dokumente</small>
@@ -1835,8 +1868,15 @@ function ObjectsView({
                 object={selectedObject}
                 entrances={selectedEntrances}
                 projects={selectedProjects}
-                documents={selectedDocuments}
+                documents={selectedCostDocuments}
+                totalDocuments={selectedDocuments.length}
+                costBasis={costBasis}
                 images={objectImages[selectedObject.id] ?? []}
+              />
+              <CostBasisControl
+                value={costBasis}
+                onChange={setCostBasis}
+                consideredCount={selectedCostDocuments.length}
               />
               <div className="tabs">
                 {objectTabs.map((tab) => (
@@ -1853,7 +1893,7 @@ function ObjectsView({
               {activeTab === "overview" ? (
                 <ObjectOverviewTab
                   object={selectedObject}
-                  documents={selectedDocuments}
+                  documents={selectedCostDocuments}
                   projects={selectedProjects}
                   images={objectImages[selectedObject.id] ?? []}
                   onUpdateObject={(field, value) => onUpdateObject(selectedObject.id, field, value)}
@@ -1871,14 +1911,21 @@ function ObjectsView({
               {activeTab === "measures" ? (
                 <ObjectMeasuresTab
                   documents={selectedDocuments}
+                  costDocuments={selectedCostDocuments}
                   projects={projects}
                   assignments={assignments}
                   onUpdateDocument={onUpdateDocument}
                 />
               ) : null}
-              {activeTab === "trades" ? <ObjectTradesTab documents={selectedDocuments} /> : null}
+              {activeTab === "trades" ? <ObjectTradesTab documents={selectedCostDocuments} /> : null}
               {activeTab === "documents" ? (
-                <ObjectDocumentsTab documents={selectedDocuments} onSelect={onSelectDocument} />
+                <ObjectDocumentsTab
+                  documents={selectedDocuments}
+                  costBasis={costBasis}
+                  manualCostDocumentIds={manualCostDocumentIds}
+                  onToggleCostDocument={toggleManualCostDocument}
+                  onSelect={onSelectDocument}
+                />
               ) : null}
               {activeTab === "images" ? (
                 <ObjectImageUpload
@@ -1886,7 +1933,7 @@ function ObjectsView({
                   onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
                 />
               ) : null}
-              {activeTab === "ai" ? <ProjectAiTab documents={selectedDocuments} /> : null}
+              {activeTab === "ai" ? <ProjectAiTab documents={selectedCostDocuments} /> : null}
               <div className="headerActions projectActions">
                 <button type="button" onClick={() => onDelete(selectedObject.id)}>Objekt loeschen</button>
               </div>
@@ -1907,7 +1954,7 @@ function ObjectsView({
             <p>{group.address || "k.A."}</p>
             <div className="costLine costLineStrong">
               <span>Brutto</span>
-              <strong>{formatNullableCurrency(finalGrossCost(group.documents))}</strong>
+              <strong>{formatNullableCurrency(sumValues(group.documents.map((document) => document.totalCost.value)))}</strong>
             </div>
             <DetectedObjectImages
               images={objectImages[group.key] ?? []}
@@ -1930,15 +1977,19 @@ function ObjectDetailHeader({
   entrances,
   projects,
   documents,
+  totalDocuments,
+  costBasis,
   images
 }: {
   object: ObjectRecord;
   entrances: EntranceRecord[];
   projects: ProjectRecord[];
   documents: ObjectAnalysis[];
+  totalDocuments: number;
+  costBasis: CostBasisMode;
   images: string[];
 }) {
-  const grossCost = finalGrossCost(documents);
+  const grossCost = sumValues(documents.map((document) => document.totalCost.value));
   const measureCount = buildMeasureRows(documents).length || documents.reduce((sum, document) => sum + document.clusters.length, 0);
   const status = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Aktiv" : "k.A.";
   const dataQuality = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
@@ -1972,7 +2023,7 @@ function ObjectDetailHeader({
           <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
           <CostMetric label="Ø Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
           <CostMetric label="Kosten pro m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, grossCost))} />
-          <CostMetric label="Dokumente" value={formatNumber(documents.length)} />
+          <CostMetric label="Dokumente" value={`${formatNumber(documents.length)} / ${formatNumber(totalDocuments)}`} />
           <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
           <CostMetric label="Datenqualität" value={dataQuality} />
         </div>
@@ -2095,9 +2146,22 @@ function ObjectProjectsTab({ projects }: { projects: ProjectRecord[] }) {
   );
 }
 
-function ObjectDocumentsTab({ documents, onSelect }: { documents: ObjectAnalysis[]; onSelect: (id: string) => void }) {
+function ObjectDocumentsTab({
+  documents,
+  costBasis,
+  manualCostDocumentIds,
+  onToggleCostDocument,
+  onSelect
+}: {
+  documents: ObjectAnalysis[];
+  costBasis: CostBasisMode;
+  manualCostDocumentIds: Set<string>;
+  onToggleCostDocument: (documentId: string, checked: boolean) => void;
+  onSelect: (id: string) => void;
+}) {
   const [filters, setFilters] = useState({ year: "", trade: "", type: "", object: "" });
-  const filteredDocuments = documents.filter((document) => (
+  const basisDocuments = costBasis === "manual" ? documents : applyCostBasis(documents, costBasis, manualCostDocumentIds);
+  const filteredDocuments = basisDocuments.filter((document) => (
     (!filters.year || fieldOrUnknown(document.year).includes(filters.year)) &&
     (!filters.trade || formatClusters(document).toLowerCase().includes(filters.trade.toLowerCase())) &&
     (!filters.type || fieldOrUnknown(document.documentType).toLowerCase().includes(filters.type.toLowerCase())) &&
@@ -2114,6 +2178,16 @@ function ObjectDocumentsTab({ documents, onSelect }: { documents: ObjectAnalysis
       <div className="documentCardGrid">
         {filteredDocuments.length === 0 ? <div className="emptyState"><p>k.A.</p></div> : filteredDocuments.map((document) => (
           <article className="documentPreviewCard" key={document.id} onClick={() => onSelect(document.id)}>
+            {costBasis === "manual" ? (
+              <label className="costIncludeCheck" onClick={(event) => event.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={manualCostDocumentIds.has(document.id)}
+                  onChange={(event) => onToggleCostDocument(document.id, event.target.checked)}
+                />
+                In Kostenberechnung einbeziehen
+              </label>
+            ) : null}
             <span className={`documentTypeBadge ${documentTypeBadgeClass(document)}`}>{documentTypeValue(document)}</span>
             <h3>{fieldOrUnknown(document.provider)}</h3>
             <p>{fieldOrUnknown(document.documentNumber)} - {fieldOrUnknown(document.documentDate)}</p>
@@ -2130,18 +2204,20 @@ function ObjectDocumentsTab({ documents, onSelect }: { documents: ObjectAnalysis
 
 function ObjectMeasuresTab({
   documents,
+  costDocuments,
   projects,
   assignments,
   onUpdateDocument
 }: {
   documents: ObjectAnalysis[];
+  costDocuments: ObjectAnalysis[];
   projects: ProjectRecord[];
   assignments: Record<string, string | null>;
   onUpdateDocument: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
 }) {
   const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
   const [filters, setFilters] = useState({ project: "", year: "", documentType: "" });
-  const filteredDocuments = documents.filter((document) => {
+  const filteredDocuments = costDocuments.filter((document) => {
     const project = projects.find((entry) => entry.id === assignments[document.id]);
     return (
       (!filters.project || (project?.projectName ?? "").toLowerCase().includes(filters.project.toLowerCase())) &&
@@ -2149,7 +2225,7 @@ function ObjectMeasuresTab({
       (!filters.documentType || fieldOrUnknown(document.documentType).toLowerCase().includes(filters.documentType.toLowerCase()))
     );
   });
-  const rows = buildMeasureRows(costDisplayDocuments(filteredDocuments));
+  const rows = buildMeasureRows(filteredDocuments);
   const totalGross = sumValues(rows.map((row) => row.grossCost));
   const selectedRow = rows.find((row) => row.id === selectedMeasureId) ?? rows[0] ?? null;
 
@@ -2282,7 +2358,7 @@ function ObjectCostsTab({
   assignments: Record<string, string | null>;
 }) {
   const [costView, setCostView] = useState<CostViewMode>("comparison");
-  const objectTotal = finalGrossCost(documents);
+  const objectTotal = sumValues(documents.map((document) => document.totalCost.value));
   const offerTotal = sumValues(documents.filter(isOfferDocument).map((document) => document.totalCost.value));
   const progressTotal = sumValues(documents.filter(isProgressInvoiceDocument).map((document) => document.totalCost.value));
   const finalTotal = finalGrossCost(documents);
@@ -2302,8 +2378,8 @@ function ObjectCostsTab({
         <CostMetric label="Angebote" value={formatNullableCurrency(offerTotal)} />
         <CostMetric label="Abschläge" value={formatNullableCurrency(progressTotal)} />
         <CostMetric label="Finale Kosten" value={formatNullableCurrency(finalTotal)} />
-        <CostMetric label="Kosten netto" value={formatNullableCurrency(finalNetCost(documents))} />
-        <CostMetric label="MwSt" value={formatNullableCurrency(finalVatCost(documents))} />
+        <CostMetric label="Kosten netto" value={formatNullableCurrency(sumValues(documents.map((document) => document.netCost.value)))} />
+        <CostMetric label="MwSt" value={formatNullableCurrency(sumValues(documents.map((document) => document.vatCost.value)))} />
         <CostMetric label="Kosten brutto" value={formatNullableCurrency(objectTotal)} />
         <CostMetric label="Kosten je sanierte WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, objectTotal))} />
         <CostMetric label="Kosten je m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, objectTotal))} />
@@ -2312,6 +2388,7 @@ function ObjectCostsTab({
         <div className="uploadStatus">
           Schlussrechnung enthält vermutlich bereits vorherige Abschlagszahlungen. Bitte keine doppelte Kostenaddition vornehmen.
         </div>
+        <p className="costBasisHint">Kostenbasis: {costBasisLabel(costBasis)} · {formatNumber(documents.length)} Dokumente berücksichtigt</p>
       ) : null}
       <div className="tableWrap compactTable">
         <table>
@@ -2328,7 +2405,7 @@ function ObjectCostsTab({
                   <td>{entranceLabel(entrance) || "k.A."}</td>
                   <td>{formatNumber(entranceProjects.length)}</td>
                   <td>{formatNumber(entranceDocuments.length)}</td>
-                  <td>{formatNullableCurrency(finalGrossCost(entranceDocuments))}</td>
+                  <td>{formatNullableCurrency(sumValues(entranceDocuments.map((document) => document.totalCost.value)))}</td>
                 </tr>
               );
             })}
@@ -2340,7 +2417,7 @@ function ObjectCostsTab({
                   <td>{project.projectName || "k.A."}</td>
                   <td>1</td>
                   <td>{formatNumber(projectDocuments.length)}</td>
-                  <td>{formatNullableCurrency(finalGrossCost(projectDocuments))}</td>
+                  <td>{formatNullableCurrency(sumValues(projectDocuments.map((document) => document.totalCost.value)))}</td>
                 </tr>
               );
             })}
@@ -2375,7 +2452,7 @@ function ObjectCostsTab({
 
 function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
   const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
-  const rows = buildMeasureRows(costDisplayDocuments(documents));
+  const rows = buildMeasureRows(documents);
   const totalGross = sumValues(rows.map((row) => row.grossCost));
   const chartRows: TradeCostChartRow[] = rows.map((row) => ({
     id: row.id,
@@ -2771,6 +2848,30 @@ function CostViewSwitch({ value, onChange }: { value: CostViewMode; onChange: (v
   );
 }
 
+function CostBasisControl({
+  value,
+  onChange,
+  consideredCount
+}: {
+  value: CostBasisMode;
+  onChange: (value: CostBasisMode) => void;
+  consideredCount: number;
+}) {
+  return (
+    <section className="costBasisControl">
+      <label className="filterInput">
+        <span>Kostenbasis</span>
+        <select value={value} onChange={(event) => onChange(event.target.value as CostBasisMode)}>
+          {costBasisOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <p>Kostenbasis: {costBasisLabel(value)} · {formatNumber(consideredCount)} Dokumente berücksichtigt</p>
+    </section>
+  );
+}
+
 function CostProgressBars({ documents, mode }: { documents: ObjectAnalysis[]; mode: CostViewMode }) {
   const offerTotal = sumValues(documents.filter(isOfferDocument).map((document) => document.totalCost.value));
   const progressDocuments = documents.filter(isProgressInvoiceDocument);
@@ -2862,7 +2963,7 @@ function ProjectAiTab({ documents }: { documents: ObjectAnalysis[] }) {
   const rows = buildMeasureRows(documents);
   const trades = Array.from(new Set(rows.map((row) => row.cluster).filter((value) => value !== "k.A.")));
   const apartments = collectApartments(documents);
-  const gross = finalGrossCost(documents);
+  const gross = sumValues(documents.map((document) => document.totalCost.value));
   return (
     <div className="aiReportBoard">
       <section className="panel aiSummaryCard">
@@ -2980,7 +3081,7 @@ function ReportsView({
         <ReportCard label="Projekte" value={formatNumber(projects.length)} />
         <ReportCard label="Dokumente" value={formatNumber(documents.length)} />
         <ReportCard label="Zugeordnet" value={formatNumber(Object.values(assignments).filter(Boolean).length)} />
-        <ReportCard label="Finale Kosten" value={formatNullableCurrency(finalGrossCost(documents))} />
+        <ReportCard label="Brutto" value={formatNullableCurrency(sumValues(documents.map((document) => document.totalCost.value)))} />
       </div>
       <div className="tableWrap compactTable">
         <table>
@@ -3679,7 +3780,7 @@ function buildAnalysisFromDocuments(
   documents: ObjectAnalysis[],
   base: PortfolioAnalysisState = emptyAnalysisState
 ): PortfolioAnalysisState {
-  const costDocuments = finalCostDocuments(documents);
+  const costDocuments = documents;
   return {
     ...base,
     objects: documents,
@@ -4061,8 +4162,8 @@ function overviewRowFromDocuments({
   const firstDocument = documents[0] ?? null;
   const assignedProject = firstDocument ? projects.find((entry) => entry.id === assignments[firstDocument.id]) : null;
   const rowProject = project ?? assignedProject;
-  const netCost = finalNetCost(documents);
-  const grossCost = finalGrossCost(documents);
+  const netCost = sumValues(documents.map((document) => document.netCost.value));
+  const grossCost = sumValues(documents.map((document) => document.totalCost.value));
   const renovatedCount = firstNumber(manualRenovatedCount, sumValues(documents.map((document) => document.renovatedApartmentCount.value)));
   const livingArea = firstNumber(manualLivingArea, sumValues(documents.map((document) => document.livingAreaSqm.value)));
   const apartments = collectApartments(documents, rowProject);
@@ -4161,7 +4262,7 @@ function buildMapEntries(
       fund: object.fund || "k.A.",
       projectCount: objectProjects.length,
       documents: objectDocuments,
-      totalCost: finalGrossCost(objectDocuments),
+      totalCost: sumValues(objectDocuments.map((document) => document.totalCost.value)),
       latitude: parseCoordinate(object.latitude ?? ""),
       longitude: parseCoordinate(object.longitude ?? "")
     };
@@ -4178,7 +4279,7 @@ function buildMapEntries(
     fund: fieldOrUnknown(group.documents[0].fund),
     projectCount: 0,
     documents: group.documents,
-    totalCost: finalGrossCost(group.documents),
+    totalCost: sumValues(group.documents.map((document) => document.totalCost.value)),
     latitude: null,
     longitude: null
   }));
@@ -4356,7 +4457,7 @@ function groupByDocumentType(documents: ObjectAnalysis[]) {
 
 function groupByYear(documents: ObjectAnalysis[]) {
   const groups = new Map<string, number | null>();
-  finalCostDocuments(documents).forEach((document) => {
+  documents.forEach((document) => {
     const year = fieldOrUnknown(document.year);
     if (year === "k.A." || document.totalCost.value === null) return;
     groups.set(year, sumValues([groups.get(year) ?? null, document.totalCost.value]));
@@ -4538,6 +4639,10 @@ function isOfferDocument(document: ObjectAnalysis): boolean {
   return /angebot/i.test(documentTypeValue(document));
 }
 
+function isOrderDocument(document: ObjectAnalysis): boolean {
+  return /auftrag/i.test(documentTypeValue(document));
+}
+
 function isProgressInvoiceDocument(document: ObjectAnalysis): boolean {
   return /abschlag|teilrechnung|teilzahlung|akonto|vorauszahlung/i.test(documentTypeValue(document));
 }
@@ -4552,7 +4657,11 @@ function isCreditDocument(document: ObjectAnalysis): boolean {
 
 function isInvoiceDocument(document: ObjectAnalysis): boolean {
   const type = documentTypeValue(document);
-  return /rechnung/i.test(type) && !isProgressInvoiceDocument(document) && !isFinalInvoiceDocument(document);
+  return /rechnung|eingangsrechnung/i.test(type) && !isProgressInvoiceDocument(document) && !isFinalInvoiceDocument(document);
+}
+
+function isIncomingInvoiceDocument(document: ObjectAnalysis): boolean {
+  return isInvoiceDocument(document) || /eingangsrechnung/i.test(documentTypeValue(document));
 }
 
 function documentTypeBadgeClass(document: ObjectAnalysis): string {
@@ -4564,6 +4673,27 @@ function documentTypeBadgeClass(document: ObjectAnalysis): string {
   return "documentTypeOther";
 }
 
+function costBasisLabel(value: CostBasisMode): string {
+  return costBasisOptions.find((option) => option.value === value)?.label ?? "Alle Dokumente";
+}
+
+function applyCostBasis(
+  documents: ObjectAnalysis[],
+  basis: CostBasisMode,
+  manualIds: Set<string>
+): ObjectAnalysis[] {
+  if (basis === "all") return documents;
+  if (basis === "offers") return documents.filter(isOfferDocument);
+  if (basis === "orders") return documents.filter(isOrderDocument);
+  if (basis === "incomingInvoices") return documents.filter(isIncomingInvoiceDocument);
+  if (basis === "progressInvoices") return documents.filter(isProgressInvoiceDocument);
+  if (basis === "finalInvoices") return documents.filter(isFinalInvoiceDocument);
+  if (basis === "finalOnly") return documents.filter((document) => isFinalInvoiceDocument(document) || isInvoiceDocument(document) || isCreditDocument(document));
+  if (basis === "withoutProgress") return documents.filter((document) => !isProgressInvoiceDocument(document));
+  if (basis === "manual") return documents.filter((document) => manualIds.has(document.id));
+  return documents;
+}
+
 function finalCostDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
   const finalInvoices = documents.filter(isFinalInvoiceDocument);
   if (finalInvoices.length > 0) return finalInvoices;
@@ -4572,21 +4702,8 @@ function finalCostDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
   return [];
 }
 
-function costDisplayDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
-  const finalDocuments = finalCostDocuments(documents);
-  return finalDocuments.length > 0 ? finalDocuments : documents;
-}
-
 function finalGrossCost(documents: ObjectAnalysis[]): number | null {
   return sumValues(finalCostDocuments(documents).map((document) => document.totalCost.value));
-}
-
-function finalNetCost(documents: ObjectAnalysis[]): number | null {
-  return sumValues(finalCostDocuments(documents).map((document) => document.netCost.value));
-}
-
-function finalVatCost(documents: ObjectAnalysis[]): number | null {
-  return sumValues(finalCostDocuments(documents).map((document) => document.vatCost.value));
 }
 
 function emptyIfUnknown(value: string): string {

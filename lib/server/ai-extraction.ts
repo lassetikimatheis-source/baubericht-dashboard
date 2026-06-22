@@ -174,7 +174,7 @@ async function runOpenAiExtractionPerDocument(
           content: [
             "Extrahiere diese JSON-Struktur:",
             "{ objects: [{ confidenceScore:{value,evidence,confidence}, projektvorschlag:{value,evidence,confidence}, zuordnungsvorschlag:{value,evidence,confidence}, dokumenttyp:{value,evidence,confidence}, abschlagsnummer:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
-            "Erlaubte dokumenttyp-Werte: Angebot, Auftrag, Abschlagsrechnung, Teilrechnung, Schlussrechnung, Rechnung, Gutschrift, Nachtrag, Freigabe, Sonstiges.",
+            "Erlaubte dokumenttyp-Werte: Angebot, Auftrag, Eingangsrechnung, Rechnung, Abschlagsrechnung, Teilrechnung, Schlussrechnung, Gutschrift, Nachtrag, Sonstiges.",
             "Erkenne Abschlagsrechnungen streng: Abschlagsrechnung, 1. Abschlagsrechnung, 2. Abschlagsrechnung, Teilrechnung, Teilzahlung, Akonto, Vorauszahlung, Zahlung gemaess Baufortschritt oder Abschlag. Wenn erkennbar, dokumenttyp Abschlagsrechnung und abschlagsnummer z.B. 1. Abschlag setzen.",
             "Erlaubte cluster: Boden, Maler, Bad / Fliesen, Sanitär / Heizung, Elektro, Türen / Fenster, Reinigung, Planung / Dokumentation, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
@@ -977,7 +977,9 @@ function firstProvider(text: string): { value: string; evidence: string } | null
 function detectDocumentType(text: string): { value: string | null; evidence: string | null } {
   const patterns: Array<{ value: string; pattern: RegExp }> = [
     { value: "Schlussrechnung", pattern: /\b(?:schlussrechnung|end(?:ab)?rechnung|finale\s+rechnung)\b/i },
-    { value: "Abschlagsrechnung", pattern: /\b(?:\d+\.\s*)?(?:abschlagsrechnung|abschlag(?:s)?(?:zahlung|rechnung)?|teilrechnung|teilzahlung|akonto|vorauszahlung|zahlung\s+gem(?:aess|äß|\.?)\s+baufortschritt)\b/i },
+    { value: "Abschlagsrechnung", pattern: /\b(?:\d+\.\s*)?(?:abschlagsrechnung|abschlag(?:s)?(?:zahlung|rechnung)?|teilzahlung|akonto|vorauszahlung|zahlung\s+gem(?:aess|äß|\.?)\s+baufortschritt)\b/i },
+    { value: "Teilrechnung", pattern: /\b(?:\d+\.\s*)?teilrechnung\b/i },
+    { value: "Eingangsrechnung", pattern: /\beingangsrechnung\b/i },
     { value: "Angebot", pattern: /\bangebot(?:snummer|snr\.?)?\b/i },
     { value: "Auftrag", pattern: /\bauftrag(?:snummer|snr\.?)?\b/i },
     { value: "Gutschrift", pattern: /\bgutschrift\b/i },
