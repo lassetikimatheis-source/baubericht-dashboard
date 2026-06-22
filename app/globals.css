@@ -2947,6 +2947,14 @@ body {
   content: "A";
 }
 
+.navButton:nth-child(6)::before {
+  content: "KI";
+}
+
+.navButton:nth-child(7)::before {
+  content: "E";
+}
+
 .navButtonActive,
 .navButton:hover {
   border-color: transparent;
@@ -3725,5 +3733,384 @@ th {
 
   .objectDetailHeader h3 {
     font-size: 38px;
+  }
+}
+
+/* Premium asset-management polish with stronger Paribus orange accents */
+:root {
+  --orange: #ff6e42;
+  --orange-deep: #e95b2f;
+  --orange-soft: #fff1eb;
+  --navy-deep: #071a2f;
+  --navy-panel: #0c223b;
+}
+
+body {
+  background: #f4f6fa;
+}
+
+.shell {
+  grid-template-columns: 214px minmax(0, 1fr);
+}
+
+.sidebar {
+  border-right: 0;
+  background:
+    radial-gradient(circle at 26% 0%, rgba(70, 99, 137, 0.34), transparent 32%),
+    linear-gradient(180deg, #102842 0%, #06172a 48%, #03111f 100%);
+  box-shadow: 18px 0 36px rgba(4, 17, 31, 0.12);
+  color: #fff;
+  padding: 24px 14px 16px;
+}
+
+.brand {
+  min-height: 68px;
+  padding: 0 6px;
+}
+
+.brand strong {
+  color: #fff;
+  font-size: 25px;
+}
+
+.brand span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+}
+
+.nav {
+  gap: 7px;
+}
+
+.navButton {
+  min-height: 43px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: rgba(255, 255, 255, 0.82);
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+
+.navButton::before {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 10px;
+}
+
+.navButton:hover {
+  border-color: rgba(255, 110, 66, 0.34);
+  background: rgba(255, 110, 66, 0.12);
+  color: #fff;
+  transform: translateX(2px);
+}
+
+.navButtonActive,
+.navButtonActive:hover {
+  border-color: rgba(255, 110, 66, 0.72);
+  background: linear-gradient(180deg, var(--orange), var(--orange-deep));
+  box-shadow: 0 12px 24px rgba(255, 110, 66, 0.26);
+  color: #fff;
+}
+
+.navButtonActive::before,
+.navButton:hover::before {
+  border-color: rgba(255, 255, 255, 0.42);
+  color: #fff;
+}
+
+.sideNote {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.sideNote span {
+  color: var(--orange);
+}
+
+.sideNote strong {
+  color: #fff;
+}
+
+.pageHeader {
+  min-height: 72px;
+  box-shadow: 0 8px 26px rgba(15, 23, 42, 0.035);
+}
+
+.pageHeader .eyebrow {
+  color: var(--orange);
+  font-weight: 900;
+}
+
+.pageHeader .eyebrow::before {
+  color: #24364d;
+}
+
+.headerActions button,
+.button,
+button {
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.headerActions button:hover,
+.button:hover,
+button:hover {
+  border-color: rgba(255, 110, 66, 0.45);
+  color: var(--orange-deep);
+}
+
+.buttonPrimary,
+.headerActions .buttonPrimary {
+  border-color: var(--orange);
+  background: linear-gradient(180deg, var(--orange), var(--orange-deep));
+  box-shadow: 0 12px 26px rgba(255, 110, 66, 0.24);
+  color: #fff;
+}
+
+.buttonPrimary:hover,
+.headerActions .buttonPrimary:hover {
+  border-color: var(--orange-deep);
+  background: linear-gradient(180deg, #ff7d55, var(--orange-deep));
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.workspaceGrid,
+.workspaceGridFull,
+.objectWorkspace {
+  padding: 22px 26px 30px;
+}
+
+.objectManagementLayout {
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.objectDirectory {
+  top: 92px;
+}
+
+.objectDirectory::before,
+.objectDirectory::after {
+  color: #667891;
+}
+
+.projectListItem {
+  min-height: 102px;
+  border-color: #dfe6ef;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.035);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
+}
+
+.projectListItem:hover {
+  border-color: rgba(255, 110, 66, 0.48);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.07);
+  transform: translateY(-1px);
+}
+
+.projectListItem.selectedRow {
+  border-color: var(--orange);
+  background: linear-gradient(180deg, #fffaf7, #fff2ec);
+  box-shadow: 0 14px 28px rgba(255, 110, 66, 0.15);
+}
+
+.projectListItem.selectedRow strong {
+  color: var(--orange-deep);
+}
+
+.objectListChips small {
+  background: #f1f4f8;
+  color: #24364d;
+}
+
+.projectListItem.selectedRow .objectListChips small {
+  background: #fff;
+  color: var(--orange-deep);
+}
+
+.objectDetailHeader {
+  border-color: #dde5ef;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.045);
+}
+
+.objectDetailHeaderWithImage {
+  grid-template-columns: minmax(0, 1.24fr) minmax(390px, 0.76fr);
+}
+
+.objectHeroContent {
+  padding: 36px 38px;
+}
+
+.objectDetailHeader h3 {
+  color: #111d2e;
+  font-weight: 900;
+}
+
+.objectHeroTitle p {
+  color: #24364d;
+}
+
+.trafficYellow {
+  background: #fff1db;
+  color: var(--orange-deep);
+}
+
+.trafficGreen {
+  background: #e8f6ee;
+}
+
+.objectMasterGrid .infoLine {
+  border-color: #e8edf4;
+  background: #f3f6fa;
+}
+
+.objectMasterGrid .infoLine:hover {
+  border-color: rgba(255, 110, 66, 0.35);
+}
+
+.objectHeaderMetrics {
+  gap: 10px;
+}
+
+.objectHeaderMetrics .costLine {
+  border-color: #e0e7f0;
+  background: linear-gradient(180deg, #ffffff, #fbfcfe);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.objectHeaderMetrics .costLine:hover {
+  border-color: rgba(255, 110, 66, 0.42);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.07);
+  transform: translateY(-2px);
+}
+
+.objectHeaderMetrics .costLine::before {
+  background: var(--orange-soft);
+  box-shadow: inset 0 0 0 8px rgba(255, 110, 66, 0.13);
+}
+
+.objectHeaderMetrics .costLine strong {
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.tabs {
+  gap: 24px;
+}
+
+.tabButton {
+  color: #4c5d73;
+  font-weight: 850;
+  transition: color 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.tabButton:hover {
+  border-color: rgba(255, 110, 66, 0.55);
+  color: var(--orange-deep);
+  transform: translateY(-1px);
+}
+
+.tabButtonActive,
+.tabButtonActive:hover {
+  border-color: var(--orange);
+  color: var(--orange-deep);
+}
+
+.tradeChartCard,
+.tradeDonutCard,
+.insightCard,
+.aiSummaryCard,
+.objectImagesPanel,
+.objectFormPanel,
+.tableWrap,
+.detectedObjectSection {
+  border-color: #dfe6ef;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.035);
+}
+
+.tradeChart {
+  min-height: 340px;
+}
+
+.tradeTooltip {
+  border: 1px solid rgba(255, 110, 66, 0.32);
+  border-radius: 10px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
+}
+
+thead th {
+  background: linear-gradient(180deg, #f9fbfd, #f3f6fa);
+  color: #526174;
+  font-weight: 900;
+}
+
+tbody tr {
+  transition: background 160ms ease, box-shadow 160ms ease;
+}
+
+tbody tr:hover {
+  background: #fff7f2;
+}
+
+.measureListTable tbody tr:hover,
+.tradesBoard tbody tr:hover {
+  color: #172234;
+}
+
+.measureListTable td:nth-child(6),
+.measureListTable td:nth-child(7),
+.tradesBoard td:nth-child(2),
+.tradesBoard td:nth-child(3),
+.tradesBoard td:nth-child(4) {
+  font-variant-numeric: tabular-nums;
+}
+
+.tradeDonutCard .recharts-wrapper {
+  margin: 0 auto;
+}
+
+.measureSlideOver {
+  border-left: 3px solid var(--orange);
+  box-shadow: -22px 0 46px rgba(7, 26, 47, 0.22);
+  animation: slideInPanel 180ms ease-out;
+}
+
+.slideOverHeader h3 {
+  color: var(--orange-deep);
+}
+
+.measureSlideOver .buttonPrimary {
+  justify-self: stretch;
+}
+
+@keyframes slideInPanel {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 1320px) {
+  .objectManagementLayout {
+    grid-template-columns: 230px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 980px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    min-height: auto;
   }
 }

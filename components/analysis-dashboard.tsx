@@ -227,7 +227,9 @@ const navItems: Array<{ key: ViewKey; label: string }> = [
   { key: "map", label: "Karte" },
   { key: "objects", label: "Objekte" },
   { key: "upload", label: "Dokumente" },
-  { key: "reports", label: "Auswertungen" }
+  { key: "reports", label: "Auswertungen" },
+  { key: "unassigned", label: "KI Analyse" },
+  { key: "settings", label: "Einstellungen" }
 ];
 
 const projectTabs: Array<{ key: ProjectTab; label: string }> = [
@@ -1330,7 +1332,7 @@ function getPageTitle(view: ViewKey): string {
     map: "Karte",
     upload: "Dokument Upload / KI",
     projects: "Projekte",
-    unassigned: "Unzugeordnete Dokumente",
+    unassigned: "KI Analyse",
     reports: "Auswertungen",
     settings: "Einstellungen"
   };

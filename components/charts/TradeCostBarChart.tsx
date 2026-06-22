@@ -49,27 +49,27 @@ export function TradeCostBarChart({
         </div>
       </div>
       <div className="tradeChart">
-        <ResponsiveContainer width="100%" height={Math.max(280, chartRows.length * 42)}>
+        <ResponsiveContainer width="100%" height={Math.max(340, chartRows.length * 48)}>
           <BarChart
             data={chartRows}
             layout="vertical"
-            margin={{ top: 8, right: 24, bottom: 8, left: 24 }}
-            barCategoryGap={12}
+            margin={{ top: 12, right: 34, bottom: 16, left: 30 }}
+            barCategoryGap={14}
           >
             <XAxis
               type="number"
               axisLine={{ stroke: "#DCE2E8" }}
               tickLine={false}
-              tick={{ fill: "#737B84", fontSize: 12 }}
+              tick={{ fill: "#63748A", fontSize: 12 }}
               tickFormatter={(value) => formatShortEuro(Number(value))}
             />
             <YAxis
               type="category"
               dataKey="cluster"
-              width={150}
+              width={170}
               axisLine={{ stroke: "#DCE2E8" }}
               tickLine={false}
-              tick={{ fill: "#424242", fontSize: 12, fontWeight: 700 }}
+              tick={{ fill: "#24364D", fontSize: 12, fontWeight: 800 }}
             />
             <Tooltip
               cursor={{ fill: "rgba(70, 99, 137, 0.06)" }}
@@ -87,7 +87,7 @@ export function TradeCostBarChart({
             />
             <Bar
               dataKey="kosten_brutto"
-              radius={[0, 6, 6, 0]}
+              radius={[0, 8, 8, 0]}
               onClick={(data) => onSelect?.((data as TradeCostChartRow).id)}
             >
               {chartRows.map((row, index) => (
