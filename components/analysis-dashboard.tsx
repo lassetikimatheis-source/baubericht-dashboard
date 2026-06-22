@@ -647,7 +647,7 @@ export function AnalysisDashboard() {
           <div className="brandMark">P</div>
           <div>
             <strong>PARIBUS</strong>
-            <span>Baukosten Analyse</span>
+            <span>Asset Management</span>
           </div>
         </div>
         <nav className="nav">
@@ -677,9 +677,9 @@ export function AnalysisDashboard() {
             <p className="muted">Objekte, Projekte, Dokumente und Baukosten strukturiert auswerten.</p>
           </div>
           <div className="headerActions">
-            <button className="buttonPrimary" type="button" onClick={() => setView("upload")}>Upload</button>
             <button type="button" onClick={() => exportFile("excel")}>Export Excel</button>
             <button type="button" onClick={() => exportFile("pdf")}>Export PDF</button>
+            <button className="buttonPrimary" type="button" onClick={() => setView("upload")}>+ Dokument hochladen</button>
           </div>
         </header>
 
