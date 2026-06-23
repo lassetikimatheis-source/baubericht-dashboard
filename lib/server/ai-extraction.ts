@@ -235,7 +235,7 @@ function normalizeObjects(
     const costDebug = extractCostSummary(document);
     const objectNumber = verifiedField(object.objectNumber, document, "Objektnummer", issues);
     const objectAddress = verifiedField(object.objectAddress, document, "Objektadresse", issues);
-    const id = objectNumber.value || objectAddress.value || `${document.id}-object-${objectIndex + 1}`;
+    const id = `${document.id}-object-${objectIndex + 1}`;
     const renovatedApartmentCount = verifiedField(
       object.renovatedApartmentCount,
       document,

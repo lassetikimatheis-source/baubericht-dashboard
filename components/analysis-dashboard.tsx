@@ -3949,12 +3949,11 @@ function buildAnalysisFromDocuments(
 }
 
 function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: ObjectAnalysis[]): ObjectAnalysis[] {
-  const byKey = new Map<string, ObjectAnalysis>();
-  existing.forEach((document) => byKey.set(documentIdentity(document), document));
+  const byId = new Map(existing.map((document) => [document.id, document]));
   const merged = [...existing];
 
   incoming.forEach((document) => {
-    const match = byKey.get(documentIdentity(document));
+    const match = byId.get(document.id);
     if (!match) {
       merged.push(document);
       return;
@@ -4015,23 +4014,6 @@ function mergeFieldPreferManual<T>(existing: ExtractedField<T>, incoming: Extrac
 
 function hasManualSource<T>(field: ExtractedField<T>): boolean {
   return field.sources.some((source) => source.method === "Manuell");
-}
-
-function documentIdentity(document: ObjectAnalysis): string {
-  const fileName = firstKnown(...[
-    ...document.documentNumber.sources,
-    ...document.totalCost.sources,
-    ...document.netCost.sources,
-    ...document.objectAddress.sources,
-    ...document.provider.sources
-  ].map((source) => source.fileName));
-  const identity = [
-    fieldOrUnknown(document.documentNumber),
-    fieldOrUnknown(document.provider),
-    fieldOrUnknown(document.objectNumber),
-    fileName
-  ].filter((part) => part && part !== "k.A.").join("|").toLowerCase();
-  return identity || document.id;
 }
 
 function aggregateNumberField(fields: Array<ExtractedField<number>>): ExtractedField<number> {
