@@ -1,10 +1,14 @@
 "use client";
 
+import type React from "react";
 import { useEffect } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import { ObjectMarker, type ObjectMapEntry } from "./ObjectMarker";
 
 export type { ObjectMapEntry };
+
+const LeafletMapContainer = MapContainer as unknown as React.ComponentType<any>;
+const LeafletTileLayer = TileLayer as unknown as React.ComponentType<any>;
 
 export function ObjectMap({
   entries,
@@ -16,24 +20,24 @@ export function ObjectMap({
   if (entries.length === 0) {
     return (
       <div className="mapEmpty">
-        Fuer dieses Objekt fehlen Koordinaten. Bitte Latitude und Longitude im Objekt bearbeiten.
+        Für dieses Objekt fehlen Koordinaten. Bitte Latitude und Longitude im Objekt bearbeiten.
       </div>
     );
   }
 
   return (
-    <MapContainer center={mapCenter(entries)} zoom={entries.length === 1 ? 15 : 6} scrollWheelZoom dragging className="leafletMap">
-      <TileLayer
+    <LeafletMapContainer center={mapCenter(entries)} zoom={entries.length === 1 ? 15 : 6} scrollWheelZoom dragging className="leafletMap">
+      <LeafletTileLayer
         attribution='Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
         url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
       />
-      <TileLayer
+      <LeafletTileLayer
         attribution='Labels &copy; Esri'
         url="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
         pane="overlayPane"
         opacity={0.95}
       />
-      <TileLayer
+      <LeafletTileLayer
         attribution='Roads &copy; Esri'
         url="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
         pane="overlayPane"
@@ -43,7 +47,7 @@ export function ObjectMap({
       {entries.map((entry) => (
         <ObjectMarker key={entry.key} entry={entry} onOpenObject={onOpenObject} />
       ))}
-    </MapContainer>
+    </LeafletMapContainer>
   );
 }
 

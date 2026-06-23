@@ -1,7 +1,11 @@
 "use client";
 
+import type React from "react";
 import L from "leaflet";
 import { Marker, Popup } from "react-leaflet";
+
+const LeafletMarker = Marker as unknown as React.ComponentType<any>;
+const LeafletPopup = Popup as unknown as React.ComponentType<any>;
 
 export interface ObjectMapEntry {
   key: string;
@@ -33,8 +37,8 @@ export function ObjectMarker({
   onOpenObject: (id: string) => void;
 }) {
   return (
-    <Marker position={[entry.latitude, entry.longitude]} icon={paribusMarkerIcon}>
-      <Popup>
+    <LeafletMarker position={[entry.latitude, entry.longitude]} icon={paribusMarkerIcon}>
+      <LeafletPopup>
         <div className="mapPopup">
           <strong>{entry.objectNumber || "k.A."}</strong>
           <span>{entry.address || entry.title || "k.A."}</span>
@@ -43,11 +47,11 @@ export function ObjectMarker({
           <span>Projekte: {formatNumber(entry.projectCount)}</span>
           <span>Dokumente: {formatNumber(entry.documentCount)}</span>
           <button type="button" onClick={() => onOpenObject(entry.objectId)}>
-            Objekt oeffnen
+            Objekt öffnen
           </button>
         </div>
-      </Popup>
-    </Marker>
+      </LeafletPopup>
+    </LeafletMarker>
   );
 }
 

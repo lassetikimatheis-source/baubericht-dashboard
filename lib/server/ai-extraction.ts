@@ -176,7 +176,7 @@ async function runOpenAiExtractionPerDocument(
             "{ objects: [{ confidenceScore:{value,evidence,confidence}, projektvorschlag:{value,evidence,confidence}, zuordnungsvorschlag:{value,evidence,confidence}, dokumenttyp:{value,evidence,confidence}, abschlagsnummer:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
             "Erlaubte dokumenttyp-Werte: Angebot, Auftrag, Eingangsrechnung, Rechnung, Abschlagsrechnung, Teilrechnung, Schlussrechnung, Gutschrift, Nachtrag, Sonstiges.",
             "Erkenne Abschlagsrechnungen streng: Abschlagsrechnung, 1. Abschlagsrechnung, 2. Abschlagsrechnung, Teilrechnung, Teilzahlung, Akonto, Vorauszahlung, Zahlung gemaess Baufortschritt oder Abschlag. Wenn erkennbar, dokumenttyp Abschlagsrechnung und abschlagsnummer z.B. 1. Abschlag setzen.",
-            "Erlaubte cluster: Boden, Maler, Bad / Fliesen, Sanitär / Heizung, Elektro, Türen / Fenster, Reinigung, Planung / Dokumentation, Sonstiges.",
+            "Erlaubte cluster: Dach, Fassade, Fenster, Türen, Balkone, Heizung, Sanitär, Elektro, Brandschutz, Aufzüge, Treppenhäuser, Keller, Außenanlagen, Tiefgarage, Malerarbeiten, Bodenbeläge, Dachentwässerung, Wärmedämmung, Schornstein, Trinkwasser, Abwasser, Lüftung, Photovoltaik, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
             "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitär - Heizungsarbeiten -> Sanitär / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Türen / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
             "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
@@ -819,7 +819,7 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
 
   return {
     dokumenttyp: aiField("Angebot", "Angebot"),
-    abschlagsnummer: aiField(null, null),
+    abschlagsnummer: aiField<string>(null, null),
     projektart: aiField("Wohnungssanierung", subjectEvidence),
     anbieter: aiField(provider?.[1] ?? null, provider?.[0] ?? null),
     year: aiField(year, date?.[0] ?? documentNumber?.[0] ?? null),
@@ -832,15 +832,15 @@ function parseStandardOffer(document: ParsedDocument, issues: string[]): AiObjec
     lage: aiField(locationAndAddress.location, subjectEvidence),
     renovatedApartmentCount: aiField(1, subjectEvidence),
     renovatedApartments: aiField([apartmentNumber], subjectEvidence),
-    livingAreaSqm: aiField(null, null),
-    totalAreaSqm: aiField(null, null),
-    renovatedAreaSqm: aiField(null, null),
+    livingAreaSqm: aiField<number>(null, null),
+    totalAreaSqm: aiField<number>(null, null),
+    renovatedAreaSqm: aiField<number>(null, null),
     kosten_netto: aiField(net.value, net.raw || null),
     mwst: aiField(vat.value, vat.raw || null),
     kosten_brutto: aiField(grossValue, gross.raw || null),
     totalCost: aiField(grossValue, gross.raw || null),
     costPerApartment: aiField(grossValue, gross.raw || null),
-    costPerSqm: aiField(null, null),
+    costPerSqm: aiField<number>(null, null),
     beschreibung_massnahmen: aiField(buildOfferMeasureSummary(measureAnalysis.details), measureAnalysis.details[0]?.quelle ?? null),
     datenqualitaet: aiField("Sicher erkannt", subjectEvidence),
     fehlende_angaben: aiField(missing.length ? missing : null, subjectEvidence),
@@ -897,10 +897,10 @@ function parseGenericDocument(document: ParsedDocument, issues: string[]): AiObj
     objectAddress: aiField(address?.value ?? null, address?.evidence ?? null),
     lage: aiField(firstRegex(text, /\b(\d+\.OG\s+\d+\.?v\.?li|\d+\.OG\s+\d+\.?v\.?re)\b/i)?.value ?? null, objectNumber?.evidence ?? null),
     renovatedApartmentCount: aiField(apartmentCount?.value ?? null, apartmentCount?.evidence ?? null),
-    renovatedApartments: aiField(null, null),
+    renovatedApartments: aiField<string[]>(null, null),
     livingAreaSqm: aiField(livingArea?.value ?? null, livingArea?.evidence ?? null),
-    totalAreaSqm: aiField(null, null),
-    renovatedAreaSqm: aiField(null, null),
+    totalAreaSqm: aiField<number>(null, null),
+    renovatedAreaSqm: aiField<number>(null, null),
     kosten_netto: aiField(costSummary.finalValues.net.value, costSummary.finalValues.net.raw || null),
     mwst: aiField(costSummary.finalValues.vat.value, costSummary.finalValues.vat.raw || null),
     kosten_brutto: aiField(gross, costSummary.finalValues.gross.raw || null),
@@ -1013,17 +1013,27 @@ function detectMeasures(text: string): Array<{
   sumEvidence: string | null;
 }> {
   const mappings: Array<{ pattern: RegExp; cluster: MeasureCluster; description: string; projectType: string }> = [
-    { pattern: /Dach(?:arbeiten|sanierung)?/i, cluster: "Sonstiges", description: "Dacharbeiten", projectType: "Dacharbeiten" },
-    { pattern: /Fassade(?:narbeiten|nsanierung)?/i, cluster: "Sonstiges", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
+    { pattern: /Dachentw[aä]sserung|Regenrinne|Fallrohr/i, cluster: "Dachentwässerung", description: "Dachentwässerung", projectType: "Dachentwässerung" },
+    { pattern: /Dach(?:arbeiten|sanierung)?/i, cluster: "Dach", description: "Dacharbeiten", projectType: "Dacharbeiten" },
+    { pattern: /Fassade(?:narbeiten|nsanierung)?/i, cluster: "Fassade", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
     { pattern: /Fenster(?:arbeiten|tausch)?/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung(?:sarbeiten)?/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro(?:arbeiten)?/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
-    { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?/i, cluster: "Sanitär / Heizung", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
-    { pattern: /Maler(?:arbeiten)?/i, cluster: "Maler", description: "Malerarbeiten", projectType: "Malerarbeiten" },
-    { pattern: /Boden(?:belagsarbeiten|arbeiten)?/i, cluster: "Boden", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
-    { pattern: /Fliesen(?:arbeiten)?|Estrich/i, cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich", projectType: "Bad- / Fliesenarbeiten" },
-    { pattern: /Tischler(?:arbeiten)?|T(?:ue|\u00fc)ren/i, cluster: "Türen / Fenster", description: "Tischlerarbeiten / Türen", projectType: "Tischlerarbeiten" },
-    { pattern: /Reinigung/i, cluster: "Reinigung", description: "Reinigung", projectType: "Reinigung" },
+    { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?|Fliesen(?:arbeiten)?|Estrich/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
+    { pattern: /Maler(?:arbeiten)?/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
+    { pattern: /Boden(?:belagsarbeiten|arbeiten)?/i, cluster: "Bodenbeläge", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
+    { pattern: /Tischler(?:arbeiten)?|T(?:ue|\u00fc)ren/i, cluster: "Türen", description: "Tischlerarbeiten / Türen", projectType: "Tischlerarbeiten" },
+    { pattern: /Brand(?:schutz)?|Rauchmelder|RWA/i, cluster: "Brandschutz", description: "Brandschutzarbeiten", projectType: "Brandschutz" },
+    { pattern: /Aufzug|Lift/i, cluster: "Aufzüge", description: "Aufzugsarbeiten", projectType: "Aufzüge" },
+    { pattern: /Treppenhaus|Treppenh(?:ae|\u00e4)user/i, cluster: "Treppenhäuser", description: "Treppenhausarbeiten", projectType: "Treppenhäuser" },
+    { pattern: /Keller/i, cluster: "Keller", description: "Kellerarbeiten", projectType: "Keller" },
+    { pattern: /Au(?:ss|\u00df)enanlagen|Hof|Garten|Pflaster/i, cluster: "Außenanlagen", description: "Außenanlagen", projectType: "Außenanlagen" },
+    { pattern: /Tiefgarage/i, cluster: "Tiefgarage", description: "Tiefgarage", projectType: "Tiefgarage" },
+    { pattern: /Schornstein|Kamin/i, cluster: "Schornstein", description: "Schornsteinarbeiten", projectType: "Schornstein" },
+    { pattern: /Trinkwasser/i, cluster: "Trinkwasser", description: "Trinkwasserarbeiten", projectType: "Trinkwasser" },
+    { pattern: /Abwasser|Kanal/i, cluster: "Abwasser", description: "Abwasserarbeiten", projectType: "Abwasser" },
+    { pattern: /L(?:ue|\u00fc)ftung|Ventilat/i, cluster: "Lüftung", description: "Lüftungsarbeiten", projectType: "Lüftung" },
+    { pattern: /Photovoltaik|Solar|PV\b/i, cluster: "Photovoltaik", description: "Photovoltaik", projectType: "Photovoltaik" },
     { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
   ];
   const found = new Map<string, {
@@ -1062,14 +1072,17 @@ function findMeasureSum(text: string, pattern: RegExp): { value: number | null; 
 
 function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; description: string; projectType: string; evidence: string } | null {
   const mappings: Array<{ pattern: RegExp; cluster: MeasureCluster; description: string; projectType: string }> = [
-    { pattern: /Dach/i, cluster: "Sonstiges", description: "Dacharbeiten", projectType: "Dacharbeiten" },
-    { pattern: /Fassade/i, cluster: "Sonstiges", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
+    { pattern: /Dachentw[aä]sserung|Regenrinne|Fallrohr/i, cluster: "Dachentwässerung", description: "Dachentwässerung", projectType: "Dachentwässerung" },
+    { pattern: /Dach/i, cluster: "Dach", description: "Dacharbeiten", projectType: "Dacharbeiten" },
+    { pattern: /Fassade/i, cluster: "Fassade", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
     { pattern: /Fenster/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
-    { pattern: /Sanit[aä]r/i, cluster: "Sanitär / Heizung", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
-    { pattern: /Maler/i, cluster: "Maler", description: "Malerarbeiten", projectType: "Malerarbeiten" },
-    { pattern: /Boden/i, cluster: "Boden", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
+    { pattern: /Sanit[aä]r|Fliesen|Estrich/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
+    { pattern: /Maler/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
+    { pattern: /Boden/i, cluster: "Bodenbeläge", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
+    { pattern: /T[uü]r|Tischler/i, cluster: "Türen", description: "Türen / Tischlerarbeiten", projectType: "Tischlerarbeiten" },
+    { pattern: /Brand|Rauchmelder|RWA/i, cluster: "Brandschutz", description: "Brandschutzarbeiten", projectType: "Brandschutz" },
     { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
   ];
   for (const mapping of mappings) {
@@ -1230,14 +1243,14 @@ function offerMeasureDefinitions(): Array<{
   description: string;
 }> {
   return [
-    { section: 1, heading: "Erstbegehung", aliases: [/Erstbegehung/i], cluster: "Planung / Dokumentation", description: "Erstbegehung und Dokumentation" },
-    { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelagsarbeiten/i], cluster: "Boden", description: "Bodenbelagsarbeiten" },
-    { section: 3, heading: "Malerarbeiten", aliases: [/Malerarbeiten/i], cluster: "Maler", description: "Malerarbeiten" },
-    { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesenarbeiten(?:\s+und\s+Estrich)?/i, /Estrich/i], cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich" },
-    { section: 5, heading: "Sanitär - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i], cluster: "Sanitär / Heizung", description: "Sanitär- und Heizungsarbeiten" },
+    { section: 1, heading: "Erstbegehung", aliases: [/Erstbegehung/i], cluster: "Sonstiges", description: "Erstbegehung und Dokumentation" },
+    { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelagsarbeiten/i], cluster: "Bodenbeläge", description: "Bodenbelagsarbeiten" },
+    { section: 3, heading: "Malerarbeiten", aliases: [/Malerarbeiten/i], cluster: "Malerarbeiten", description: "Malerarbeiten" },
+    { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesenarbeiten(?:\s+und\s+Estrich)?/i, /Estrich/i], cluster: "Sanitär", description: "Fliesenarbeiten und Estrich" },
+    { section: 5, heading: "Sanitär - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i], cluster: "Heizung", description: "Sanitär- und Heizungsarbeiten" },
     { section: 6, heading: "Elektroarbeiten", aliases: [/Elektroarbeiten/i], cluster: "Elektro", description: "Elektroarbeiten" },
-    { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Türen / Fenster", description: "Tischlerarbeiten" },
-    { section: 8, heading: "Reinigung", aliases: [/Reinigung/i], cluster: "Reinigung", description: "Reinigung" },
+    { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Türen", description: "Tischlerarbeiten" },
+    { section: 8, heading: "Reinigung", aliases: [/Reinigung/i], cluster: "Sonstiges", description: "Reinigung" },
     { section: 9, heading: "Zusatzarbeiten", aliases: [/(?:Stundenlohn\s+)?Zusatzarbeiten/i], cluster: "Sonstiges", description: "Zusatzarbeiten" }
   ];
 }
@@ -1310,14 +1323,14 @@ function buildOfferMeasureSummary(details: MeasureDetail[]): string | null {
 
 function parseOfferMeasuresLegacy(text: string): AiMeasureResult[] {
   const mappings: Array<{ section: number; heading: RegExp; cluster: MeasureCluster; description: string }> = [
-    { section: 1, heading: /Summe\s+1\.\s+Erstbegehung\s+([\d.]+,\d{2})\s*€/i, cluster: "Planung / Dokumentation", description: "Erstbegehung und Dokumentation" },
-    { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Boden", description: "Bodenbelagsarbeiten" },
-    { section: 3, heading: /Summe\s+3\.\s+Malerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Maler", description: "Malerarbeiten" },
-    { section: 4, heading: /Summe\s+4\.\s+Fliesenarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Bad / Fliesen", description: "Fliesenarbeiten und Estrich" },
-    { section: 5, heading: /Summe\s+5\.\s+Sanit[aä]r\s*-\s*Heizungsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sanitär / Heizung", description: "Sanitär- und Heizungsarbeiten" },
+    { section: 1, heading: /Summe\s+1\.\s+Erstbegehung\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Erstbegehung und Dokumentation" },
+    { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Bodenbeläge", description: "Bodenbelagsarbeiten" },
+    { section: 3, heading: /Summe\s+3\.\s+Malerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Malerarbeiten", description: "Malerarbeiten" },
+    { section: 4, heading: /Summe\s+4\.\s+Fliesenarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sanitär", description: "Fliesenarbeiten und Estrich" },
+    { section: 5, heading: /Summe\s+5\.\s+Sanit[aä]r\s*-\s*Heizungsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Heizung", description: "Sanitär- und Heizungsarbeiten" },
     { section: 6, heading: /Summe\s+6\.\s+Elektroarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Elektro", description: "Elektroarbeiten" },
-    { section: 7, heading: /Summe\s+7\.\s+Tischlerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Türen / Fenster", description: "Tischlerarbeiten" },
-    { section: 8, heading: /Summe\s+8\.\s+Reinigung\s+([\d.]+,\d{2})\s*€/i, cluster: "Reinigung", description: "Reinigung" },
+    { section: 7, heading: /Summe\s+7\.\s+Tischlerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Türen", description: "Tischlerarbeiten" },
+    { section: 8, heading: /Summe\s+8\.\s+Reinigung\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Reinigung" },
     { section: 9, heading: /Summe\s+9\.\s+(?:Stundenlohn\s+)?Zusatzarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Zusatzarbeiten" }
   ];
 

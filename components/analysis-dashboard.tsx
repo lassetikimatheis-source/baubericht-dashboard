@@ -66,6 +66,12 @@ type CostBasisMode =
   | "finalOnly"
   | "withoutProgress"
   | "manual";
+interface ObjectPageFilters {
+  year: string;
+  trade: string;
+  documentType: string;
+  object: string;
+}
 type TextFieldKey =
   | "fund"
   | "objectNumber"
@@ -197,6 +203,16 @@ interface MeasureRow {
   lineItems: LineItemView[];
 }
 
+interface TradeGroupRow {
+  cluster: MeasureCluster;
+  count: number;
+  total: number;
+  offer: number;
+  invoice: number;
+  share: number | null;
+  status: string;
+}
+
 interface LineItemView {
   position: string;
   description: string | null;
@@ -273,6 +289,40 @@ const costBasisOptions: Array<{ value: CostBasisMode; label: string }> = [
   { value: "finalOnly", label: "Nur finale Rechnungen" },
   { value: "withoutProgress", label: "Ohne Abschlagsrechnungen" },
   { value: "manual", label: "Manuelle Auswahl" }
+];
+
+const emptyObjectPageFilters: ObjectPageFilters = {
+  year: "",
+  trade: "",
+  documentType: "",
+  object: ""
+};
+
+const standardTradeCatalog: MeasureCluster[] = [
+  "Dach",
+  "Fassade",
+  "Fenster",
+  "Türen",
+  "Balkone",
+  "Heizung",
+  "Sanitär",
+  "Elektro",
+  "Brandschutz",
+  "Aufzüge",
+  "Treppenhäuser",
+  "Keller",
+  "Außenanlagen",
+  "Tiefgarage",
+  "Malerarbeiten",
+  "Bodenbeläge",
+  "Dachentwässerung",
+  "Wärmedämmung",
+  "Schornstein",
+  "Trinkwasser",
+  "Abwasser",
+  "Lüftung",
+  "Photovoltaik",
+  "Sonstiges"
 ];
 
 export function AnalysisDashboard() {
@@ -1800,6 +1850,7 @@ function ObjectsView({
 }) {
   const [objectSearch, setObjectSearch] = useState("");
   const [costBasis, setCostBasis] = useState<CostBasisMode>("all");
+  const [objectPageFilters, setObjectPageFilters] = useState<ObjectPageFilters>(emptyObjectPageFilters);
   const [manualCostDocumentIds, setManualCostDocumentIds] = useState<Set<string>>(new Set());
   const detectedGroups = groupByObject(documents);
   const filteredObjects = objects.filter((object) =>
@@ -1808,7 +1859,8 @@ function ObjectsView({
   const selectedEntrances = selectedObject ? entrances.filter((entrance) => entrance.objectId === selectedObject.id) : [];
   const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
   const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
-  const selectedCostDocuments = applyCostBasis(selectedDocuments, costBasis, manualCostDocumentIds);
+  const objectFilteredDocuments = applyObjectPageFilters(selectedDocuments, objectPageFilters);
+  const selectedCostDocuments = applyCostBasis(objectFilteredDocuments, costBasis, manualCostDocumentIds);
   const toggleManualCostDocument = (documentId: string, checked: boolean) => {
     setManualCostDocumentIds((current) => {
       const next = new Set(current);
@@ -1878,6 +1930,11 @@ function ObjectsView({
                 onChange={setCostBasis}
                 consideredCount={selectedCostDocuments.length}
               />
+              <ObjectPageFilterBar
+                filters={objectPageFilters}
+                onChange={setObjectPageFilters}
+                documents={selectedDocuments}
+              />
               <div className="tabs">
                 {objectTabs.map((tab) => (
                   <button
@@ -1921,6 +1978,7 @@ function ObjectsView({
               {activeTab === "documents" ? (
                 <ObjectDocumentsTab
                   documents={selectedDocuments}
+                  costDocuments={objectFilteredDocuments}
                   costBasis={costBasis}
                   manualCostDocumentIds={manualCostDocumentIds}
                   onToggleCostDocument={toggleManualCostDocument}
@@ -1990,7 +2048,7 @@ function ObjectDetailHeader({
   images: string[];
 }) {
   const grossCost = sumValues(documents.map((document) => document.totalCost.value));
-  const measureCount = buildMeasureRows(documents).length || documents.reduce((sum, document) => sum + document.clusters.length, 0);
+  const measureCount = standardTradeCatalog.length;
   const status = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Aktiv" : "k.A.";
   const dataQuality = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
   return (
@@ -2148,19 +2206,21 @@ function ObjectProjectsTab({ projects }: { projects: ProjectRecord[] }) {
 
 function ObjectDocumentsTab({
   documents,
+  costDocuments,
   costBasis,
   manualCostDocumentIds,
   onToggleCostDocument,
   onSelect
 }: {
   documents: ObjectAnalysis[];
+  costDocuments: ObjectAnalysis[];
   costBasis: CostBasisMode;
   manualCostDocumentIds: Set<string>;
   onToggleCostDocument: (documentId: string, checked: boolean) => void;
   onSelect: (id: string) => void;
 }) {
   const [filters, setFilters] = useState({ year: "", trade: "", type: "", object: "" });
-  const basisDocuments = costBasis === "manual" ? documents : applyCostBasis(documents, costBasis, manualCostDocumentIds);
+  const basisDocuments = costBasis === "manual" ? costDocuments : applyCostBasis(costDocuments, costBasis, manualCostDocumentIds);
   const filteredDocuments = basisDocuments.filter((document) => (
     (!filters.year || fieldOrUnknown(document.year).includes(filters.year)) &&
     (!filters.trade || formatClusters(document).toLowerCase().includes(filters.trade.toLowerCase())) &&
@@ -2342,6 +2402,24 @@ function MeasureDetailPanel({
   );
 }
 
+function measureRowFromTradeGroup(group: TradeGroupRow): MeasureRow {
+  return {
+    id: group.cluster,
+    documentId: "",
+    measureId: "",
+    cluster: group.cluster,
+    description: group.count > 0 ? `${formatNumber(group.count)} Dokument(e) zugeordnet` : "Kein Dokument zugeordnet",
+    netCost: null,
+    vatCost: null,
+    grossCost: group.total,
+    source: group.count > 0 ? "Dokumente / KI-Zuordnung" : "Standard-Gewerkekatalog",
+    status: group.status,
+    section: group.cluster,
+    confidence: group.count > 0 ? "Dokumentenbasiert" : "k.A.",
+    lineItems: []
+  };
+}
+
 function ObjectCostsTab({
   object,
   entrances,
@@ -2385,10 +2463,12 @@ function ObjectCostsTab({
         <CostMetric label="Kosten je m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, objectTotal))} />
       </div>
       {documents.some(isProgressInvoiceDocument) && documents.some(isFinalInvoiceDocument) ? (
-        <div className="uploadStatus">
-          Schlussrechnung enthält vermutlich bereits vorherige Abschlagszahlungen. Bitte keine doppelte Kostenaddition vornehmen.
-        </div>
-        <p className="costBasisHint">Kostenbasis: {costBasisLabel(costBasis)} · {formatNumber(documents.length)} Dokumente berücksichtigt</p>
+        <>
+          <div className="uploadStatus">
+            Schlussrechnung enthält vermutlich bereits vorherige Abschlagszahlungen. Bitte keine doppelte Kostenaddition vornehmen.
+          </div>
+          <p className="costBasisHint">Kostenbasis: aktuelle Auswahl · {formatNumber(documents.length)} Dokumente berücksichtigt</p>
+        </>
       ) : null}
       <div className="tableWrap compactTable">
         <table>
@@ -2452,22 +2532,19 @@ function ObjectCostsTab({
 
 function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
   const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
-  const rows = buildMeasureRows(documents);
-  const totalGross = sumValues(rows.map((row) => row.grossCost));
-  const chartRows: TradeCostChartRow[] = rows.map((row) => ({
-    id: row.id,
+  const groups = groupByCluster(documents);
+  const totalGross = groups.reduce((sum, row) => sum + row.total, 0);
+  const chartRows: TradeCostChartRow[] = groups.map((row) => ({
+    id: row.cluster,
     cluster: row.cluster,
-    beschreibung: row.description,
-    kosten_brutto: row.grossCost,
-    anteil_prozent: row.grossCost !== null && totalGross ? (row.grossCost / totalGross) * 100 : null,
-    quelle: row.source,
+    beschreibung: row.count > 0 ? `${formatNumber(row.count)} Dokument(e) zugeordnet` : "Kein Dokument zugeordnet",
+    kosten_brutto: row.total,
+    anteil_prozent: row.share,
+    quelle: row.count > 0 ? "Dokumente / KI-Zuordnung" : "Standard-Gewerkekatalog",
     status: row.status
   }));
-  const groups = groupByCluster(documents).map((entry) => ({
-    ...entry,
-    share: entry.total !== null && totalGross ? (entry.total / totalGross) * 100 : null
-  }));
-  const selectedRow = rows.find((row) => row.id === selectedMeasureId || row.cluster === selectedMeasureId) ?? null;
+  const selectedGroup = groups.find((row) => row.cluster === selectedMeasureId) ?? null;
+  const selectedRow = selectedGroup ? measureRowFromTradeGroup(selectedGroup) : null;
 
   return (
     <div className="tradesBoard">
@@ -2481,7 +2558,7 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
         </div>
         <ResponsiveContainer width="100%" height={260}>
           <PieChart>
-            <Pie data={groups.filter((entry) => entry.total !== null)} dataKey="total" nameKey="cluster" innerRadius={62} outerRadius={96} paddingAngle={2}>
+            <Pie data={groups.filter((entry) => entry.total > 0)} dataKey="total" nameKey="cluster" innerRadius={62} outerRadius={96} paddingAngle={2}>
               {groups.map((entry, index) => <Cell key={entry.cluster} fill={index === 0 ? "#FF6E42" : chartPalette[index % chartPalette.length]} />)}
             </Pie>
             <Tooltip formatter={(value) => formatNullableCurrency(Number(value))} />
@@ -2497,14 +2574,16 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
         </div>
         <div className="tableWrap compactTable">
           <table>
-            <thead><tr><th>Gewerk</th><th>Gesamtkosten</th><th>Anteil</th><th>Anzahl Rechnungen</th></tr></thead>
+            <thead><tr><th>Gewerk</th><th>Dokumente</th><th>Gesamtkosten</th><th>Anteil</th><th>Angebotssumme</th><th>Rechnungssumme</th></tr></thead>
             <tbody>
-              {groups.length === 0 ? <tr><td colSpan={4}>k.A.</td></tr> : groups.map((entry) => (
+              {groups.map((entry) => (
                 <tr key={entry.cluster} onClick={() => setSelectedMeasureId(entry.cluster)}>
                   <td>{tradeIcon(entry.cluster)} {entry.cluster}</td>
+                  <td>{formatNumber(entry.count)}</td>
                   <td>{formatNullableCurrency(entry.total)}</td>
                   <td>{entry.share === null ? "k.A." : `${formatNullableNumber(roundMoney(entry.share))} %`}</td>
-                  <td>{formatNumber(entry.count)}</td>
+                  <td>{formatNullableCurrency(entry.offer)}</td>
+                  <td>{formatNullableCurrency(entry.invoice)}</td>
                 </tr>
               ))}
             </tbody>
@@ -2868,6 +2947,30 @@ function CostBasisControl({
         </select>
       </label>
       <p>Kostenbasis: {costBasisLabel(value)} · {formatNumber(consideredCount)} Dokumente berücksichtigt</p>
+    </section>
+  );
+}
+
+function ObjectPageFilterBar({
+  filters,
+  onChange,
+  documents
+}: {
+  filters: ObjectPageFilters;
+  onChange: (filters: ObjectPageFilters) => void;
+  documents: ObjectAnalysis[];
+}) {
+  const options = buildObjectPageFilterOptions(documents);
+  const hasActiveFilter = Object.values(filters).some(Boolean);
+  return (
+    <section className="objectPageFilterBar" aria-label="Objektfilter">
+      <FilterSelect label="Jahr" value={filters.year} options={options.years} onChange={(year) => onChange({ ...filters, year })} />
+      <FilterSelect label="Gewerk" value={filters.trade} options={options.trades} onChange={(trade) => onChange({ ...filters, trade })} />
+      <FilterSelect label="Rechnungsart" value={filters.documentType} options={options.documentTypes} onChange={(documentType) => onChange({ ...filters, documentType })} />
+      <FilterSelect label="Objekt" value={filters.object} options={options.objects} onChange={(object) => onChange({ ...filters, object })} />
+      <button className="buttonSecondary" type="button" onClick={() => onChange(emptyObjectPageFilters)} disabled={!hasActiveFilter}>
+        Filter zurücksetzen
+      </button>
     </section>
   );
 }
@@ -3956,6 +4059,7 @@ function matchesFilters(
 
   return Object.entries(filters).every(([key, value]) => {
     if (!value.trim()) return true;
+    if (key === "cluster") return documentMatchesTrade(document, value);
     return haystacks[key as keyof Filters].toLowerCase().includes(value.trim().toLowerCase());
   });
 }
@@ -3981,7 +4085,10 @@ function buildFilterOptions(
     providers: uniqueOptions(documents.map((document) => String(unwrap(document.provider) ?? ""))),
     apartments: uniqueOptions(documents.map((document) => String(unwrap(document.apartmentNumber) ?? ""))),
     locations: uniqueOptions(documents.map((document) => String(unwrap(document.location) ?? ""))),
-    clusters: uniqueOptions(documents.flatMap((document) => document.clusters.map((cluster) => String(unwrap(cluster.cluster) ?? "")))),
+    clusters: uniqueOptions([
+      ...standardTradeCatalog,
+      ...documents.flatMap((document) => document.clusters.map((cluster) => String(unwrap(cluster.cluster) ?? "")))
+    ]),
     qualities: uniqueOptions(documents.map((document) => String(unwrap(document.dataQuality) ?? ""))),
     statuses: uniqueOptions(documents.map((document) => projectFor(document)?.status ?? ""))
   };
@@ -4166,7 +4273,7 @@ function overviewRowFromDocuments({
   const grossCost = sumValues(documents.map((document) => document.totalCost.value));
   const renovatedCount = firstNumber(manualRenovatedCount, sumValues(documents.map((document) => document.renovatedApartmentCount.value)));
   const livingArea = firstNumber(manualLivingArea, sumValues(documents.map((document) => document.livingAreaSqm.value)));
-  const apartments = collectApartments(documents, rowProject);
+  const apartments = collectApartments(documents, rowProject ?? undefined);
 
   return {
     id,
@@ -4178,7 +4285,7 @@ function overviewRowFromDocuments({
     apartments,
     renovatedCount,
     clusters: collectClusters(documents),
-    description: collectDescriptions(documents, rowProject),
+    description: collectDescriptions(documents, rowProject ?? undefined),
     netCost,
     grossCost,
     costPerRenovatedUnit: grossCost !== null && renovatedCount ? roundMoney(grossCost / renovatedCount) : null,
@@ -4309,7 +4416,7 @@ function documentBelongsToObject(
   if (assignedProject?.objectId) return assignedProject.objectId === object.id;
   const documentObjectNumber = fieldOrUnknown(document.objectNumber);
   const documentAddress = fieldOrUnknown(document.objectAddress).toLowerCase();
-  return (
+  return Boolean(
     (object.objectNumber && documentObjectNumber !== "k.A." && object.objectNumber === documentObjectNumber) ||
     (object.address && documentAddress !== "k.a." && documentAddress.includes(object.address.toLowerCase())) ||
     (object.objectName && documentAddress !== "k.a." && documentAddress.includes(object.objectName.toLowerCase()))
@@ -4329,24 +4436,150 @@ function documentBelongsToEntrance(
   return label !== "k.a." && address.includes(label);
 }
 
-function groupByCluster(documents: ObjectAnalysis[]) {
-  const groups = new Map<string, { count: number; total: number | null }>();
+function applyObjectPageFilters(documents: ObjectAnalysis[], filters: ObjectPageFilters): ObjectAnalysis[] {
+  const filtered = documents.filter((document) => (
+    (!filters.year || fieldOrUnknown(document.year).includes(filters.year)) &&
+    (!filters.trade || documentMatchesTrade(document, filters.trade)) &&
+    (!filters.documentType || fieldOrUnknown(document.documentType).toLowerCase().includes(filters.documentType.toLowerCase())) &&
+    (!filters.object || `${fieldOrUnknown(document.objectNumber)} ${fieldOrUnknown(document.objectAddress)}`.toLowerCase().includes(filters.object.toLowerCase()))
+  ));
+  return filters.trade ? filtered.map((document) => scopeDocumentToTrade(document, filters.trade)) : filtered;
+}
+
+function buildObjectPageFilterOptions(documents: ObjectAnalysis[]) {
+  return {
+    years: uniqueOptions(documents.map((document) => String(document.year.value ?? ""))),
+    trades: standardTradeCatalog,
+    documentTypes: uniqueOptions(documents.map((document) => fieldOrUnknown(document.documentType))),
+    objects: uniqueOptions(documents.flatMap((document) => [fieldOrUnknown(document.objectNumber), fieldOrUnknown(document.objectAddress)]))
+  };
+}
+
+function normalizeTradeCluster(value: string, description = ""): MeasureCluster {
+  const text = `${value} ${description}`.toLowerCase();
+  if (standardTradeCatalog.includes(value as MeasureCluster)) return value as MeasureCluster;
+  if (/dachentw[aä]sser|regenrinne|fallrohr/.test(text)) return "Dachentwässerung";
+  if (/dach|ziegel|abdichtung|attika/.test(text)) return "Dach";
+  if (/fassade|putz|wdvs/.test(text)) return "Fassade";
+  if (/w[aä]rmed[aä]mm|dämm|daemm/.test(text)) return "Wärmedämmung";
+  if (/fenster/.test(text)) return "Fenster";
+  if (/t[uü]r|tuer|tischler/.test(text)) return "Türen";
+  if (/balkon|loggia/.test(text)) return "Balkone";
+  if (/heizung|therme|kessel|radiator|fernw[aä]rme/.test(text)) return "Heizung";
+  if (/trinkwasser/.test(text)) return "Trinkwasser";
+  if (/abwasser|kanal/.test(text)) return "Abwasser";
+  if (/sanit[aä]r|bad|fliesen|estrich/.test(text)) return "Sanitär";
+  if (/elektro|z[aä]hler|installation|leitung/.test(text)) return "Elektro";
+  if (/brand|rauchmelder|rwa|feuer/.test(text)) return "Brandschutz";
+  if (/aufzug|lift/.test(text)) return "Aufzüge";
+  if (/treppenhaus|treppe|gel[aä]nder/.test(text)) return "Treppenhäuser";
+  if (/keller/.test(text)) return "Keller";
+  if (/außen|aussen|garten|hof|pflaster|gr[uü]n/.test(text)) return "Außenanlagen";
+  if (/tiefgarage|garage|stellplatz/.test(text)) return "Tiefgarage";
+  if (/maler|anstrich|tapezier/.test(text)) return "Malerarbeiten";
+  if (/boden|belag|parkett|vinyl|sockel/.test(text)) return "Bodenbeläge";
+  if (/schornstein|kamin/.test(text)) return "Schornstein";
+  if (/l[uü]ftung|ventilat/.test(text)) return "Lüftung";
+  if (/photovoltaik|solar|pv\b/.test(text)) return "Photovoltaik";
+  return "Sonstiges";
+}
+
+function documentMatchesTrade(document: ObjectAnalysis, trade: string): boolean {
+  const normalizedTrade = normalizeTradeCluster(trade, "");
+  return getDocumentTradeNames(document).some((name) => normalizeTradeCluster(name, name) === normalizedTrade);
+}
+
+function scopeDocumentToTrade(document: ObjectAnalysis, trade: string): ObjectAnalysis {
+  const normalizedTrade = normalizeTradeCluster(trade, "");
+  const matchingClusters = document.clusters.filter((cluster) =>
+    normalizeTradeCluster(fieldOrUnknown(cluster.cluster as ExtractedField<string>), fieldOrUnknown(cluster.description)) === normalizedTrade
+  );
+  const matchingDetails = (document.measureDetails ?? []).filter((detail) =>
+    normalizeTradeCluster(detail.cluster, detail.beschreibung) === normalizedTrade
+  );
+  const detailTotal = sumValues(matchingDetails.map((detail) => detail.summe));
+  const clusterTotal = sumValues(matchingClusters.map((cluster) => cluster.totalCost.value));
+  const scopedTotal = firstNumber(detailTotal, clusterTotal, document.totalCost.value);
+  const ratio = document.totalCost.value && scopedTotal !== null ? scopedTotal / document.totalCost.value : null;
+
+  return {
+    ...document,
+    clusters: matchingClusters.length ? matchingClusters : document.clusters,
+    measureDetails: matchingDetails.length ? matchingDetails : document.measureDetails,
+    totalCost: scopedTotal === null ? document.totalCost : { ...document.totalCost, value: roundMoney(scopedTotal) },
+    netCost: ratio === null ? document.netCost : scaleNumberField(document.netCost, ratio),
+    vatCost: ratio === null ? document.vatCost : scaleNumberField(document.vatCost, ratio)
+  };
+}
+
+function scaleNumberField(field: ExtractedField<number>, ratio: number): ExtractedField<number> {
+  return field.value === null ? field : {
+    ...field,
+    value: roundMoney(field.value * ratio)
+  };
+}
+
+function getDocumentTradeNames(document: ObjectAnalysis): string[] {
+  const names = [
+    ...document.clusters.map((cluster) => fieldOrUnknown(cluster.cluster as ExtractedField<string>)),
+    ...(document.measureDetails ?? []).map((detail) => detail.cluster),
+    fieldOrUnknown(document.measureDescription)
+  ].filter((value) => value && value !== "k.A.");
+  return names.length ? names : ["Sonstiges"];
+}
+
+function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
+  const groups = new Map<MeasureCluster, TradeGroupRow>();
+  standardTradeCatalog.forEach((cluster) => {
+    groups.set(cluster, {
+      cluster,
+      count: 0,
+      total: 0,
+      offer: 0,
+      invoice: 0,
+      share: null,
+      status: "Keine Dokumente"
+    });
+  });
+
   documents.forEach((document) => {
-    const clusters = document.clusters.length ? document.clusters : [{ cluster: manualField("k.A."), totalCost: document.totalCost }];
+    const clusters = document.clusters.length ? document.clusters : [{ cluster: manualField("Sonstiges"), totalCost: document.totalCost, description: document.measureDescription }];
     clusters.forEach((cluster) => {
-      const name = fieldOrUnknown(cluster.cluster as ExtractedField<string>);
-      const current = groups.get(name) ?? { count: 0, total: null };
+      const description = "description" in cluster ? fieldOrUnknown(cluster.description as ExtractedField<string>) : "";
+      const name = normalizeTradeCluster(fieldOrUnknown(cluster.cluster as ExtractedField<string>), description);
+      const current = groups.get(name) ?? {
+        cluster: name,
+        count: 0,
+        total: 0,
+        offer: 0,
+        invoice: 0,
+        share: null,
+        status: "Keine Dokumente"
+      };
+      const value = cluster.totalCost.value ?? document.totalCost.value ?? 0;
+      const nextTotal = current.total + value;
       groups.set(name, {
+        ...current,
         count: current.count + 1,
-        total: sumValues([current.total, cluster.totalCost.value])
+        total: nextTotal,
+        offer: isOfferDocument(document) ? current.offer + value : current.offer,
+        invoice: isInvoiceLikeDocument(document) ? current.invoice + value : current.invoice,
+        status: germanizeUiText(fieldOrUnknown(document.dataQuality))
       });
     });
   });
-  return Array.from(groups.entries()).map(([cluster, values]) => ({ cluster, ...values }));
+
+  const total = Array.from(groups.values()).reduce((sum, entry) => sum + entry.total, 0);
+  return Array.from(groups.values())
+    .map((entry) => ({
+      ...entry,
+      share: total > 0 ? (entry.total / total) * 100 : null
+    }))
+    .sort((a, b) => b.total - a.total || standardTradeCatalog.indexOf(a.cluster) - standardTradeCatalog.indexOf(b.cluster));
 }
 
 function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
-  const groups = new Map<string, {
+  const groups = new Map<MeasureCluster, {
     count: number;
     offer: number | null;
     progress: number | null;
@@ -4356,10 +4589,23 @@ function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
     hasOffer: boolean;
   }>();
 
+  standardTradeCatalog.forEach((cluster) => {
+    groups.set(cluster, {
+      count: 0,
+      offer: null,
+      progress: null,
+      final: null,
+      hasFinal: false,
+      hasProgress: false,
+      hasOffer: false
+    });
+  });
+
   documents.forEach((document) => {
-    const clusters = document.clusters.length ? document.clusters : [{ cluster: manualField("k.A."), totalCost: document.totalCost }];
+    const clusters = document.clusters.length ? document.clusters : [{ cluster: manualField("Sonstiges"), totalCost: document.totalCost, description: document.measureDescription }];
     clusters.forEach((cluster) => {
-      const name = fieldOrUnknown(cluster.cluster as ExtractedField<string>);
+      const description = "description" in cluster ? fieldOrUnknown(cluster.description as ExtractedField<string>) : "";
+      const name = normalizeTradeCluster(fieldOrUnknown(cluster.cluster as ExtractedField<string>), description);
       const current = groups.get(name) ?? {
         count: 0,
         offer: null,
@@ -4375,8 +4621,8 @@ function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
         count: current.count + 1,
         offer: isOfferDocument(document) ? sumValues([current.offer, value]) : current.offer,
         progress: isProgressInvoiceDocument(document) ? sumValues([current.progress, value]) : current.progress,
-        final: (isFinalInvoiceDocument(document) || isInvoiceDocument(document)) ? sumValues([current.final, value]) : current.final,
-        hasFinal: current.hasFinal || isFinalInvoiceDocument(document) || isInvoiceDocument(document),
+        final: isInvoiceLikeDocument(document) ? sumValues([current.final, value]) : current.final,
+        hasFinal: current.hasFinal || isInvoiceLikeDocument(document),
         hasProgress: current.hasProgress || isProgressInvoiceDocument(document),
         hasOffer: current.hasOffer || isOfferDocument(document)
       });
@@ -4523,7 +4769,7 @@ function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
           id: `${document.id}-detail-${index}`,
           documentId: document.id,
           measureId: measure?.id ?? "",
-          cluster: germanizeUiText(detail.cluster),
+          cluster: normalizeTradeCluster(detail.cluster, detail.beschreibung),
           description: germanizeUiText(detail.beschreibung || "k.A."),
           netCost: null,
           vatCost: null,
@@ -4542,7 +4788,7 @@ function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
     }
 
     return document.clusters.map((measure, index) => {
-      const cluster = germanizeUiText(fieldOrUnknown(measure.cluster));
+      const cluster = normalizeTradeCluster(fieldOrUnknown(measure.cluster), fieldOrUnknown(measure.description));
       const detail = document.measureDetails?.find((entry) => entry.cluster === measure.cluster.value || entry.abschnitt === measure.description.value);
       const source = measure.totalCost.sources[0]?.textSnippet
         ?? detail?.quelle
@@ -4658,6 +4904,10 @@ function isCreditDocument(document: ObjectAnalysis): boolean {
 function isInvoiceDocument(document: ObjectAnalysis): boolean {
   const type = documentTypeValue(document);
   return /rechnung|eingangsrechnung/i.test(type) && !isProgressInvoiceDocument(document) && !isFinalInvoiceDocument(document);
+}
+
+function isInvoiceLikeDocument(document: ObjectAnalysis): boolean {
+  return isInvoiceDocument(document) || isIncomingInvoiceDocument(document) || isFinalInvoiceDocument(document) || isProgressInvoiceDocument(document);
 }
 
 function isIncomingInvoiceDocument(document: ObjectAnalysis): boolean {
