@@ -251,9 +251,9 @@ const emptyFilters: Filters = {
   status: ""
 };
 
-const navItems: Array<{ key: ViewKey; label: string }> = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "map", label: "Karte" },
+const navItems: Array<{ key: ViewKey; label: string; locked?: boolean }> = [
+  { key: "dashboard", label: "Dashboard", locked: true },
+  { key: "map", label: "Karte", locked: true },
   { key: "objects", label: "Objekte" },
   { key: "upload", label: "Dokumente" },
   { key: "reports", label: "Auswertungen" },
@@ -327,7 +327,7 @@ const standardTradeCatalog: MeasureCluster[] = [
 
 export function AnalysisDashboard() {
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
-  const [view, setView] = useState<ViewKey>("dashboard");
+  const [view, setView] = useState<ViewKey>("objects");
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
   const [entrances, setEntrances] = useState<EntranceRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -769,11 +769,21 @@ export function AnalysisDashboard() {
           {navItems.map((item) => (
             <button
               key={item.key}
-              className={view === item.key ? "navButton navButtonActive" : "navButton"}
+              className={[
+                "navButton",
+                view === item.key ? "navButtonActive" : "",
+                item.locked ? "navButtonLocked" : ""
+              ].filter(Boolean).join(" ")}
               type="button"
-              onClick={() => setView(item.key)}
+              disabled={item.locked}
+              aria-disabled={item.locked}
+              title={item.locked ? "Dieser Bereich ist gesperrt" : item.label}
+              onClick={() => {
+                if (!item.locked) setView(item.key);
+              }}
               >
-              {item.label}
+              <span>{item.label}</span>
+              {item.locked ? <span className="navLock" aria-hidden="true">🔒</span> : null}
             </button>
           ))}
         </nav>
@@ -837,6 +847,7 @@ export function AnalysisDashboard() {
                 onCreateEntrance={createEntrance}
                 onDelete={deleteObject}
                 onDeleteEntrance={deleteEntrance}
+                onDeleteDocument={deleteDocument}
                 onSetTab={setObjectTab}
                 onUpdateObject={updateObject}
                 onUpdateEntrance={updateEntrance}
@@ -1819,6 +1830,7 @@ function ObjectsView({
   onCreateEntrance,
   onDelete,
   onDeleteEntrance,
+  onDeleteDocument,
   onSetTab,
   onUpdateObject,
   onUpdateEntrance,
@@ -1840,6 +1852,7 @@ function ObjectsView({
   onCreateEntrance: (objectId: string) => void;
   onDelete: (id: string) => void;
   onDeleteEntrance: (id: string) => void;
+  onDeleteDocument: (id: string) => void;
   onSetTab: (tab: ObjectTab) => void;
   onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
   onUpdateEntrance: (id: string, field: keyof EntranceRecord, value: string) => void;
@@ -1853,9 +1866,11 @@ function ObjectsView({
   const [objectPageFilters, setObjectPageFilters] = useState<ObjectPageFilters>(emptyObjectPageFilters);
   const [manualCostDocumentIds, setManualCostDocumentIds] = useState<Set<string>>(new Set());
   const detectedGroups = groupByObject(documents);
-  const filteredObjects = objects.filter((object) =>
-    `${object.objectNumber} ${object.objectName} ${object.address} ${object.fund}`.toLowerCase().includes(objectSearch.toLowerCase())
-  );
+  const filteredObjects = objects
+    .filter((object) =>
+      `${object.objectNumber} ${object.objectName} ${object.address} ${object.fund}`.toLowerCase().includes(objectSearch.toLowerCase())
+    )
+    .sort(compareObjectsByNumber);
   const selectedEntrances = selectedObject ? entrances.filter((entrance) => entrance.objectId === selectedObject.id) : [];
   const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
   const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
@@ -1983,6 +1998,7 @@ function ObjectsView({
                   manualCostDocumentIds={manualCostDocumentIds}
                   onToggleCostDocument={toggleManualCostDocument}
                   onSelect={onSelectDocument}
+                  onDelete={onDeleteDocument}
                 />
               ) : null}
               {activeTab === "images" ? (
@@ -2210,7 +2226,8 @@ function ObjectDocumentsTab({
   costBasis,
   manualCostDocumentIds,
   onToggleCostDocument,
-  onSelect
+  onSelect,
+  onDelete
 }: {
   documents: ObjectAnalysis[];
   costDocuments: ObjectAnalysis[];
@@ -2218,6 +2235,7 @@ function ObjectDocumentsTab({
   manualCostDocumentIds: Set<string>;
   onToggleCostDocument: (documentId: string, checked: boolean) => void;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   const [filters, setFilters] = useState({ year: "", trade: "", type: "", object: "" });
   const basisDocuments = costBasis === "manual" ? costDocuments : applyCostBasis(costDocuments, costBasis, manualCostDocumentIds);
@@ -2254,7 +2272,19 @@ function ObjectDocumentsTab({
             {isProgressInvoiceDocument(document) ? <p>{fieldOrUnknown(document.installmentNumber ?? emptyField<string>())}</p> : null}
             <strong>{formatCurrency(document.totalCost)}</strong>
             <em>{formatKiStatus(document)}</em>
-            <button type="button">PDF ansehen</button>
+            <div className="documentCardActions">
+              <button type="button">PDF ansehen</button>
+              <button
+                className="buttonDanger"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete(document.id);
+                }}
+              >
+                Löschen
+              </button>
+            </div>
           </article>
         ))}
       </div>
@@ -4962,6 +4992,22 @@ function emptyIfUnknown(value: string): string {
 
 function firstKnown(...values: string[]): string {
   return values.find((value) => value && value !== "k.A.") ?? "";
+}
+
+function compareObjectsByNumber(left: ObjectRecord, right: ObjectRecord): number {
+  const leftNumber = parseObjectNumber(left.objectNumber);
+  const rightNumber = parseObjectNumber(right.objectNumber);
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) return leftNumber - rightNumber;
+  if (leftNumber !== null && rightNumber === null) return -1;
+  if (leftNumber === null && rightNumber !== null) return 1;
+  return objectLabel(left).localeCompare(objectLabel(right), "de", { numeric: true, sensitivity: "base" });
+}
+
+function parseObjectNumber(value: string): number | null {
+  const match = value.match(/\d+/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function objectLabel(object: ObjectRecord): string {

@@ -1932,6 +1932,25 @@ select {
   transform: translateY(-1px);
 }
 
+.documentCardActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.buttonDanger {
+  border-color: #f1c7bd;
+  background: #fff7f4;
+  color: #a23d20;
+}
+
+.buttonDanger:hover {
+  border-color: #ff6e42;
+  background: #fff0ea;
+  color: #8a2f17;
+}
+
 .measureCardOpen {
   border-color: var(--navy);
 }
@@ -4105,6 +4124,31 @@ body {
 .navButton:hover::before {
   border-color: rgba(255, 255, 255, 0.42);
   color: #fff;
+}
+
+.navButtonLocked,
+.navButtonLocked:hover {
+  border-color: transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.48);
+  box-shadow: none;
+  transform: none;
+}
+
+.navButtonLocked::before,
+.navButtonLocked:hover::before {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.navButton > span:first-child {
+  flex: 1;
+}
+
+.navLock {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.85;
 }
 
 .sideNote {
