@@ -176,6 +176,8 @@ async function runOpenAiExtractionPerDocument(
             "{ objects: [{ confidenceScore:{value,evidence,confidence}, projektvorschlag:{value,evidence,confidence}, zuordnungsvorschlag:{value,evidence,confidence}, dokumenttyp:{value,evidence,confidence}, abschlagsnummer:{value,evidence,confidence}, projektart:{value,evidence,confidence}, anbieter:{value,evidence,confidence}, year:{value,evidence,confidence}, datum:{value,evidence,confidence}, dokumentnummer:{value,evidence,confidence}, fund:{value,evidence,confidence}, objectNumber:{value,evidence,confidence}, wohnungsnummer:{value,evidence,confidence}, objectAddress:{value,evidence,confidence}, lage:{value,evidence,confidence}, renovatedApartmentCount:{value,evidence,confidence}, renovatedApartments:{value,evidence,confidence}, livingAreaSqm:{value,evidence,confidence}, totalAreaSqm:{value,evidence,confidence}, renovatedAreaSqm:{value,evidence,confidence}, kosten_netto:{value,evidence,confidence}, mwst:{value,evidence,confidence}, kosten_brutto:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, costPerApartment:{value,evidence,confidence}, costPerSqm:{value,evidence,confidence}, beschreibung_massnahmen:{value,evidence,confidence}, datenqualitaet:{value,evidence,confidence}, fehlende_angaben:{value,evidence,confidence}, measures:[{ cluster:{value,evidence,confidence}, description:{value,evidence,confidence}, totalCost:{value,evidence,confidence}, allocation:{value,evidence,confidence} }] }], issues: [] }",
             "Erlaubte dokumenttyp-Werte: Angebot, Auftrag, Eingangsrechnung, Rechnung, Abschlagsrechnung, Teilrechnung, Schlussrechnung, Gutschrift, Nachtrag, Sonstiges.",
             "Erkenne Abschlagsrechnungen streng: Abschlagsrechnung, 1. Abschlagsrechnung, 2. Abschlagsrechnung, Teilrechnung, Teilzahlung, Akonto, Vorauszahlung, Zahlung gemaess Baufortschritt oder Abschlag. Wenn erkennbar, dokumenttyp Abschlagsrechnung und abschlagsnummer z.B. 1. Abschlag setzen.",
+            "anbieter ist ausschliesslich die ausfuehrende Firma oder der Lieferant, z.B. eine GmbH, AG, KG oder GbR. Leistungsbereiche wie Fliesenarbeiten, Malerarbeiten, Elektroarbeiten, Bodenbelagsarbeiten, Sanitaer oder Heizung niemals als anbieter ausgeben.",
+            "Leistungsbereiche gehoeren in measures, massnahmen_details, cluster und beschreibung_massnahmen, nicht in anbieter.",
             "Erlaubte cluster: Dach, Fassade, Fenster, Türen, Balkone, Heizung, Sanitär, Elektro, Brandschutz, Aufzüge, Treppenhäuser, Keller, Außenanlagen, Tiefgarage, Malerarbeiten, Bodenbeläge, Dachentwässerung, Wärmedämmung, Schornstein, Trinkwasser, Abwasser, Lüftung, Photovoltaik, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
             "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitär - Heizungsarbeiten -> Sanitär / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Türen / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
@@ -282,7 +284,7 @@ function normalizeObjects(
       documentType: verifiedField(classifyDocumentTypeField(object.dokumenttyp, document), document, "Dokumenttyp", issues),
       installmentNumber: metaStringField(object.abschlagsnummer, document, detectInstallmentNumber(document.text)?.value ?? null),
       projectType: verifiedField(object.projektart, document, "Projektart", issues),
-      provider: verifiedField(object.anbieter, document, "Anbieter", issues),
+      provider: verifiedField(cleanProviderField(object.anbieter, document, issues), document, "Anbieter", issues),
       year: verifiedField(object.year, document, "Jahr", issues),
       documentDate: verifiedField(object.datum, document, "Datum", issues),
       documentNumber: verifiedField(object.dokumentnummer, document, "Dokumentnummer", issues),
@@ -371,6 +373,30 @@ function verifiedField<T>(
     sources: [sourceFromEvidence(document, evidence, field.confidence ?? 0.8)],
     confidence: field.confidence ?? 0.8
   };
+}
+
+function cleanProviderField(
+  field: AiField<string> | undefined,
+  document: ParsedDocument,
+  issues: string[]
+): AiField<string> | undefined {
+  const value = String(field?.value ?? "").trim();
+  if (!value) return field;
+
+  if (looksLikeTradeInsteadOfProvider(value)) {
+    issues.push(`${document.fileName}: Anbieter "${value}" wurde verworfen, weil der Wert wie ein Gewerk/Leistungsbereich aussieht.`);
+    return undefined;
+  }
+
+  return field;
+}
+
+function looksLikeTradeInsteadOfProvider(value: string): boolean {
+  const normalized = value.toLowerCase();
+  const hasCompanySuffix = /\b(gmbh|ag|kg|gbr|ug|ohg|se|gmbh\s*&\s*co)\b/i.test(value);
+  if (hasCompanySuffix) return false;
+
+  return /\b(fliesen(?:arbeiten)?|bodenbelagsarbeiten|malerarbeiten|elektroarbeiten|sanit[aä]r|heizung(?:sarbeiten)?|tischlerarbeiten|reinigung|zusatzarbeiten|erstbegehung|dacharbeiten|fassadenarbeiten|fensterarbeiten)\b/i.test(normalized);
 }
 
 function classifyDocumentTypeField(field: AiField<string> | undefined, document: ParsedDocument): AiField<string> | undefined {
