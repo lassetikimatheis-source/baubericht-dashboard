@@ -4919,9 +4919,34 @@ function manualNumberField(value: string): ExtractedField<number> {
 }
 
 function parseGermanNumber(value: string): number | null {
-  if (!value.trim()) return null;
-  const parsed = Number(value.replace(/\./g, "").replace(",", "."));
+  const cleaned = value.trim().replace(/[^\d,.-]/g, "");
+  if (!cleaned) return null;
+  const normalized = normalizeDecimalNumber(cleaned);
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
+}
+
+function normalizeDecimalNumber(value: string): string {
+  if (value.includes(",")) {
+    return value.replace(/\./g, "").replace(",", ".");
+  }
+
+  const dotCount = (value.match(/\./g) ?? []).length;
+  if (dotCount === 1) {
+    const [integerPart, decimalPart] = value.split(".");
+    return decimalPart.length === 3 && integerPart.length <= 3
+      ? `${integerPart}${decimalPart}`
+      : value;
+  }
+
+  if (dotCount > 1) {
+    const lastDot = value.lastIndexOf(".");
+    const integerPart = value.slice(0, lastDot).replace(/\./g, "");
+    const decimalPart = value.slice(lastDot + 1);
+    return decimalPart.length === 3 ? `${integerPart}${decimalPart}` : `${integerPart}.${decimalPart}`;
+  }
+
+  return value;
 }
 
 function firstNumber(...values: Array<number | null>): number | null {
