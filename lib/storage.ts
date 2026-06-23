@@ -12,6 +12,7 @@ export interface StoredObjectRecord {
   constructionYear: string;
   unitCount: string;
   totalLivingAreaSqm: string;
+  wohnflaecheSanierteWohnung: string;
   assetManager: string;
   portfolioManager: string;
   latitude?: string;
@@ -83,7 +84,10 @@ export function deleteObject(id: string): void {
 }
 
 export function getObjects(): StoredObjectRecord[] {
-  return readCollection<StoredObjectRecord>(STORAGE_KEYS.objects);
+  return readCollection<StoredObjectRecord>(STORAGE_KEYS.objects).map((object) => ({
+    ...object,
+    wohnflaecheSanierteWohnung: object.wohnflaecheSanierteWohnung ?? ""
+  }));
 }
 
 export function saveEntrance(entrance: StoredEntranceRecord): StoredEntranceRecord {

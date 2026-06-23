@@ -408,7 +408,7 @@ export function AnalysisDashboard() {
     const gross = sumValues(filteredDocuments.map((document) => document.totalCost.value));
     const net = sumValues(filteredDocuments.map((document) => document.netCost.value));
     const apartments = sumValues(filteredDocuments.map((document) => document.renovatedApartmentCount.value));
-    const area = sumValues(filteredDocuments.map((document) => document.livingAreaSqm.value));
+    const area = sumValues(objects.map((object) => parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "")));
     const hasActiveFilters = hasFilters(filters);
     const projectCount = hasActiveFilters
       ? new Set(filteredDocuments.map((document) => assignments[document.id]).filter(Boolean)).size
@@ -429,7 +429,7 @@ export function AnalysisDashboard() {
       documents: filteredDocuments.length,
       apartments,
       costPerApartment: gross !== null && apartments ? gross / apartments : null,
-      costPerSqm: gross !== null && area ? gross / area : null,
+      costPerSqm: gross !== null && area ? roundMoney(gross / area) : null,
       reviewCases: countReviewCases(filteredDocuments),
       unknownFields: countUnknownFields(filteredDocuments)
     };
@@ -1475,7 +1475,7 @@ function KpiGrid({ kpis }: { kpis: KpiShape }) {
       <Kpi label="Anzahl Dokumente" value={formatNumber(kpis.documents)} />
       <Kpi label="Sanierte Wohnungen" value={formatNullableNumber(kpis.apartments)} />
       <Kpi label="Kosten pro Wohnung" value={formatNullableCurrency(kpis.costPerApartment)} />
-      <Kpi label="Kosten pro m2" value={formatNullableCurrency(kpis.costPerSqm)} />
+      <Kpi label="Kosten pro m²" value={formatEuroPerSqm(kpis.costPerSqm)} />
       <Kpi label="Offene Prüffälle" value={formatNumber(kpis.reviewCases)} warning />
       <Kpi label="k.A.-Felder" value={formatNumber(kpis.unknownFields)} warning />
     </section>
@@ -2092,11 +2092,12 @@ function ObjectDetailHeader({
           <InfoLine label="Wohneinheiten" value={object.unitCount || "k.A."} />
           <InfoLine label="Gewerbeeinheiten" value="k.A." />
           <InfoLine label="Gesamtfläche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "k.A."} />
+          <InfoLine label="Wohnfläche sanierte Wohnung" value={object.wohnflaecheSanierteWohnung ? `${object.wohnflaecheSanierteWohnung} m2` : "k.A."} />
         </div>
         <div className="objectHeaderMetrics">
           <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
           <CostMetric label="Ø Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
-          <CostMetric label="Kosten pro m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, grossCost))} />
+          <CostMetric label="Kosten pro m²" value={formatEuroPerSqm(costPerSqmForObject(object, grossCost))} />
           <CostMetric label="Dokumente" value={`${formatNumber(documents.length)} / ${formatNumber(totalDocuments)}`} />
           <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
           <CostMetric label="Datenqualität" value={dataQuality} />
@@ -2490,7 +2491,7 @@ function ObjectCostsTab({
         <CostMetric label="MwSt" value={formatNullableCurrency(sumValues(documents.map((document) => document.vatCost.value)))} />
         <CostMetric label="Kosten brutto" value={formatNullableCurrency(objectTotal)} />
         <CostMetric label="Kosten je sanierte WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, objectTotal))} />
-        <CostMetric label="Kosten je m2" value={formatNullableCurrency(costPerSqmForDocuments(documents, objectTotal))} />
+        <CostMetric label="Kosten je m²" value={formatEuroPerSqm(costPerSqmForObject(object, objectTotal))} />
       </div>
       {documents.some(isProgressInvoiceDocument) && documents.some(isFinalInvoiceDocument) ? (
         <>
@@ -3516,6 +3517,7 @@ function UploadObjectPanel({
             <EditInput label="Gesamtwohnfläche m2" value={draft.totalLivingAreaSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("totalLivingAreaSqm", value)} />
             <EditInput label="Latitude" value={draft.latitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("latitude", value)} />
             <EditInput label="Longitude" value={draft.longitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("longitude", value)} />
+            <EditInput label="Wohnfläche sanierte Wohnung m²" value={draft.wohnflaecheSanierteWohnung ?? ""} type="number" placeholder="Nicht erkannt" onChange={(value) => onChange("wohnflaecheSanierteWohnung", value)} />
           </div>
 
           <div className="editorActions">
@@ -3590,9 +3592,16 @@ function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (fie
         ["assetManager", "Asset Manager"],
         ["portfolioManager", "Portfolio Manager"],
         ["latitude", "Latitude"],
-        ["longitude", "Longitude"]
+        ["longitude", "Longitude"],
+        ["wohnflaecheSanierteWohnung", "Wohnfläche sanierte Wohnung m²"]
       ] as Array<[keyof ObjectRecord, string]>).map(([field, label]) => (
-        <EditInput key={field} label={label} value={String(object[field] ?? "")} onChange={(value) => onChange(field, value)} />
+        <EditInput
+          key={field}
+          label={label}
+          value={String(object[field] ?? "")}
+          type={field === "wohnflaecheSanierteWohnung" ? "number" : "text"}
+          onChange={(value) => onChange(field, value)}
+        />
       ))}
       <p className="formHint">Geocoding ist vorbereitet. Bis zur automatischen Adressaufloesung bitte Koordinaten manuell eintragen.</p>
     </div>
@@ -3669,18 +3678,23 @@ function EditInput({
   value,
   onChange,
   readOnly,
-  placeholder = "k.A."
+  placeholder = "k.A.",
+  type = "text"
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   readOnly?: boolean;
   placeholder?: string;
+  type?: "text" | "number";
 }) {
   return (
     <label className="filterInput">
       <span>{label}</span>
       <input
+        type={type}
+        inputMode={type === "number" ? "decimal" : undefined}
+        step={type === "number" ? "0.01" : undefined}
         value={value === "k.A." ? "" : value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -3730,6 +3744,7 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
     constructionYear: "",
     unitCount: "",
     totalLivingAreaSqm: document ? emptyIfUnknown(fieldOrUnknown(document.livingAreaSqm)) : "",
+    wohnflaecheSanierteWohnung: document ? emptyIfUnknown(fieldOrUnknown(document.livingAreaSqm)) : "",
     assetManager: "",
     portfolioManager: "",
     latitude: "",
@@ -3828,6 +3843,7 @@ function uploadDraftToObjectRecord(draft: UploadObjectDraft, id: string): Object
     constructionYear: draft.constructionYear,
     unitCount: draft.unitCount,
     totalLivingAreaSqm: draft.totalLivingAreaSqm,
+    wohnflaecheSanierteWohnung: draft.wohnflaecheSanierteWohnung,
     assetManager: draft.assetManager,
     portfolioManager: draft.portfolioManager,
     latitude: draft.latitude,
@@ -4147,7 +4163,6 @@ function calculateProjectCosts(project: ProjectRecord, documents: ObjectAnalysis
   const actualGross = firstNumber(finalInvoicesGross, invoicesGross);
   const actualNet = firstNumber(finalInvoicesNet, invoicesNet);
   const renovatedApartments = parseGermanNumber(project.renovatedApartmentCount) ?? sumValues(documents.map((document) => document.renovatedApartmentCount.value));
-  const livingArea = parseGermanNumber(project.livingAreaSqm) ?? sumValues(documents.map((document) => document.livingAreaSqm.value));
   const budgetGross = parseGermanNumber(project.budgetGross);
   const budgetNet = parseGermanNumber(project.budgetNet);
   const budgetDelta = budgetGross !== null && actualGross !== null
@@ -4170,7 +4185,7 @@ function calculateProjectCosts(project: ProjectRecord, documents: ObjectAnalysis
     offerToInvoiceDelta: offersGross !== null && actualGross !== null ? actualGross - offersGross : null,
     budgetToActualDelta: budgetDelta,
     costPerApartment: actualGross !== null && renovatedApartments ? actualGross / renovatedApartments : null,
-    costPerSqm: actualGross !== null && livingArea ? actualGross / livingArea : null
+    costPerSqm: null
   };
 }
 
@@ -4196,15 +4211,17 @@ function buildOverviewRows(
   if (group === "project") {
     const projectRows = projects.map((project) => {
       const projectDocuments = documents.filter((document) => assignments[document.id] === project.id);
+      const object = objects.find((entry) => entry.id === project.objectId);
       return overviewRowFromDocuments({
         id: `project-${project.id}`,
         level: "Projekt",
         documents: projectDocuments,
+        object,
         project,
         projects,
         assignments,
         manualRenovatedCount: parseGermanNumber(project.renovatedApartmentCount),
-        manualLivingArea: parseGermanNumber(project.livingAreaSqm)
+        manualLivingArea: parseGermanNumber(object?.wohnflaecheSanierteWohnung ?? "")
       });
     });
     const unassignedRows = documents
@@ -4233,7 +4250,7 @@ function buildOverviewRows(
         entrance,
         projects: entranceProjects,
         assignments,
-        manualLivingArea: parseGermanNumber(entrance.livingAreaSqm)
+        manualLivingArea: parseGermanNumber(object?.wohnflaecheSanierteWohnung ?? "")
       });
     });
 
@@ -4257,7 +4274,7 @@ function buildOverviewRows(
       object,
       projects: objectProjects,
       assignments,
-      manualLivingArea: parseGermanNumber(object.totalLivingAreaSqm)
+      manualLivingArea: parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "")
     });
   });
 
@@ -4302,7 +4319,7 @@ function overviewRowFromDocuments({
   const netCost = sumValues(documents.map((document) => document.netCost.value));
   const grossCost = sumValues(documents.map((document) => document.totalCost.value));
   const renovatedCount = firstNumber(manualRenovatedCount, sumValues(documents.map((document) => document.renovatedApartmentCount.value)));
-  const livingArea = firstNumber(manualLivingArea, sumValues(documents.map((document) => document.livingAreaSqm.value)));
+  const livingArea = manualLivingArea;
   const apartments = collectApartments(documents, rowProject ?? undefined);
 
   return {
@@ -4784,9 +4801,13 @@ function costPerRenovatedUnit(documents: ObjectAnalysis[], grossCost: number | n
   return grossCost !== null && renovated ? roundMoney(grossCost / renovated) : null;
 }
 
-function costPerSqmForDocuments(documents: ObjectAnalysis[], grossCost: number | null): number | null {
-  const area = sumValues(documents.map((document) => document.livingAreaSqm.value));
-  return grossCost !== null && area ? roundMoney(grossCost / area) : null;
+function costPerSqmForObject(object: ObjectRecord, grossCost: number | null): number | null {
+  const area = parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "");
+  return grossCost !== null && area && area > 0 ? roundMoney(grossCost / area) : null;
+}
+
+function formatEuroPerSqm(value: number | null): string {
+  return value === null ? "k.A." : `${formatNullableCurrency(value)} / m²`;
 }
 
 function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
