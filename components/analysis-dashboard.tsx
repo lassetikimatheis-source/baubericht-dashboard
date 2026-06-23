@@ -1622,7 +1622,7 @@ function PortfolioOverviewTable({
               <th>Kosten netto</th>
               <th>Kosten brutto</th>
               <th>Durchschnitt pro WE</th>
-              <th>Kosten pro m2</th>
+              <th>Kosten pro m²</th>
               <th>Anzahl Dokumente</th>
               <th>Datenqualität / Prüffall</th>
             </tr>
@@ -1648,7 +1648,7 @@ function PortfolioOverviewTable({
                 <td>{formatNullableCurrency(row.netCost)}</td>
                 <td className="moneyStrong">{formatNullableCurrency(row.grossCost)}</td>
                 <td>{formatNullableCurrency(row.costPerRenovatedUnit)}</td>
-                <td>{formatNullableCurrency(row.costPerSqm)}</td>
+                <td>{formatEuroPerSqm(row.costPerSqm)}</td>
                 <td>{formatNumber(row.documentCount)}</td>
                 <td>{row.dataQuality}</td>
               </tr>
@@ -2931,7 +2931,7 @@ function ProjectCostsTab({ project, documents }: { project: ProjectRecord; docum
         <CostMetric label="Abweichung Angebot zu Rechnung" value={formatNullableCurrency(summary.offerToInvoiceDelta)} />
         <CostMetric label="Abweichung Budget zu Ist" value={formatNullableCurrency(summary.budgetToActualDelta)} />
         <CostMetric label="Kosten pro sanierte Wohnung" value={formatNullableCurrency(summary.costPerApartment)} />
-        <CostMetric label="Kosten pro m2" value={formatNullableCurrency(summary.costPerSqm)} />
+        <CostMetric label="Kosten pro m²" value={formatEuroPerSqm(summary.costPerSqm)} />
       </div>
     </div>
   );
@@ -3507,7 +3507,7 @@ function UploadObjectPanel({
             <EditInput label="Gesamtkosten" value={draft.totalCost} placeholder="Nicht erkannt" onChange={(value) => onChange("totalCost", value)} />
             <EditInput label="Anzahl Wohnungen" value={draft.apartmentCount} placeholder="Nicht erkannt" onChange={(value) => onChange("apartmentCount", value)} />
             <EditInput label="Kosten pro Wohnung" value={draft.costPerApartment} placeholder="Nicht erkannt" onChange={(value) => onChange("costPerApartment", value)} />
-            <EditInput label="Kosten pro m2" value={draft.costPerSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("costPerSqm", value)} />
+            <EditInput label="Kosten pro m²" value={draft.costPerSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("costPerSqm", value)} />
             <EditInput label="Quelle / Dokumentname" value={draft.sourceFile} placeholder="Nicht erkannt" onChange={(value) => onChange("sourceFile", value)} />
             <EditInput label="PLZ" value={draft.postalCode} placeholder="Nicht erkannt" onChange={(value) => onChange("postalCode", value)} />
             <EditInput label="Ort" value={draft.city} placeholder="Nicht erkannt" onChange={(value) => onChange("city", value)} />
@@ -3756,7 +3756,7 @@ function uploadDraftFromDocument(document?: ObjectAnalysis, sourceFile = ""): Up
   const object = objectFromDocument(document);
   const totalCost = document?.totalCost.value ?? null;
   const apartmentCount = document?.renovatedApartmentCount.value ?? null;
-  const livingArea = document?.livingAreaSqm.value ?? null;
+  const renovatedArea = parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "");
   return {
     ...object,
     year: document ? emptyIfUnknown(fieldOrUnknown(document.year)) : "",
@@ -3764,7 +3764,7 @@ function uploadDraftFromDocument(document?: ObjectAnalysis, sourceFile = ""): Up
     totalCost: totalCost !== null ? String(totalCost).replace(".", ",") : "",
     apartmentCount: apartmentCount !== null ? String(apartmentCount).replace(".", ",") : "",
     costPerApartment: totalCost !== null && apartmentCount ? String(roundMoney(totalCost / apartmentCount)).replace(".", ",") : "",
-    costPerSqm: totalCost !== null && livingArea ? String(roundMoney(totalCost / livingArea)).replace(".", ",") : "",
+    costPerSqm: totalCost !== null && renovatedArea ? String(roundMoney(totalCost / renovatedArea)).replace(".", ",") : "",
     sourceFile
   };
 }
