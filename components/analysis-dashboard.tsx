@@ -53,7 +53,7 @@ const ObjectMap = dynamic<{ entries: ObjectMapEntry[]; onOpenObject: (id: string
 
 type ViewKey = "dashboard" | "objects" | "map" | "upload" | "projects" | "unassigned" | "reports" | "settings";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
-type ObjectTab = "overview" | "measures" | "trades" | "documents" | "images" | "entrances" | "ai";
+type ObjectTab = "overview" | "measures" | "trades" | "documents" | "images" | "apartments" | "entrances" | "ai";
 type OverviewGroup = "object" | "entrance" | "project" | "document";
 type CostViewMode = "comparison" | "offers" | "invoices";
 type CostBasisMode =
@@ -281,6 +281,7 @@ const objectTabs: Array<{ key: ObjectTab; label: string }> = [
   { key: "trades", label: "Gewerke" },
   { key: "documents", label: "Dokumente" },
   { key: "images", label: "Bilder" },
+  { key: "apartments", label: "Wohnungen" },
   { key: "entrances", label: "Häuser / Hauseingänge" },
   { key: "ai", label: "KI-Auswertung" }
 ];
@@ -1537,7 +1538,7 @@ function DashboardFilterPanel({
         <FilterSelect label="Projektart" value={filters.projectType} options={options.projectTypes} onChange={(value) => setFilters({ ...filters, projectType: value })} />
         <FilterSelect label="Dokumenttyp" value={filters.documentType} options={options.documentTypes} onChange={(value) => setFilters({ ...filters, documentType: value })} />
         <FilterSelect label="Anbieter" value={filters.provider} options={options.providers} onChange={(value) => setFilters({ ...filters, provider: value })} />
-        <FilterSelect label="Wohnung" value={filters.apartmentNumber} options={options.apartments} onChange={(value) => setFilters({ ...filters, apartmentNumber: value })} />
+        <FilterSelect label="WE-Nummer" value={filters.apartmentNumber} options={options.apartments} onChange={(value) => setFilters({ ...filters, apartmentNumber: value })} />
         <FilterSelect label="Lage" value={filters.location} options={options.locations} onChange={(value) => setFilters({ ...filters, location: value })} />
         <FilterSelect label="Maßnahme" value={filters.cluster} options={options.clusters} onChange={(value) => setFilters({ ...filters, cluster: value })} />
         <FilterSelect label="Datenqualität" value={filters.dataQuality} options={options.qualities} onChange={(value) => setFilters({ ...filters, dataQuality: value })} />
@@ -1684,7 +1685,7 @@ function FilterBar({ filters, setFilters }: { filters: Filters; setFilters: (val
         ["projectType", "Projektart"],
         ["documentType", "Dokumenttyp"],
         ["provider", "Anbieter"],
-        ["apartmentNumber", "Wohnungsnummer"],
+        ["apartmentNumber", "WE-Nummer"],
         ["location", "Lage"],
         ["cluster", "Maßnahmencluster"],
         ["dataQuality", "Datenqualität"],
@@ -1768,7 +1769,7 @@ function DocumentTable({
               <th>Dokumenttyp</th>
               <th>Anbieter</th>
               <th>Datum</th>
-              <th>Wohnung / Lage</th>
+              <th>WE / Lage</th>
               <th>Wohnfläche</th>
               <th>Cluster</th>
               <th>Netto</th>
@@ -2018,6 +2019,7 @@ function ObjectsView({
                   onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
                 />
               ) : null}
+              {activeTab === "apartments" ? <ObjectApartmentsTab documents={selectedCostDocuments} /> : null}
               {activeTab === "ai" ? <ProjectAiTab documents={selectedCostDocuments} /> : null}
               <div className="headerActions projectActions">
                 <button type="button" onClick={() => onDelete(selectedObject.id)}>Objekt loeschen</button>
@@ -2280,12 +2282,25 @@ function ObjectDocumentsTab({
             ) : null}
             <span className={`documentTypeBadge ${documentTypeBadgeClass(document)}`}>{documentTypeValue(document)}</span>
             <h3>{fieldOrUnknown(document.provider)}</h3>
-            <p>{fieldOrUnknown(document.documentNumber)} - {fieldOrUnknown(document.documentDate)}</p>
+            <p className="documentMetaLine">Objekt {fieldOrUnknown(document.objectNumber)}</p>
+            <p className="documentMetaLine">{weLabel(document)}</p>
+            <div className="documentWarnings">
+              {documentWarningItems(document).map((item) => <span key={item}>{item}</span>)}
+            </div>
             {isProgressInvoiceDocument(document) ? <p>{fieldOrUnknown(document.installmentNumber ?? emptyField<string>())}</p> : null}
             <strong>{formatCurrency(document.totalCost)}</strong>
             <em>{formatKiStatus(document)}</em>
             <div className="documentCardActions">
               <button type="button">PDF ansehen</button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelect(document.id);
+                }}
+              >
+                Bearbeiten
+              </button>
               <button
                 className="buttonDanger"
                 type="button"
@@ -2299,6 +2314,49 @@ function ObjectDocumentsTab({
             </div>
           </article>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function documentWarningItems(document: ObjectAnalysis): string[] {
+  const warnings: string[] = [];
+  if (fieldOrUnknown(document.apartmentNumber) === "k.A.") warnings.push("⚠ WE nicht hinterlegt");
+  if (fieldOrUnknown(document.documentDate) === "k.A.") warnings.push("⚠ Datum nicht erkannt");
+  if (!document.clusters.length && !(document.measureDetails?.length)) warnings.push("⚠ Gewerk nicht erkannt");
+  if (fieldOrUnknown(document.documentNumber) === "k.A.") warnings.push("⚠ Dokumentnummer nicht erkannt");
+  return warnings;
+}
+
+function weLabel(document: ObjectAnalysis): string {
+  const value = fieldOrUnknown(document.apartmentNumber);
+  return value === "k.A." ? "WE nicht hinterlegt" : `WE ${value}`;
+}
+
+function ObjectApartmentsTab({ documents }: { documents: ObjectAnalysis[] }) {
+  const rows = buildApartmentRows(documents);
+  return (
+    <div className="panel panelFlush apartmentBoard">
+      <div className="panelHeader">
+        <div>
+          <h3>Wohnungen</h3>
+          <p>Automatisch aus Dokumenten und Maßnahmen abgeleitete WE-Übersicht.</p>
+        </div>
+      </div>
+      <div className="tableWrap compactTable">
+        <table>
+          <thead><tr><th>WE</th><th>Maßnahmen</th><th>Kosten</th><th>Dokumente</th></tr></thead>
+          <tbody>
+            {rows.length === 0 ? <tr><td colSpan={4}>Keine WE-Nummern hinterlegt.</td></tr> : rows.map((row) => (
+              <tr key={row.apartment}>
+                <td><strong>{row.apartment}</strong></td>
+                <td>{row.measures}</td>
+                <td>{formatNullableCurrency(row.cost)}</td>
+                <td>{formatNumber(row.documentCount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -2370,8 +2428,8 @@ function ObjectMeasuresTab({
                 <td>{tradeIcon(row.cluster)} {row.cluster}</td>
                 <td>{row.description}</td>
                 <td>{extractYearFromMeasure(row, documents)}</td>
-                <td>{collectApartments(documents)}</td>
-                <td>{formatNumber(documents.length)}</td>
+                <td>{collectApartments(documentsForMeasure(row, documents))}</td>
+                <td>{formatNumber(documentsForMeasure(row, documents).length)}</td>
                 <td>{formatNullableCurrency(row.grossCost)}</td>
                 <td>{formatPercent(row.grossCost, totalGross)}</td>
                 <td>{row.status}</td>
@@ -2407,6 +2465,7 @@ function MeasureDetailPanel({
   onUpdate?: (row: MeasureRow, field: "cluster" | "description" | "grossCost" | "status", value: string) => void;
 }) {
   if (!row) return null;
+  const scopedDocuments = documents ? documentsForMeasure(row, documents) : [];
   return (
     <aside className="measureSlideOver" aria-label="Maßnahmen-Details">
       <div className="slideOverHeader">
@@ -2427,8 +2486,8 @@ function MeasureDetailPanel({
       <InfoLine label="Abschnitt" value={row.section} />
       <InfoLine label="Kosten" value={formatNullableCurrency(row.grossCost)} />
       <InfoLine label="Anteil" value={formatPercent(row.grossCost, totalGross ?? null)} />
-      <InfoLine label="Betroffene Wohnungen" value={documents ? collectApartments(documents) : "k.A."} />
-      <InfoLine label="Dokumente" value={documents ? formatNumber(documents.length) : "k.A."} />
+      <InfoLine label="Betroffene Wohnungen" value={documents ? collectApartments(scopedDocuments) : "k.A."} />
+      <InfoLine label="Dokumente" value={documents ? formatNumber(scopedDocuments.length) : "k.A."} />
       <InfoLine label="Quelle" value={row.source} />
       <InfoLine label="KI-Sicherheit" value={row.confidence} />
       <button type="button" className="buttonPrimary">Bearbeiten</button>
@@ -2896,7 +2955,7 @@ function ProjectDocumentsTab({
             <th>Anbieter</th>
             <th>Dokumentnummer</th>
             <th>Datum</th>
-            <th>Wohnungsnummer</th>
+            <th>WE-Nummer</th>
             <th>Lage</th>
             <th>Netto</th>
             <th>MwSt</th>
@@ -3358,7 +3417,7 @@ function DocumentEditor({
         <EditInput label="Dokumentnummer" value={fieldOrUnknown(document.documentNumber)} onChange={(value) => setText("documentNumber", value)} />
         <EditInput label="Datum" value={fieldOrUnknown(document.documentDate)} onChange={(value) => setText("documentDate", value)} />
         <EditInput label="Jahr" value={fieldOrUnknown(document.year)} onChange={(value) => setNumber("year", value)} />
-        <EditInput label="Wohnungsnummer" value={fieldOrUnknown(document.apartmentNumber)} onChange={(value) => setText("apartmentNumber", value)} />
+        <EditInput label="WE-Nummer" value={fieldOrUnknown(document.apartmentNumber)} onChange={(value) => setText("apartmentNumber", value)} />
         <EditInput label="Lage" value={fieldOrUnknown(document.location)} onChange={(value) => setText("location", value)} />
         <EditInput label="Anzahl sanierte Wohnungen" value={fieldOrUnknown(document.renovatedApartmentCount)} onChange={(value) => setNumber("renovatedApartmentCount", value)} />
         <EditInput label="Wohnfläche m2" value={fieldOrUnknown(document.livingAreaSqm)} onChange={(value) => setNumber("livingAreaSqm", value)} />
@@ -4381,6 +4440,48 @@ function collectApartments(documents: ObjectAnalysis[], project?: ProjectRecord)
     if (apartment !== "k.A.") values.add(apartment);
   });
   return values.size > 0 ? Array.from(values).join(", ") : "k.A.";
+}
+
+function documentsForMeasure(row: MeasureRow, documents: ObjectAnalysis[]): ObjectAnalysis[] {
+  if (row.documentId) {
+    const exact = documents.filter((document) => document.id === row.documentId);
+    if (exact.length) return exact;
+  }
+  return documents.filter((document) =>
+    document.clusters.some((cluster) => normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description)) === row.cluster)
+    || (document.measureDetails ?? []).some((detail) => normalizeTradeCluster(detail.cluster, detail.beschreibung) === row.cluster)
+  );
+}
+
+function buildApartmentRows(documents: ObjectAnalysis[]): Array<{
+  apartment: string;
+  measures: string;
+  cost: number | null;
+  documentCount: number;
+}> {
+  const groups = new Map<string, { measures: Set<string>; cost: number | null; ids: Set<string> }>();
+  documents.forEach((document) => {
+    const apartmentValue = fieldOrUnknown(document.apartmentNumber);
+    const renovated = document.renovatedApartments.value?.filter(Boolean) ?? [];
+    const apartments = apartmentValue !== "k.A." ? [apartmentValue] : renovated;
+    apartments.forEach((apartment) => {
+      const current = groups.get(apartment) ?? { measures: new Set<string>(), cost: null, ids: new Set<string>() };
+      formatClusters(document).split(",").map((entry) => entry.trim()).filter(Boolean).forEach((entry) => {
+        if (entry !== "k.A.") current.measures.add(entry);
+      });
+      current.cost = sumValues([current.cost, document.totalCost.value]);
+      current.ids.add(document.id);
+      groups.set(apartment, current);
+    });
+  });
+  return Array.from(groups.entries())
+    .map(([apartment, value]) => ({
+      apartment,
+      measures: value.measures.size ? Array.from(value.measures).join(", ") : "k.A.",
+      cost: value.cost,
+      documentCount: value.ids.size
+    }))
+    .sort((left, right) => left.apartment.localeCompare(right.apartment, "de", { numeric: true }));
 }
 
 function collectClusters(documents: ObjectAnalysis[]): string {

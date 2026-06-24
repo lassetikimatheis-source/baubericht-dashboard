@@ -2667,6 +2667,121 @@ select {
   white-space: normal;
 }
 
+/* Paribus object view refinements */
+.documentCardGrid {
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+}
+
+.documentPreviewCard {
+  position: relative;
+  gap: 10px;
+  border-radius: 12px;
+  border-color: #dfe6ef;
+  background: linear-gradient(180deg, #ffffff, #fbfcfe);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.035);
+  padding: 16px;
+}
+
+.documentPreviewCard .documentTypeBadge {
+  justify-self: start;
+  border-color: rgba(255, 110, 66, 0.28);
+  background: #fff1eb;
+  color: #b84520;
+}
+
+.documentPreviewCard h3 {
+  color: #172234;
+  font-size: 18px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.documentMetaLine {
+  color: #526174;
+  font-size: 13px;
+  font-weight: 750;
+  margin: 0;
+}
+
+.documentWarnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.documentWarnings span {
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 8px;
+}
+
+.documentPreviewCard > strong {
+  color: #0f2340;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.documentPreviewCard > em {
+  color: #24364d;
+  font-size: 13px;
+}
+
+.documentCardActions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid #edf1f6;
+  padding-top: 12px;
+}
+
+.documentCardActions button {
+  min-height: 34px;
+  border-radius: 7px;
+  font-size: 12px;
+  padding-inline: 8px;
+}
+
+.apartmentBoard {
+  border-radius: 12px;
+  border: 1px solid #dfe6ef;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.035);
+}
+
+.apartmentBoard table {
+  min-width: 760px;
+}
+
+.measureListTable td:nth-child(4),
+.measureSlideOver .infoLine strong {
+  overflow-wrap: anywhere;
+}
+
+.objectDetailHeader {
+  overflow: hidden;
+}
+
+.objectHeroContent {
+  min-height: 260px;
+}
+
+@media (max-width: 1500px) {
+  .documentCardGrid {
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .documentCardGrid,
+  .documentCardActions {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* UI refresh: clean Paribus asset-management look */
 :root {
   --navy: #466389;
