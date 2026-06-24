@@ -178,9 +178,10 @@ async function runOpenAiExtractionPerDocument(
             "Erkenne Abschlagsrechnungen streng: Abschlagsrechnung, 1. Abschlagsrechnung, 2. Abschlagsrechnung, Teilrechnung, Teilzahlung, Akonto, Vorauszahlung, Zahlung gemaess Baufortschritt oder Abschlag. Wenn erkennbar, dokumenttyp Abschlagsrechnung und abschlagsnummer z.B. 1. Abschlag setzen.",
             "anbieter ist ausschliesslich die ausfuehrende Firma oder der Lieferant, z.B. eine GmbH, AG, KG oder GbR. Leistungsbereiche wie Fliesenarbeiten, Malerarbeiten, Elektroarbeiten, Bodenbelagsarbeiten, Sanitaer oder Heizung niemals als anbieter ausgeben.",
             "Leistungsbereiche gehoeren in measures, massnahmen_details, cluster und beschreibung_massnahmen, nicht in anbieter.",
-            "Erlaubte cluster: Dach, Fassade, Fenster, Türen, Balkone, Heizung, Sanitär, Elektro, Brandschutz, Aufzüge, Treppenhäuser, Keller, Außenanlagen, Tiefgarage, Malerarbeiten, Bodenbeläge, Dachentwässerung, Wärmedämmung, Schornstein, Trinkwasser, Abwasser, Lüftung, Photovoltaik, Sonstiges.",
+            "Erlaubte cluster: Dach, Fassade, Fenster, Türen, Balkone, Heizung, Sanitär, Elektro, Brandschutz, Aufzüge, Treppenhäuser, Keller, Außenanlagen, Tiefgarage, Malerarbeiten, Bodenbeläge, Trockenbau, Dachentwässerung, Wärmedämmung, Schornstein, Trinkwasser, Abwasser, Lüftung, Photovoltaik, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
-            "Mapping auf den Standard-Gewerkekatalog: Bodenbelag/Bodenbelagsarbeiten -> Bodenbeläge; Malerarbeiten -> Malerarbeiten; Fliesenarbeiten/Estrich -> Sanitär mit Beschreibung Fliesenarbeiten und Estrich; Sanitär-/Heizungsarbeiten -> Heizung oder Sanitär; Elektroarbeiten -> Elektro; Tischlerarbeiten/Türen -> Türen; Reinigung -> Reinigung; Erstbegehung/Zusatzarbeiten -> Sonstiges.",
+            "Feste Vorverarbeitung vor freier Klassifizierung: Wenn nummerierte Positionsgruppen oder Summenzeilen wie 1. Bodenbelag, 2. Malerarbeiten oder Summe 1. Bodenbelag 4.702,73 € vorhanden sind, übernimm diese direkt als measures und rate nicht frei.",
+            "Mapping auf den Standard-Gewerkekatalog: Bodenbelag/Bodenbelagsarbeiten -> Bodenbeläge; Malerarbeiten/Maler- und Lackierarbeiten -> Malerarbeiten; Tischlerarbeiten/Türen -> Türen; Elektroarbeiten -> Elektro; Sanitärarbeiten/Heizungsarbeiten/Fliesenarbeiten -> Sanitär oder Heizung; Reinigung -> Reinigung; Dacharbeiten -> Dach; Fassadenarbeiten -> Fassade; Trockenbauarbeiten -> Trockenbau; Erstbegehung/Zusatzarbeiten -> Sonstiges.",
             "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
             "Wenn im Betreff eine Lage wie 2.OG 3.v.li steht, als lage speichern.",
             "Projektart aus dem Dokument ableiten, z.B. Wohnungssanierung, Fassadensanierung, Dacharbeiten oder Elektroarbeiten, aber nur bei belegbarer Quelle.",
@@ -1045,6 +1046,7 @@ function detectMeasures(text: string): Array<{
     { pattern: /Fenster(?:arbeiten|tausch)?/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung(?:sarbeiten)?/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro(?:arbeiten)?/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
+    { pattern: /Trockenbau(?:arbeiten)?|Gipskarton|Rigips/i, cluster: "Trockenbau", description: "Trockenbauarbeiten", projectType: "Trockenbauarbeiten" },
     { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
     { pattern: /Fliesen(?:arbeiten)?|Fliesenspiegel|Estrich(?:arbeiten)?/i, cluster: "Sanitär", description: "Fliesenarbeiten und Estrich", projectType: "Fliesenarbeiten" },
     { pattern: /Maler(?:arbeiten)?/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
@@ -1107,6 +1109,7 @@ function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; descript
     { pattern: /Fenster/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
+    { pattern: /Trockenbau|Gipskarton|Rigips/i, cluster: "Trockenbau", description: "Trockenbauarbeiten", projectType: "Trockenbauarbeiten" },
     { pattern: /Sanit[aä]r/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
     { pattern: /Fliesen|Fliesenspiegel|Estrich/i, cluster: "Sanitär", description: "Fliesenarbeiten und Estrich", projectType: "Fliesenarbeiten" },
     { pattern: /Maler/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
@@ -1219,9 +1222,16 @@ function parseOfferMeasures(text: string): {
   const definitions = offerMeasureDefinitions();
   const headings = findOfferSectionHeadings(text, definitions);
   const sumLines = findOfferSectionSums(text, definitions);
+  const unmatchedAmounts = findUnmatchedOfferSumLines(text, definitions, sumLines);
   const notes: string[] = [];
   if (headings.length === 0) notes.push("Keine nummerierten Maßnahmen-Abschnittsüberschriften gefunden.");
   if (sumLines.length === 0) notes.push("Keine Abschnitts-Summenzeilen gefunden.");
+  if (headings.length > 0 || sumLines.length > 0) {
+    notes.push(`Positionsgruppen erkannt: ja (${Math.max(headings.length, sumLines.length)} Gruppe(n)).`);
+  }
+  if (unmatchedAmounts.length > 0) {
+    notes.push(`${unmatchedAmounts.length} Summenzeile(n) konnten keinem Standard-Gewerk zugeordnet werden.`);
+  }
 
   const measures: AiMeasureResult[] = [];
   const details: MeasureDetail[] = [];
@@ -1264,7 +1274,19 @@ function parseOfferMeasures(text: string): {
     });
   });
 
-  return { measures, details, debug: { headings, sumLines, mappings, notes } };
+  return {
+    measures,
+    details,
+    debug: {
+      positionsDetected: headings.length > 0 || sumLines.length > 0,
+      detectedGroupCount: Math.max(headings.length, sumLines.length),
+      headings,
+      sumLines,
+      mappings,
+      unmatchedAmounts,
+      notes
+    }
+  };
 }
 
 function offerMeasureDefinitions(): Array<{
@@ -1282,8 +1304,12 @@ function offerMeasureDefinitions(): Array<{
     { section: 5, heading: "Sanitär - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i], cluster: "Heizung", description: "Sanitär- und Heizungsarbeiten" },
     { section: 6, heading: "Elektroarbeiten", aliases: [/Elektroarbeiten/i], cluster: "Elektro", description: "Elektroarbeiten" },
     { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Türen", description: "Tischlerarbeiten" },
-    { section: 8, heading: "Reinigung", aliases: [/Reinigung/i], cluster: "Sonstiges", description: "Reinigung" },
-    { section: 9, heading: "Zusatzarbeiten", aliases: [/(?:Stundenlohn\s+)?Zusatzarbeiten/i], cluster: "Sonstiges", description: "Zusatzarbeiten" }
+    { section: 8, heading: "Reinigung", aliases: [/Reinigung/i], cluster: "Reinigung", description: "Reinigung" },
+    { section: 9, heading: "Zusatzarbeiten", aliases: [/(?:Stundenlohn\s+)?Zusatzarbeiten/i], cluster: "Sonstiges", description: "Zusatzarbeiten" },
+    { section: 10, heading: "Dacharbeiten", aliases: [/Dacharbeiten|Dachsanierung/i], cluster: "Dach", description: "Dacharbeiten" },
+    { section: 11, heading: "Fassadenarbeiten", aliases: [/Fassadenarbeiten|Fassade(?:nsanierung)?/i], cluster: "Fassade", description: "Fassadenarbeiten" },
+    { section: 12, heading: "Trockenbauarbeiten", aliases: [/Trockenbauarbeiten|Trockenbau/i], cluster: "Trockenbau", description: "Trockenbauarbeiten" },
+    { section: 13, heading: "Maler- und Lackierarbeiten", aliases: [/Maler-\s*und\s*Lackierarbeiten|Lackierarbeiten/i], cluster: "Malerarbeiten", description: "Maler- und Lackierarbeiten" }
   ];
 }
 
@@ -1329,6 +1355,21 @@ function findOfferSectionSums(
     });
   });
   return sumLines;
+}
+
+function findUnmatchedOfferSumLines(
+  text: string,
+  definitions: ReturnType<typeof offerMeasureDefinitions>,
+  matched: MeasureDebugInfo["sumLines"]
+): string[] {
+  const matchedRows = new Set(matched.map((entry) => entry.raw));
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => /^Summe\s+\d{1,2}\.\s+/i.test(line))
+    .filter((line) => /[\d.]+,\d{2}\s*(?:\u20ac|EUR|Euro|Ã¢â€šÂ¬)?/i.test(line))
+    .filter((line) => !matchedRows.has(line))
+    .filter((line) => !definitions.some((definition) => definition.aliases.some((alias) => alias.test(line))));
 }
 
 function cleanupSectionHeading(value: string): string {

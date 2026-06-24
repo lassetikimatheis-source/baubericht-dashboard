@@ -32,6 +32,7 @@ export type MeasureCluster =
   | "Trinkwasser"
   | "Türen / Fenster"
   | "Türen"
+  | "Trockenbau"
   | "Wärmedämmung"
   | "Sonstiges";
 
@@ -108,6 +109,8 @@ export interface MeasureDetail {
 }
 
 export interface MeasureDebugInfo {
+  positionsDetected?: boolean;
+  detectedGroupCount?: number;
   headings: Array<{
     section: number;
     actualSection?: number;
@@ -129,6 +132,7 @@ export interface MeasureDebugInfo {
     value: number | null;
     description: string;
   }>;
+  unmatchedAmounts?: string[];
   notes: string[];
 }
 

@@ -321,6 +321,7 @@ const standardTradeCatalog: MeasureCluster[] = [
   "Tiefgarage",
   "Malerarbeiten",
   "Bodenbeläge",
+  "Trockenbau",
   "Dachentwässerung",
   "Wärmedämmung",
   "Schornstein",
@@ -3544,10 +3545,17 @@ function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
       <h4>Maßnahmen-Erkennung</h4>
       <div className="measureDebugGrid">
         <div>
+          <strong>Positionsgruppen</strong>
+          <ul>
+            <li>{debug?.positionsDetected ? "Ja" : "Nein"}</li>
+            <li>Anzahl Gruppen: {formatNumber(debug?.detectedGroupCount ?? 0)}</li>
+          </ul>
+        </div>
+        <div>
           <strong>Abschnittsüberschriften</strong>
           <ul>
             {debug?.headings.length ? debug.headings.map((entry) => (
-              <li key={`heading-${entry.section}`}>{entry.section}. {entry.heading}</li>
+              <li key={`heading-${entry.section}-${entry.actualSection ?? entry.section}`}>{entry.actualSection ?? entry.section}. {entry.heading}</li>
             )) : <li>k.A.</li>}
           </ul>
         </div>
@@ -3563,8 +3571,16 @@ function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
           <strong>Cluster-Mapping</strong>
           <ul>
             {debug?.mappings.length ? debug.mappings.map((entry) => (
-              <li key={`mapping-${entry.section}`}>{entry.heading} - {entry.cluster} - {formatNullableCurrency(entry.value)}</li>
+              <li key={`mapping-${entry.section}-${entry.actualSection ?? entry.section}`}>{entry.heading} - {entry.cluster} - {formatNullableCurrency(entry.value)}</li>
             )) : <li>k.A.</li>}
+          </ul>
+        </div>
+        <div>
+          <strong>Nicht zugeordnete Beträge</strong>
+          <ul>
+            {debug?.unmatchedAmounts?.length ? debug.unmatchedAmounts.map((entry) => (
+              <li key={entry}>{entry}</li>
+            )) : <li>Keine</li>}
           </ul>
         </div>
         <div>
@@ -4505,6 +4521,7 @@ function normalizeTradeCluster(value: string, description = ""): MeasureCluster 
   if (/abwasser|kanal/.test(text)) return "Abwasser";
   if (/sanit[aä]r|bad|fliesen|estrich/.test(text)) return "Sanitär";
   if (/elektro|z[aä]hler|installation|leitung/.test(text)) return "Elektro";
+  if (/trockenbau|gipskarton|rigips/.test(text)) return "Trockenbau";
   if (/brand|rauchmelder|rwa|feuer/.test(text)) return "Brandschutz";
   if (/aufzug|lift/.test(text)) return "Aufzüge";
   if (/treppenhaus|treppe|gel[aä]nder/.test(text)) return "Treppenhäuser";
