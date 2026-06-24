@@ -110,17 +110,20 @@ export interface MeasureDetail {
 export interface MeasureDebugInfo {
   headings: Array<{
     section: number;
+    actualSection?: number;
     heading: string;
     raw: string;
   }>;
   sumLines: Array<{
     section: number;
+    actualSection?: number;
     heading: string;
     value: number | null;
     raw: string;
   }>;
   mappings: Array<{
     section: number;
+    actualSection?: number;
     heading: string;
     cluster: MeasureCluster;
     value: number | null;

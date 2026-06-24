@@ -213,6 +213,12 @@ interface TradeGroupRow {
   status: string;
 }
 
+interface TradeAllocation {
+  cluster: MeasureCluster;
+  value: number | null;
+  document: ObjectAnalysis;
+}
+
 interface LineItemView {
   position: string;
   description: string | null;
@@ -4557,6 +4563,58 @@ function getDocumentTradeNames(document: ObjectAnalysis): string[] {
   return names.length ? names : ["Sonstiges"];
 }
 
+function getTradeAllocations(document: ObjectAnalysis): TradeAllocation[] {
+  if (document.measureDetails?.length) {
+    return document.measureDetails.map((detail) => {
+      const matchingCluster = document.clusters.find((entry) =>
+        normalizeTradeCluster(fieldOrUnknown(entry.cluster), fieldOrUnknown(entry.description)) === normalizeTradeCluster(detail.cluster, detail.beschreibung)
+        || fieldOrUnknown(entry.description) === detail.abschnitt
+      );
+      return {
+        cluster: normalizeTradeCluster(detail.cluster, detail.beschreibung),
+        value: detail.summe ?? reliableClusterCost(document, matchingCluster ?? null),
+        document
+      };
+    });
+  }
+
+  if (document.clusters.length === 0) {
+    return [{
+      cluster: normalizeTradeCluster("Sonstiges", fieldOrUnknown(document.measureDescription)),
+      value: document.totalCost.value,
+      document
+    }];
+  }
+
+  return document.clusters.map((cluster) => ({
+    cluster: normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description)),
+    value: reliableClusterCost(document, cluster),
+    document
+  }));
+}
+
+function reliableClusterCost(
+  document: ObjectAnalysis,
+  cluster: ObjectAnalysis["clusters"][number] | null
+): number | null {
+  if (!cluster) return null;
+  const clusterValue = cluster.totalCost.value;
+  if (clusterValue === null) return document.clusters.length <= 1 ? document.totalCost.value : null;
+  if (document.totalCost.value === null || document.clusters.length <= 1) return clusterValue;
+
+  const repeatedDocumentTotalCount = document.clusters.filter((entry) =>
+    entry.totalCost.value !== null && Math.abs(entry.totalCost.value - document.totalCost.value!) < 0.01
+  ).length;
+  if (repeatedDocumentTotalCount > 1 && Math.abs(clusterValue - document.totalCost.value) < 0.01) return null;
+
+  const clusterSum = sumValues(document.clusters.map((entry) => entry.totalCost.value));
+  if (clusterSum !== null && clusterSum > document.totalCost.value * 1.03) {
+    return Math.abs(clusterValue - document.totalCost.value) < 0.01 ? null : clusterValue;
+  }
+
+  return clusterValue;
+}
+
 function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
   const groups = new Map<MeasureCluster, TradeGroupRow>();
   standardTradeCatalog.forEach((cluster) => {
@@ -4572,10 +4630,8 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
   });
 
   documents.forEach((document) => {
-    const clusters = document.clusters.length ? document.clusters : [{ cluster: manualField("Sonstiges"), totalCost: document.totalCost, description: document.measureDescription }];
-    clusters.forEach((cluster) => {
-      const description = "description" in cluster ? fieldOrUnknown(cluster.description as ExtractedField<string>) : "";
-      const name = normalizeTradeCluster(fieldOrUnknown(cluster.cluster as ExtractedField<string>), description);
+    getTradeAllocations(document).forEach((allocation) => {
+      const name = allocation.cluster;
       const current = groups.get(name) ?? {
         cluster: name,
         count: 0,
@@ -4585,15 +4641,15 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
         share: null,
         status: "Keine Dokumente"
       };
-      const value = cluster.totalCost.value ?? document.totalCost.value ?? 0;
+      const value = allocation.value ?? 0;
       const nextTotal = current.total + value;
       groups.set(name, {
         ...current,
         count: current.count + 1,
         total: nextTotal,
-        offer: isOfferDocument(document) ? current.offer + value : current.offer,
-        invoice: isInvoiceLikeDocument(document) ? current.invoice + value : current.invoice,
-        status: germanizeUiText(fieldOrUnknown(document.dataQuality))
+        offer: isOfferDocument(allocation.document) ? current.offer + value : current.offer,
+        invoice: isInvoiceLikeDocument(allocation.document) ? current.invoice + value : current.invoice,
+        status: germanizeUiText(fieldOrUnknown(allocation.document.dataQuality))
       });
     });
   });
@@ -4631,10 +4687,8 @@ function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
   });
 
   documents.forEach((document) => {
-    const clusters = document.clusters.length ? document.clusters : [{ cluster: manualField("Sonstiges"), totalCost: document.totalCost, description: document.measureDescription }];
-    clusters.forEach((cluster) => {
-      const description = "description" in cluster ? fieldOrUnknown(cluster.description as ExtractedField<string>) : "";
-      const name = normalizeTradeCluster(fieldOrUnknown(cluster.cluster as ExtractedField<string>), description);
+    getTradeAllocations(document).forEach((allocation) => {
+      const name = allocation.cluster;
       const current = groups.get(name) ?? {
         count: 0,
         offer: null,
@@ -4644,16 +4698,16 @@ function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
         hasProgress: false,
         hasOffer: false
       };
-      const value = cluster.totalCost.value ?? document.totalCost.value;
+      const value = allocation.value;
       groups.set(name, {
         ...current,
         count: current.count + 1,
-        offer: isOfferDocument(document) ? sumValues([current.offer, value]) : current.offer,
-        progress: isProgressInvoiceDocument(document) ? sumValues([current.progress, value]) : current.progress,
-        final: isInvoiceLikeDocument(document) ? sumValues([current.final, value]) : current.final,
-        hasFinal: current.hasFinal || isInvoiceLikeDocument(document),
-        hasProgress: current.hasProgress || isProgressInvoiceDocument(document),
-        hasOffer: current.hasOffer || isOfferDocument(document)
+        offer: isOfferDocument(allocation.document) ? sumValues([current.offer, value]) : current.offer,
+        progress: isProgressInvoiceDocument(allocation.document) ? sumValues([current.progress, value]) : current.progress,
+        final: isInvoiceLikeDocument(allocation.document) ? sumValues([current.final, value]) : current.final,
+        hasFinal: current.hasFinal || isInvoiceLikeDocument(allocation.document),
+        hasProgress: current.hasProgress || isProgressInvoiceDocument(allocation.document),
+        hasOffer: current.hasOffer || isOfferDocument(allocation.document)
       });
     });
   });

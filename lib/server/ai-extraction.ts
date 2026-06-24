@@ -180,7 +180,7 @@ async function runOpenAiExtractionPerDocument(
             "Leistungsbereiche gehoeren in measures, massnahmen_details, cluster und beschreibung_massnahmen, nicht in anbieter.",
             "Erlaubte cluster: Dach, Fassade, Fenster, Türen, Balkone, Heizung, Sanitär, Elektro, Brandschutz, Aufzüge, Treppenhäuser, Keller, Außenanlagen, Tiefgarage, Malerarbeiten, Bodenbeläge, Dachentwässerung, Wärmedämmung, Schornstein, Trinkwasser, Abwasser, Lüftung, Photovoltaik, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
-            "Mapping: Erstbegehung -> Planung / Dokumentation; Bodenbelagsarbeiten -> Boden; Malerarbeiten -> Maler; Fliesenarbeiten und Estrich -> Bad / Fliesen; Sanitär - Heizungsarbeiten -> Sanitär / Heizung; Elektroarbeiten -> Elektro; Tischlerarbeiten -> Türen / Fenster; Reinigung -> Reinigung; Zusatzarbeiten -> Sonstiges.",
+            "Mapping auf den Standard-Gewerkekatalog: Bodenbelag/Bodenbelagsarbeiten -> Bodenbeläge; Malerarbeiten -> Malerarbeiten; Fliesenarbeiten/Estrich -> Sanitär mit Beschreibung Fliesenarbeiten und Estrich; Sanitär-/Heizungsarbeiten -> Heizung oder Sanitär; Elektroarbeiten -> Elektro; Tischlerarbeiten/Türen -> Türen; Reinigung -> Reinigung; Erstbegehung/Zusatzarbeiten -> Sonstiges.",
             "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
             "Wenn im Betreff eine Lage wie 2.OG 3.v.li steht, als lage speichern.",
             "Projektart aus dem Dokument ableiten, z.B. Wohnungssanierung, Fassadensanierung, Dacharbeiten oder Elektroarbeiten, aber nur bei belegbarer Quelle.",
@@ -1045,9 +1045,10 @@ function detectMeasures(text: string): Array<{
     { pattern: /Fenster(?:arbeiten|tausch)?/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung(?:sarbeiten)?/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro(?:arbeiten)?/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
-    { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?|Fliesen(?:arbeiten)?|Estrich/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
+    { pattern: /Sanit(?:aer|\u00e4r)(?:arbeiten)?/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
+    { pattern: /Fliesen(?:arbeiten)?|Fliesenspiegel|Estrich(?:arbeiten)?/i, cluster: "Sanitär", description: "Fliesenarbeiten und Estrich", projectType: "Fliesenarbeiten" },
     { pattern: /Maler(?:arbeiten)?/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
-    { pattern: /Boden(?:belagsarbeiten|arbeiten)?/i, cluster: "Bodenbeläge", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
+    { pattern: /Boden(?:belag|belagsarbeiten|arbeiten)?/i, cluster: "Bodenbeläge", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
     { pattern: /Tischler(?:arbeiten)?|T(?:ue|\u00fc)ren/i, cluster: "Türen", description: "Tischlerarbeiten / Türen", projectType: "Tischlerarbeiten" },
     { pattern: /Brand(?:schutz)?|Rauchmelder|RWA/i, cluster: "Brandschutz", description: "Brandschutzarbeiten", projectType: "Brandschutz" },
     { pattern: /Aufzug|Lift/i, cluster: "Aufzüge", description: "Aufzugsarbeiten", projectType: "Aufzüge" },
@@ -1060,6 +1061,8 @@ function detectMeasures(text: string): Array<{
     { pattern: /Abwasser|Kanal/i, cluster: "Abwasser", description: "Abwasserarbeiten", projectType: "Abwasser" },
     { pattern: /L(?:ue|\u00fc)ftung|Ventilat/i, cluster: "Lüftung", description: "Lüftungsarbeiten", projectType: "Lüftung" },
     { pattern: /Photovoltaik|Solar|PV\b/i, cluster: "Photovoltaik", description: "Photovoltaik", projectType: "Photovoltaik" },
+    { pattern: /Reinigung/i, cluster: "Reinigung", description: "Reinigung", projectType: "Reinigung" },
+    { pattern: /Zusatzarbeiten/i, cluster: "Sonstiges", description: "Zusatzarbeiten", projectType: "Zusatzarbeiten" },
     { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
   ];
   const found = new Map<string, {
@@ -1104,7 +1107,8 @@ function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; descript
     { pattern: /Fenster/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung/i, cluster: "Heizung", description: "Heizungsarbeiten", projectType: "Heizungsarbeiten" },
     { pattern: /Elektro/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
-    { pattern: /Sanit[aä]r|Fliesen|Estrich/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
+    { pattern: /Sanit[aä]r/i, cluster: "Sanitär", description: "Sanitärarbeiten", projectType: "Sanitärarbeiten" },
+    { pattern: /Fliesen|Fliesenspiegel|Estrich/i, cluster: "Sanitär", description: "Fliesenarbeiten und Estrich", projectType: "Fliesenarbeiten" },
     { pattern: /Maler/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
     { pattern: /Boden/i, cluster: "Bodenbeläge", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
     { pattern: /T[uü]r|Tischler/i, cluster: "Türen", description: "Türen / Tischlerarbeiten", projectType: "Tischlerarbeiten" },
@@ -1228,13 +1232,15 @@ function parseOfferMeasures(text: string): {
     const sumLine = sumLines.find((entry) => entry.section === definition.section);
     if (!heading && !sumLine) return;
 
-    const lineItems = parseSectionLineItems(text, definition.section);
+    const actualSection = heading?.actualSection ?? sumLine?.actualSection ?? definition.section;
+    const lineItems = parseSectionLineItems(text, actualSection);
     const description = buildMeasureDescription(definition.description, lineItems);
     const evidence = sumLine?.raw ?? heading?.raw ?? null;
     const value = sumLine?.value ?? null;
 
     mappings.push({
       section: definition.section,
+      actualSection,
       heading: heading?.heading ?? sumLine?.heading ?? definition.heading,
       cluster: definition.cluster,
       value,
@@ -1270,9 +1276,9 @@ function offerMeasureDefinitions(): Array<{
 }> {
   return [
     { section: 1, heading: "Erstbegehung", aliases: [/Erstbegehung/i], cluster: "Sonstiges", description: "Erstbegehung und Dokumentation" },
-    { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelagsarbeiten/i], cluster: "Bodenbeläge", description: "Bodenbelagsarbeiten" },
+    { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelag(?:sarbeiten)?/i, /Bodenarbeiten/i], cluster: "Bodenbeläge", description: "Bodenbelagsarbeiten" },
     { section: 3, heading: "Malerarbeiten", aliases: [/Malerarbeiten/i], cluster: "Malerarbeiten", description: "Malerarbeiten" },
-    { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesenarbeiten(?:\s+und\s+Estrich)?/i, /Estrich/i], cluster: "Sanitär", description: "Fliesenarbeiten und Estrich" },
+    { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesen(?:arbeiten)?(?:\s*(?:und|\/|-)\s*Estrich(?:arbeiten)?)?/i, /Estrich(?:arbeiten)?/i, /Fliesenspiegel/i], cluster: "Sanitär", description: "Fliesenarbeiten und Estrich" },
     { section: 5, heading: "Sanitär - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i], cluster: "Heizung", description: "Sanitär- und Heizungsarbeiten" },
     { section: 6, heading: "Elektroarbeiten", aliases: [/Elektroarbeiten/i], cluster: "Elektro", description: "Elektroarbeiten" },
     { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Türen", description: "Tischlerarbeiten" },
@@ -1292,11 +1298,9 @@ function findOfferSectionHeadings(
     if (!match) return;
     const section = Number(match[1]);
     const title = cleanupSectionHeading(match[2]);
-    const definition = definitions.find((entry) =>
-      entry.section === section && entry.aliases.some((alias) => alias.test(title))
-    );
-    if (!definition || headings.some((entry) => entry.section === section)) return;
-    headings.push({ section, heading: title, raw: normalizedLine });
+    const definition = definitions.find((entry) => entry.aliases.some((alias) => alias.test(title)));
+    if (!definition || headings.some((entry) => entry.section === definition.section)) return;
+    headings.push({ section: definition.section, actualSection: section, heading: title, raw: normalizedLine });
   });
   return headings;
 }
@@ -1312,12 +1316,13 @@ function findOfferSectionSums(
     const sectionMatch = normalizedLine.match(/^Summe\s+(\d{1,2})\.\s+(.+)$/i);
     if (!sectionMatch) return;
     const section = Number(sectionMatch[1]);
-    const definition = definitions.find((entry) => entry.section === section);
-    if (!definition || !definition.aliases.some((alias) => alias.test(normalizedLine))) return;
+    const definition = definitions.find((entry) => entry.aliases.some((alias) => alias.test(normalizedLine)));
+    if (!definition) return;
     const moneyMatch = normalizedLine.match(moneyPattern);
-    const headingPart = cleanupSectionHeading(sectionMatch[2].replace(moneyPattern, ""));
+    const headingPart = cleanupSectionHeading(sectionMatch[2].split(moneyPattern)[0] ?? "");
     sumLines.push({
-      section,
+      section: definition.section,
+      actualSection: section,
       heading: headingPart || definition.heading,
       value: parseGermanMoney(moneyMatch?.[1] ?? null),
       raw: normalizedLine

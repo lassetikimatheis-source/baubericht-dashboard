@@ -4443,3 +4443,314 @@ tbody tr:hover {
     min-height: auto;
   }
 }
+
+/* Responsive viewport stabilization
+   Keeps the dashboard sharp and proportionate on laptops, monitors and TV displays. */
+html,
+body {
+  width: 100%;
+  min-width: 320px;
+  overflow-x: hidden;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+.shell {
+  grid-template-columns: clamp(188px, 11vw, 214px) minmax(0, 1fr);
+}
+
+.content {
+  max-width: 1920px;
+  margin: 0 auto;
+}
+
+.workspaceGrid,
+.workspaceGridFull,
+.objectWorkspace {
+  width: 100%;
+  min-width: 0;
+  padding-inline: clamp(18px, 1.4vw, 32px);
+}
+
+.workspaceMain,
+.panel,
+.objectProfile,
+.objectDetailHeader,
+.objectOverviewBoard,
+.tradesBoard,
+.measureGrid,
+.measureCardGrid,
+.documentBoard,
+.aiReportBoard,
+.tableWrap {
+  min-width: 0;
+}
+
+.pageHeader {
+  min-width: 0;
+  padding-inline: clamp(18px, 1.4vw, 32px);
+}
+
+.pageHeader > div,
+.objectHeroContent,
+.objectHeroTitle,
+.objectMasterGrid,
+.objectHeaderMetrics,
+.costLine,
+.metric,
+.measureCard,
+.projectListItem {
+  min-width: 0;
+}
+
+.kpiGrid,
+.objectKpiStrip {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.objectManagementLayout {
+  grid-template-columns: clamp(220px, 15vw, 270px) minmax(0, 1fr);
+}
+
+.objectDirectory {
+  min-width: 0;
+}
+
+.projectListItem,
+.projectListItem span,
+.projectListItem strong,
+.projectListItem em,
+.objectMasterGrid .infoLine,
+.objectHeaderMetrics .costLine,
+.measureCard,
+.metric,
+.costLine {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
+}
+
+.objectDetailHeaderWithImage {
+  grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
+}
+
+.objectDetailHeaderNoImage {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.objectHeroContent {
+  padding: clamp(26px, 2vw, 40px);
+}
+
+.objectDetailHeader h3 {
+  font-size: clamp(40px, 3.1vw, 60px);
+}
+
+.objectHeroTitle p {
+  font-size: clamp(18px, 1.15vw, 22px);
+}
+
+.objectMasterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, max-content));
+}
+
+.objectMasterGrid .infoLine {
+  max-width: 100%;
+}
+
+.objectHeaderMetrics {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.objectHeaderMetrics .costLine {
+  align-content: center;
+  min-height: 96px;
+  padding-right: 16px;
+}
+
+.objectHeaderMetrics .costLine span {
+  white-space: normal;
+}
+
+.objectHeaderMetrics .costLine strong {
+  white-space: normal;
+}
+
+.mapObjectGrid,
+.objectOverviewBoard,
+.tradesBoard {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.55fr);
+}
+
+.leafletCard {
+  height: clamp(420px, 45vh, 620px);
+  min-height: 420px;
+}
+
+.dashboardMapGrid .leafletCard {
+  height: clamp(340px, 36vh, 500px);
+  min-height: 340px;
+}
+
+.tradeChart {
+  min-height: clamp(300px, 34vh, 420px);
+}
+
+.measureCardGrid {
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+}
+
+.measureCardStats,
+.documentStats,
+.objectStats,
+.costGrid,
+.filterBar,
+.dashboardFilters {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.tableWrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.tableWrap table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.dataTable,
+.overviewTable {
+  min-width: min(1500px, calc(100vw - 260px));
+}
+
+.measureListTable table,
+.compactTable table {
+  min-width: min(980px, 100%);
+}
+
+@media (min-width: 1921px) {
+  .content {
+    max-width: 1840px;
+  }
+
+  .objectWorkspace,
+  .workspaceGrid,
+  .workspaceGridFull {
+    padding-inline: 32px;
+  }
+
+  .objectManagementLayout {
+    grid-template-columns: 270px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1500px) {
+  .mapObjectGrid,
+  .objectOverviewBoard,
+  .tradesBoard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .objectDetailHeaderWithImage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .objectHeroImage {
+    border-left: 0;
+    border-top: 1px solid #eef2f6;
+    border-radius: 0 0 12px 12px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .shell,
+  .objectManagementLayout,
+  .workspaceGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: relative;
+    height: auto;
+    min-height: auto;
+  }
+
+  .nav {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .sideNote {
+    display: none;
+  }
+
+  .objectDirectory,
+  .editorPanel {
+    position: static;
+    max-height: none;
+  }
+
+  .dataTable,
+  .overviewTable {
+    min-width: 1120px;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspaceGrid,
+  .workspaceGridFull,
+  .objectWorkspace,
+  .pageHeader {
+    padding-inline: 14px;
+  }
+
+  .pageHeader,
+  .dashboardToolbar,
+  .filterPanelHeader,
+  .uploadFooter,
+  .objectPageHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
+  }
+
+  .objectDetailHeader h3 {
+    font-size: 36px;
+  }
+
+  .objectHeaderMetrics,
+  .kpiGrid,
+  .objectKpiStrip {
+    grid-template-columns: 1fr;
+  }
+
+  .tabs {
+    gap: 14px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .tabButton {
+    flex: 0 0 auto;
+  }
+
+  .leafletCard,
+  .dashboardMapGrid .leafletCard {
+    height: 340px;
+    min-height: 340px;
+  }
+}
