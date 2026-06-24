@@ -28,7 +28,7 @@ export function TradeCostBarChart({
   onSelect?: (id: string) => void;
 }) {
   const chartRows = rows
-    .filter((row) => typeof row.kosten_brutto === "number")
+    .filter((row) => typeof row.kosten_brutto === "number" && row.kosten_brutto > 0)
     .sort((a, b) => (b.kosten_brutto ?? 0) - (a.kosten_brutto ?? 0));
 
   if (chartRows.length === 0) {
