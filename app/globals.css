@@ -4698,7 +4698,7 @@ video {
 }
 
 .objectHeaderMetrics {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .objectHeaderMetrics .costLine {
@@ -4708,11 +4708,18 @@ video {
 }
 
 .objectHeaderMetrics .costLine span {
-  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .objectHeaderMetrics .costLine strong {
-  white-space: normal;
+  overflow: hidden;
+  font-size: clamp(18px, 1.05vw, 22px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mapObjectGrid,
