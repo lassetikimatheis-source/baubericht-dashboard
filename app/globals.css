@@ -2447,6 +2447,80 @@ select {
   }
 }
 
+/* Large-screen consistency pass */
+@media (min-width: 1181px) {
+  .shell {
+    min-height: 100dvh;
+    align-items: stretch;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    align-self: stretch;
+    height: auto;
+    min-height: max(100dvh, 100%);
+  }
+
+  .content {
+    max-width: none;
+    margin: 0;
+  }
+
+  .workspaceGrid,
+  .workspaceGridFull,
+  .objectWorkspace {
+    max-width: none;
+    padding-inline: clamp(20px, 1.25vw, 34px);
+  }
+
+  .objectManagementLayout {
+    grid-template-columns: clamp(230px, 13vw, 285px) minmax(0, 1fr);
+  }
+
+  .objectDetailHeader,
+  .dashboardFilterPanel,
+  .tradesBoard,
+  .objectOverviewBoard,
+  .panel,
+  .tradeChartCard,
+  .tradeDonutCard {
+    width: 100%;
+  }
+}
+
+@media (min-width: 1921px) {
+  .content {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+
+  .objectWorkspace,
+  .workspaceGrid,
+  .workspaceGridFull {
+    padding-inline: clamp(28px, 1.6vw, 54px);
+  }
+
+  .objectManagementLayout {
+    grid-template-columns: clamp(250px, 12vw, 310px) minmax(0, 1fr);
+  }
+
+  .objectDetailHeaderWithImage {
+    grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.55fr);
+  }
+
+  .tradesBoard,
+  .objectOverviewBoard,
+  .mapObjectGrid {
+    grid-template-columns: minmax(0, 1.65fr) minmax(360px, 0.55fr);
+  }
+
+  .tradeChart {
+    min-height: clamp(360px, 38vh, 520px);
+  }
+}
+
 /* UI refresh: clean Paribus asset-management look */
 :root {
   --navy: #466389;
