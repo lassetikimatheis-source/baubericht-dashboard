@@ -1402,6 +1402,10 @@ function InfoLine({ label, value }: { label: string; value: string }) {
 
 const chartPalette = ["#466389", "#6E8CB0", "#92A9C4", "#FF6E42", "#8AB17D", "#D9A441", "#7A8590", "#A6B2BF"];
 
+function tradeChartColor(index: number): string {
+  return index === 0 ? "#FF6E42" : chartPalette[index % chartPalette.length];
+}
+
 function ObjectYearCostChart({ documents }: { documents: ObjectAnalysis[] }) {
   const data = groupByYear(documents);
   return (
@@ -2581,6 +2585,7 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
     quelle: row.count > 0 ? "Dokumente / KI-Zuordnung" : "Standard-Gewerkekatalog",
     status: row.status
   }));
+  const donutRows = groups.filter((entry) => entry.total > 0);
   const selectedGroup = groups.find((row) => row.cluster === selectedMeasureId) ?? null;
   const selectedRow = selectedGroup ? measureRowFromTradeGroup(selectedGroup) : null;
 
@@ -2594,14 +2599,34 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
             <p>Anteil der Bruttokosten je Gewerk.</p>
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={260}>
-          <PieChart>
-            <Pie data={groups.filter((entry) => entry.total > 0)} dataKey="total" nameKey="cluster" innerRadius={62} outerRadius={96} paddingAngle={2}>
-              {groups.map((entry, index) => <Cell key={entry.cluster} fill={index === 0 ? "#FF6E42" : chartPalette[index % chartPalette.length]} />)}
-            </Pie>
-            <Tooltip formatter={(value) => formatNullableCurrency(Number(value))} />
-          </PieChart>
-        </ResponsiveContainer>
+        <div className="tradeDonutLayout">
+          <div className="tradeDonutChart">
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie data={donutRows} dataKey="total" nameKey="cluster" innerRadius={70} outerRadius={108} paddingAngle={2}>
+                  {donutRows.map((entry, index) => <Cell key={entry.cluster} fill={tradeChartColor(index)} />)}
+                </Pie>
+                <Tooltip formatter={(value) => formatNullableCurrency(Number(value))} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="tradeLegend" aria-label="Gewerke-Legende">
+            {donutRows.length === 0 ? (
+              <p className="muted">Keine Gewerke mit Kosten vorhanden.</p>
+            ) : donutRows.map((entry, index) => (
+              <button
+                type="button"
+                className="tradeLegendRow"
+                key={entry.cluster}
+                onClick={() => setSelectedMeasureId(entry.cluster)}
+              >
+                <span className="tradeLegendDot" style={{ backgroundColor: tradeChartColor(index) }} />
+                <span className="tradeLegendName">{entry.cluster}</span>
+                <strong>{entry.share === null ? "k.A." : `${formatNullableNumber(roundMoney(entry.share))} %`}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
       <section className="panel panelFlush">
         <div className="panelHeader">

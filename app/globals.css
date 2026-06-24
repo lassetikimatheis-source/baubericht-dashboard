@@ -2016,6 +2016,61 @@ select {
   padding: 16px;
 }
 
+.tradeDonutLayout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.95fr) minmax(190px, 0.75fr);
+  gap: 20px;
+  align-items: center;
+}
+
+.tradeDonutChart {
+  min-width: 0;
+}
+
+.tradeLegend {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tradeLegendRow {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) max-content;
+  gap: 9px;
+  align-items: center;
+  min-height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #24364d;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.tradeLegendRow:hover {
+  background: #fff5ef;
+  color: var(--orange-deep);
+}
+
+.tradeLegendDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.tradeLegendName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tradeLegendRow strong {
+  color: #24364d;
+  font-variant-numeric: tabular-nums;
+}
+
 .tradesBoard {
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
 }
@@ -4746,6 +4801,10 @@ video {
     border-top: 1px solid #eef2f6;
     border-radius: 0 0 12px 12px;
   }
+
+  .tradeDonutLayout {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 0.55fr);
+  }
 }
 
 @media (max-width: 1180px) {
@@ -4778,6 +4837,10 @@ video {
   .dataTable,
   .overviewTable {
     min-width: 1120px;
+  }
+
+  .tradeDonutLayout {
+    grid-template-columns: 1fr;
   }
 }
 
