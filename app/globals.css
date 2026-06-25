@@ -2729,6 +2729,82 @@ select {
   padding-inline: 9px;
 }
 
+.documentWeOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d8e1ec;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.documentWeOptions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #24364d;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.documentInlineFields {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.inlineDocumentField {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.85fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid #e3e8ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.inlineDocumentField span {
+  color: #637087;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.inlineDocumentField strong {
+  overflow: hidden;
+  color: #10213a;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inlineDocumentField input {
+  min-width: 0;
+  border: 1px solid #d8e1ec;
+  border-radius: 7px;
+  color: #10213a;
+  font-size: 12px;
+  font-weight: 750;
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.inlineDocumentField button {
+  min-height: 28px;
+  border-radius: 7px;
+  font-size: 11px;
+  padding-inline: 8px;
+}
+
+.inlineDocumentField.editing {
+  grid-template-columns: 92px minmax(0, 1fr) auto auto;
+  background: #fff;
+  border-color: rgba(255, 110, 66, 0.32);
+}
+
 .documentWarnings {
   display: flex;
   flex-wrap: wrap;

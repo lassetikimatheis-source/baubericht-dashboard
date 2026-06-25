@@ -88,6 +88,7 @@ type TextFieldKey =
   | "location"
   | "measureDescription"
   | "dataQuality"
+  | "remarks"
   | "projectSuggestion"
   | "assignmentSuggestion";
 type NumberFieldKey =
@@ -2258,6 +2259,7 @@ function ObjectDocumentsTab({
 }) {
   const [filters, setFilters] = useState({ year: "", trade: "", type: "", object: "" });
   const basisDocuments = costBasis === "manual" ? costDocuments : applyCostBasis(costDocuments, costBasis, manualCostDocumentIds);
+  const apartmentOptions = collectApartmentOptions(documents);
   const filteredDocuments = basisDocuments.filter((document) => (
     (!filters.year || fieldOrUnknown(document.year).includes(filters.year)) &&
     (!filters.trade || formatClusters(document).toLowerCase().includes(filters.trade.toLowerCase())) &&
@@ -2289,7 +2291,8 @@ function ObjectDocumentsTab({
             <h3>{fieldOrUnknown(document.provider)}</h3>
             <p className="documentMetaLine">Objekt {fieldOrUnknown(document.objectNumber)}</p>
             <p className="documentMetaLine">{weLabel(document)}</p>
-            <DocumentWeEditor document={document} onUpdate={onUpdate} />
+            <DocumentWeEditor document={document} apartmentOptions={apartmentOptions} onUpdate={onUpdate} />
+            <DocumentInlineFields document={document} onUpdate={onUpdate} />
             <div className="documentWarnings">
               {documentWarningItems(document).map((item) => <span key={item}>{item}</span>)}
             </div>
@@ -2341,21 +2344,27 @@ function weLabel(document: ObjectAnalysis): string {
 
 function DocumentWeEditor({
   document,
+  apartmentOptions,
   onUpdate
 }: {
   document: ObjectAnalysis;
+  apartmentOptions: string[];
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
 }) {
-  const currentValue = fieldOrUnknown(document.apartmentNumber);
+  const currentValues = documentApartmentValues(document);
+  const currentValue = currentValues.join(", ");
   const [isEditing, setIsEditing] = useState(false);
-  const [value, setValue] = useState(currentValue === "k.A." ? "" : currentValue);
+  const [selectedValues, setSelectedValues] = useState<string[]>(currentValues);
+  const [manualValue, setManualValue] = useState("");
 
   useEffect(() => {
-    setValue(currentValue === "k.A." ? "" : currentValue);
+    setSelectedValues(currentValues);
+    setManualValue("");
   }, [currentValue]);
 
   function saveValue() {
-    onUpdate(document.id, (current) => updateDocumentApartmentNumber(current, value));
+    const mergedValues = uniqueStrings([...selectedValues, ...parseApartmentValues(manualValue)]);
+    onUpdate(document.id, (current) => updateDocumentApartmentNumber(current, mergedValues.join(", ")));
     setIsEditing(false);
   }
 
@@ -2363,23 +2372,113 @@ function DocumentWeEditor({
     <div className="documentWeEditor" onClick={(event) => event.stopPropagation()}>
       {isEditing ? (
         <>
+          {apartmentOptions.length ? (
+            <div className="documentWeOptions" aria-label="Vorhandene WE">
+              {apartmentOptions.map((apartment) => (
+                <label key={apartment}>
+                  <input
+                    type="checkbox"
+                    checked={selectedValues.includes(apartment)}
+                    onChange={(event) => {
+                      setSelectedValues((current) => event.target.checked
+                        ? uniqueStrings([...current, apartment])
+                        : current.filter((entry) => entry !== apartment));
+                    }}
+                  />
+                  WE {apartment}
+                </label>
+              ))}
+            </div>
+          ) : null}
           <input
             aria-label="WE-Nummer"
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder="WE-Nummer"
+            value={manualValue}
+            onChange={(event) => setManualValue(event.target.value)}
+            placeholder="Neue WE oder Bereich, z.B. 1010, 1011 oder 1010-1015"
           />
           <button type="button" onClick={saveValue}>Speichern</button>
           <button type="button" onClick={() => {
-            setValue(currentValue === "k.A." ? "" : currentValue);
+            setSelectedValues(currentValues);
+            setManualValue("");
             setIsEditing(false);
           }}>
             Abbrechen
           </button>
         </>
       ) : (
-        <button type="button" onClick={() => setIsEditing(true)}>WE bearbeiten</button>
+        <button type="button" onClick={() => setIsEditing(true)}>Bearbeiten</button>
       )}
+    </div>
+  );
+}
+
+function DocumentInlineFields({
+  document,
+  onUpdate
+}: {
+  document: ObjectAnalysis;
+  onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+}) {
+  return (
+    <div className="documentInlineFields" onClick={(event) => event.stopPropagation()}>
+      <InlineDocumentField label="Dokumenttyp" value={fieldOrUnknown(document.documentType)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "documentType", value))} />
+      <InlineDocumentField label="Lieferant" value={fieldOrUnknown(document.provider)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "provider", value))} />
+      <InlineDocumentField label="Rechnungsnummer" value={fieldOrUnknown(document.documentNumber)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "documentNumber", value))} />
+      <InlineDocumentField label="Rechnungsdatum" value={fieldOrUnknown(document.documentDate)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "documentDate", value))} />
+      <InlineDocumentField label="Netto" value={fieldOrUnknown(document.netCost)} onSave={(value) => onUpdate(document.id, (current) => updateManualNumberField(current, "netCost", value))} />
+      <InlineDocumentField label="Brutto" value={fieldOrUnknown(document.totalCost)} onSave={(value) => onUpdate(document.id, (current) => updateManualNumberField(current, "totalCost", value))} />
+      <InlineDocumentField label="Objektnummer" value={fieldOrUnknown(document.objectNumber)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "objectNumber", value))} />
+      <InlineDocumentField label="Gewerk" value={formatClusters(document)} onSave={(value) => setCluster(document.id, value, onUpdate)} />
+      <InlineDocumentField label="Maßnahmen" value={fieldOrUnknown(document.measureDescription)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "measureDescription", value))} />
+      <InlineDocumentField label="Status" value={fieldOrUnknown(document.dataQuality)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "dataQuality", value))} />
+      <InlineDocumentField label="Bemerkungen" value={fieldOrUnknown(document.remarks)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "remarks", value))} />
+    </div>
+  );
+}
+
+function InlineDocumentField({
+  label,
+  value,
+  onSave
+}: {
+  label: string;
+  value: string;
+  onSave: (value: string) => void;
+}) {
+  const displayValue = value === "k.A." ? "" : value;
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(displayValue);
+
+  useEffect(() => {
+    setDraft(displayValue);
+  }, [displayValue]);
+
+  if (isEditing) {
+    return (
+      <div className="inlineDocumentField editing">
+        <span>{label}</span>
+        <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Nicht erkannt" />
+        <button type="button" onClick={() => {
+          onSave(draft);
+          setIsEditing(false);
+        }}>
+          Speichern
+        </button>
+        <button type="button" onClick={() => {
+          setDraft(displayValue);
+          setIsEditing(false);
+        }}>
+          Abbrechen
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="inlineDocumentField">
+      <span>{label}</span>
+      <strong>{displayValue || "k.A."}</strong>
+      <button type="button" onClick={() => setIsEditing(true)}>Bearbeiten</button>
     </div>
   );
 }
@@ -4263,6 +4362,8 @@ function mergeDocumentPreferManual(existing: ObjectAnalysis, incoming: ObjectAna
     measureDetails: incoming.measureDetails ?? existing.measureDetails,
     measureDebug: incoming.measureDebug ?? existing.measureDebug ?? null,
     costDebug: incoming.costDebug ?? existing.costDebug,
+    remarks: existing.remarks ? mergeFieldPreferManual(existing.remarks, incoming.remarks ?? emptyField<string>()) : incoming.remarks,
+    manualChanges: [...(existing.manualChanges ?? []), ...(incoming.manualChanges ?? [])],
     sourceDocumentIds: Array.from(new Set([...(existing.sourceDocumentIds ?? []), ...(incoming.sourceDocumentIds ?? [])]))
   };
 }
@@ -4593,6 +4694,31 @@ function collectApartments(documents: ObjectAnalysis[], project?: ProjectRecord)
     if (apartment !== "k.A.") values.add(apartment);
   });
   return values.size > 0 ? Array.from(values).join(", ") : "k.A.";
+}
+
+function collectApartmentOptions(documents: ObjectAnalysis[]): string[] {
+  return uniqueStrings(documents.flatMap((document) => documentApartmentValues(document)))
+    .sort((left, right) => left.localeCompare(right, "de", { numeric: true, sensitivity: "base" }));
+}
+
+function documentApartmentValues(document: ObjectAnalysis): string[] {
+  const values = [
+    ...parseApartmentValues(fieldOrUnknown(document.apartmentNumber)),
+    ...(document.renovatedApartments.value ?? []).flatMap(parseApartmentValues)
+  ];
+  return uniqueStrings(values);
+}
+
+function parseApartmentValues(value: string): string[] {
+  if (!value || value === "k.A.") return [];
+  return value
+    .split(/[,;\n]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 function documentsForMeasure(row: MeasureRow, documents: ObjectAnalysis[]): ObjectAnalysis[] {
@@ -5243,25 +5369,60 @@ function formatPercent(value: number | null, total: number | null): string {
 }
 
 function updateDocumentApartmentNumber(document: ObjectAnalysis, rawValue: string): ObjectAnalysis {
-  const value = rawValue.trim();
-  if (!value) {
-    return {
+  const originalValue = collectApartments([document]);
+  const values = parseApartmentValues(rawValue);
+  const value = values.join(", ");
+  if (!values.length) {
+    return appendManualChange({
       ...document,
       apartmentNumber: emptyField<string>(),
       renovatedApartments: emptyField<string[]>(),
       renovatedApartmentCount: hasManualSource(document.renovatedApartmentCount)
         ? emptyField<number>()
         : document.renovatedApartmentCount
-    };
+    }, "apartmentNumber", originalValue, "");
   }
 
-  return {
+  return appendManualChange({
     ...document,
     apartmentNumber: manualField(value),
-    renovatedApartments: manualArrayField([value]),
+    renovatedApartments: manualArrayField(values),
     renovatedApartmentCount: document.renovatedApartmentCount.value
       ? document.renovatedApartmentCount
-      : manualNumberField("1")
+      : manualNumberField(String(values.length))
+  }, "apartmentNumber", originalValue, value);
+}
+
+function updateManualTextField(document: ObjectAnalysis, field: TextFieldKey, rawValue: string): ObjectAnalysis {
+  const originalValue = field === "remarks" ? fieldOrUnknown(document.remarks) : fieldOrUnknown(document[field]);
+  const next = {
+    ...document,
+    [field]: manualField(rawValue)
+  };
+  return appendManualChange(next, field, originalValue, rawValue.trim());
+}
+
+function updateManualNumberField(document: ObjectAnalysis, field: NumberFieldKey, rawValue: string): ObjectAnalysis {
+  const originalValue = fieldOrUnknown(document[field]);
+  const next = {
+    ...document,
+    [field]: manualNumberField(rawValue)
+  };
+  return appendManualChange(next, field, originalValue, rawValue.trim());
+}
+
+function appendManualChange(document: ObjectAnalysis, field: string, originalValue: string, manualValue: string): ObjectAnalysis {
+  return {
+    ...document,
+    manualChanges: [
+      ...(document.manualChanges ?? []),
+      {
+        field,
+        originalValue: originalValue === "k.A." ? "" : originalValue,
+        manualValue,
+        changedAt: new Date().toISOString()
+      }
+    ]
   };
 }
 
@@ -5271,6 +5432,7 @@ function setCluster(
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void
 ) {
   onUpdate(documentId, (document) => {
+    const originalValue = formatClusters(document);
     const first = document.clusters[0] ?? {
       id: `${document.id}-manual-cluster`,
       cluster: emptyField<MeasureCluster>(),
@@ -5279,7 +5441,7 @@ function setCluster(
       allocation: emptyField<CostAllocation>(),
       sourceDocumentId: document.id
     };
-    return {
+    return appendManualChange({
       ...document,
       clusters: [
         {
@@ -5288,7 +5450,7 @@ function setCluster(
         },
         ...document.clusters.slice(1)
       ]
-    };
+    }, "clusters", originalValue, value.trim());
   });
 }
 

@@ -156,6 +156,13 @@ export interface LineItem {
   source: FieldSource;
 }
 
+export interface ManualChangeEntry {
+  field: string;
+  originalValue: string;
+  manualValue: string;
+  changedAt: string;
+}
+
 export interface ObjectAnalysis {
   id: string;
   aiAgentName: ExtractedField<string>;
@@ -190,6 +197,8 @@ export interface ObjectAnalysis {
   costDebug: CostDebugInfo | null;
   measureDetails?: MeasureDetail[];
   measureDebug?: MeasureDebugInfo | null;
+  remarks?: ExtractedField<string>;
+  manualChanges?: ManualChangeEntry[];
   clusters: MeasureItem[];
   sourceDocumentIds: string[];
 }
