@@ -2782,6 +2782,15 @@ select {
   min-width: 760px;
 }
 
+.averageCostColumn {
+  background: #fff7ed;
+  border-left: 2px solid rgba(255, 110, 66, 0.45);
+}
+
+th.averageCostColumn {
+  color: #9a3412;
+}
+
 .measureListTable td:nth-child(4),
 .measureSlideOver .infoLine strong {
   overflow-wrap: anywhere;

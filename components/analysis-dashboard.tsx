@@ -5,6 +5,8 @@ import dynamic from "next/dynamic";
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   Cell,
   Pie,
   PieChart,
@@ -208,6 +210,7 @@ interface TradeGroupRow {
   cluster: MeasureCluster;
   count: number;
   total: number;
+  averagePerDocument: number | null;
   offer: number;
   invoice: number;
   share: number | null;
@@ -1876,7 +1879,7 @@ function ObjectsView({
   const selectedEntrances = selectedObject ? entrances.filter((entrance) => entrance.objectId === selectedObject.id) : [];
   const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
   const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
-  const objectFilteredDocuments = applyObjectPageFilters(selectedDocuments, objectPageFilters);
+  const objectFilteredDocuments = getFilteredDocuments(selectedDocuments, objectPageFilters);
   const selectedCostDocuments = applyCostBasis(objectFilteredDocuments, costBasis, manualCostDocumentIds);
   const toggleManualCostDocument = (documentId: string, checked: boolean) => {
     setManualCostDocumentIds((current) => {
@@ -2068,6 +2071,8 @@ function ObjectDetailHeader({
   images: string[];
 }) {
   const grossCost = sumValues(documents.map((document) => document.totalCost.value));
+  const averageApartmentSize = calculateAverageApartmentSize(object, documents);
+  const averageCostPerDocument = calculateAverageCostPerDocument(grossCost, documents);
   const measureCount = standardTradeCatalog.length;
   const status = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Aktiv" : "k.A.";
   const dataQuality = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
@@ -2094,13 +2099,14 @@ function ObjectDetailHeader({
           <InfoLine label="Fonds" value={object.fund || "k.A."} />
           <InfoLine label="Baujahr" value={object.constructionYear || "k.A."} />
           <InfoLine label="Wohneinheiten" value={object.unitCount || "k.A."} />
-          <InfoLine label="Gewerbeeinheiten" value="k.A." />
+          <InfoLine label="Ø Wohnungsgröße" value={formatArea(averageApartmentSize)} />
           <InfoLine label="Gesamtfläche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "k.A."} />
           <InfoLine label="Wohnfläche sanierte Wohnung" value={object.wohnflaecheSanierteWohnung ? `${object.wohnflaecheSanierteWohnung} m2` : "k.A."} />
         </div>
         <div className="objectHeaderMetrics">
           <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
           <CostMetric label="Ø Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
+          <CostMetric label="Ø Kosten / Wohnung" value={formatNullableCurrency(averageCostPerDocument)} />
           <CostMetric label="Kosten pro m²" value={formatEuroPerSqm(costPerSqmForObject(object, grossCost))} />
           <CostMetric label="Dokumente" value={`${formatNumber(documents.length)} / ${formatNumber(totalDocuments)}`} />
           <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
@@ -2690,6 +2696,7 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
   return (
     <div className="tradesBoard">
       <TradeCostBarChart rows={chartRows} onSelect={setSelectedMeasureId} />
+      <AverageTradeCostBarChart rows={groups} onSelect={setSelectedMeasureId} />
       <section className="panel tradeDonutCard">
         <div className="panelHeader compactHeader">
           <div>
@@ -2735,13 +2742,14 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
         </div>
         <div className="tableWrap compactTable">
           <table>
-            <thead><tr><th>Gewerk</th><th>Dokumente</th><th>Gesamtkosten</th><th>Anteil</th><th>Angebotssumme</th><th>Rechnungssumme</th></tr></thead>
+            <thead><tr><th>Gewerk</th><th>Dokumente</th><th>Gesamtkosten</th><th className="averageCostColumn">Ø Kosten / Wohnung</th><th>Anteil</th><th>Angebotssumme</th><th>Rechnungssumme</th></tr></thead>
             <tbody>
               {groups.map((entry) => (
                 <tr key={entry.cluster} onClick={() => setSelectedMeasureId(entry.cluster)}>
                   <td>{tradeIcon(entry.cluster)} {entry.cluster}</td>
                   <td>{formatNumber(entry.count)}</td>
                   <td>{formatNullableCurrency(entry.total)}</td>
+                  <td className="averageCostColumn">{formatNullableCurrency(entry.averagePerDocument)}</td>
                   <td>{entry.share === null ? "k.A." : `${formatNullableNumber(roundMoney(entry.share))} %`}</td>
                   <td>{formatNullableCurrency(entry.offer)}</td>
                   <td>{formatNullableCurrency(entry.invoice)}</td>
@@ -2760,6 +2768,103 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
         />
       ) : null}
     </div>
+  );
+}
+
+function AverageTradeCostBarChart({
+  rows,
+  onSelect
+}: {
+  rows: TradeGroupRow[];
+  onSelect?: (id: string) => void;
+}) {
+  const chartRows = rows
+    .filter((row) => row.averagePerDocument !== null && row.averagePerDocument > 0)
+    .sort((a, b) => (b.averagePerDocument ?? 0) - (a.averagePerDocument ?? 0));
+
+  if (chartRows.length === 0) {
+    return (
+      <section className="tradeChartCard">
+        <div className="panelHeader compactHeader">
+          <div>
+            <h3>Ø Kosten pro Wohnung je Gewerk</h3>
+            <p>Durchschnittliche Bruttokosten pro sanierter Wohnung auf Basis der PDF-Dokumente je Gewerk.</p>
+          </div>
+        </div>
+        <div className="emptyState"><p>Keine Durchschnittswerte vorhanden</p></div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="tradeChartCard">
+      <div className="panelHeader compactHeader">
+        <div>
+          <h3>Ø Kosten pro Wohnung je Gewerk</h3>
+          <p>Durchschnittliche Bruttokosten pro sanierter Wohnung auf Basis der PDF-Dokumente je Gewerk.</p>
+        </div>
+      </div>
+      <div className="tradeChart">
+        <ResponsiveContainer width="100%" height={Math.max(300, chartRows.length * 44)}>
+          <BarChart
+            data={chartRows}
+            layout="vertical"
+            margin={{ top: 12, right: 70, bottom: 16, left: 30 }}
+            barCategoryGap={14}
+          >
+            <XAxis
+              type="number"
+              axisLine={{ stroke: "#DCE2E8" }}
+              tickLine={false}
+              tick={{ fill: "#63748A", fontSize: 12 }}
+              tickFormatter={(value) => formatShortEuroAxis(Number(value))}
+            />
+            <YAxis
+              type="category"
+              dataKey="cluster"
+              width={170}
+              axisLine={{ stroke: "#DCE2E8" }}
+              tickLine={false}
+              tick={{ fill: "#24364D", fontSize: 12, fontWeight: 800 }}
+            />
+            <Tooltip
+              cursor={{ fill: "rgba(70, 99, 137, 0.06)" }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const row = payload[0].payload as TradeGroupRow;
+                return (
+                  <div className="tradeTooltip">
+                    <strong>{row.cluster}</strong>
+                    <span>{formatNullableCurrency(row.averagePerDocument)} pro Wohnung</span>
+                    <span>{formatNullableCurrency(row.total)} / {formatNumber(row.count)} Dokument(e)</span>
+                  </div>
+                );
+              }}
+            />
+            <Bar
+              dataKey="averagePerDocument"
+              radius={[0, 8, 8, 0]}
+              label={({ x, y, width, height, value }) => (
+                <text
+                  x={Number(x) + Number(width) + 8}
+                  y={Number(y) + Number(height) / 2 + 4}
+                  fill="#24364D"
+                  fontSize={12}
+                  fontWeight={800}
+                >
+                  {formatNullableCurrency(typeof value === "number" ? value : null)}
+                </text>
+              )}
+              onClick={(data) => onSelect?.((data as TradeGroupRow).cluster)}
+            >
+              {chartRows.map((row, index) => (
+                <Cell key={row.cluster} fill={index === 0 ? "#FF6E42" : "#466389"} cursor="pointer" />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
   );
 }
 
@@ -4810,6 +4915,7 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
       cluster,
       count: 0,
       total: 0,
+      averagePerDocument: null,
       offer: 0,
       invoice: 0,
       share: null,
@@ -4824,6 +4930,7 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
         cluster: name,
         count: 0,
         total: 0,
+        averagePerDocument: null,
         offer: 0,
         invoice: 0,
         share: null,
@@ -4846,9 +4953,42 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
   return Array.from(groups.values())
     .map((entry) => ({
       ...entry,
-      share: total > 0 ? (entry.total / total) * 100 : null
+      share: total > 0 ? (entry.total / total) * 100 : null,
+      averagePerDocument: calculateAverageCostPerTrade(entry)
     }))
     .sort((a, b) => b.total - a.total || standardTradeCatalog.indexOf(a.cluster) - standardTradeCatalog.indexOf(b.cluster));
+}
+
+function safeDivide(value: number | null | undefined, divisor: number | null | undefined): number | null {
+  if (value === null || value === undefined || divisor === null || divisor === undefined || divisor === 0) return null;
+  if (!Number.isFinite(value) || !Number.isFinite(divisor)) return null;
+  return roundMoney(value / divisor);
+}
+
+function formatArea(value: number | null): string {
+  if (value === null) return "k.A.";
+  return `${formatNullableNumber(value)} m²`;
+}
+
+function calculateAverageApartmentSize(object: ObjectRecord, documents: ObjectAnalysis[]): number | null {
+  const renovatedArea = parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "");
+  return safeDivide(renovatedArea, documents.length);
+}
+
+function calculateAverageCostPerDocument(grossCost: number | null, documents: ObjectAnalysis[]): number | null {
+  return safeDivide(grossCost, documents.length);
+}
+
+function calculateAverageCostPerTrade(trade: TradeGroupRow): number | null {
+  return safeDivide(trade.total, getDocumentCountByTrade(trade));
+}
+
+function getDocumentCountByTrade(trade: TradeGroupRow): number {
+  return trade.count;
+}
+
+function getFilteredDocuments(documents: ObjectAnalysis[], filters: ObjectPageFilters): ObjectAnalysis[] {
+  return applyObjectPageFilters(documents, filters);
 }
 
 function groupByMeasureCostRole(documents: ObjectAnalysis[]) {
@@ -5411,4 +5551,10 @@ function formatNullableCurrency(value: number | null): string {
 
 function formatNullableNumber(value: number | null): string {
   return value === null ? "k.A." : formatNumber(value);
+}
+
+function formatShortEuroAxis(value: number): string {
+  if (value >= 1000000) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(value / 1000000)} Mio. €`;
+  if (value >= 1000) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value / 1000)} Tsd. €`;
+  return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value)} €`;
 }
