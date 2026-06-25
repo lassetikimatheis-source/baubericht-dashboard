@@ -2000,6 +2000,7 @@ function ObjectsView({
                   manualCostDocumentIds={manualCostDocumentIds}
                   onToggleCostDocument={toggleManualCostDocument}
                   onSelect={onSelectDocument}
+                  onUpdate={onUpdateDocument}
                   onDelete={onDeleteDocument}
                 />
               ) : null}
@@ -2231,6 +2232,7 @@ function ObjectDocumentsTab({
   manualCostDocumentIds,
   onToggleCostDocument,
   onSelect,
+  onUpdate,
   onDelete
 }: {
   documents: ObjectAnalysis[];
@@ -2239,6 +2241,7 @@ function ObjectDocumentsTab({
   manualCostDocumentIds: Set<string>;
   onToggleCostDocument: (documentId: string, checked: boolean) => void;
   onSelect: (id: string) => void;
+  onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
   onDelete: (id: string) => void;
 }) {
   const [filters, setFilters] = useState({ year: "", trade: "", type: "", object: "" });
@@ -2274,6 +2277,7 @@ function ObjectDocumentsTab({
             <h3>{fieldOrUnknown(document.provider)}</h3>
             <p className="documentMetaLine">Objekt {fieldOrUnknown(document.objectNumber)}</p>
             <p className="documentMetaLine">{weLabel(document)}</p>
+            <DocumentWeEditor document={document} onUpdate={onUpdate} />
             <div className="documentWarnings">
               {documentWarningItems(document).map((item) => <span key={item}>{item}</span>)}
             </div>
@@ -2321,6 +2325,51 @@ function documentWarningItems(document: ObjectAnalysis): string[] {
 function weLabel(document: ObjectAnalysis): string {
   const value = fieldOrUnknown(document.apartmentNumber);
   return value === "k.A." ? "WE nicht hinterlegt" : `WE ${value}`;
+}
+
+function DocumentWeEditor({
+  document,
+  onUpdate
+}: {
+  document: ObjectAnalysis;
+  onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+}) {
+  const currentValue = fieldOrUnknown(document.apartmentNumber);
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState(currentValue === "k.A." ? "" : currentValue);
+
+  useEffect(() => {
+    setValue(currentValue === "k.A." ? "" : currentValue);
+  }, [currentValue]);
+
+  function saveValue() {
+    onUpdate(document.id, (current) => updateDocumentApartmentNumber(current, value));
+    setIsEditing(false);
+  }
+
+  return (
+    <div className="documentWeEditor" onClick={(event) => event.stopPropagation()}>
+      {isEditing ? (
+        <>
+          <input
+            aria-label="WE-Nummer"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder="WE-Nummer"
+          />
+          <button type="button" onClick={saveValue}>Speichern</button>
+          <button type="button" onClick={() => {
+            setValue(currentValue === "k.A." ? "" : currentValue);
+            setIsEditing(false);
+          }}>
+            Abbrechen
+          </button>
+        </>
+      ) : (
+        <button type="button" onClick={() => setIsEditing(true)}>WE bearbeiten</button>
+      )}
+    </div>
+  );
 }
 
 function ObjectApartmentsTab({ documents }: { documents: ObjectAnalysis[] }) {
@@ -5047,6 +5096,29 @@ function formatPercent(value: number | null, total: number | null): string {
   return `${new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format((value / total) * 100)} %`;
 }
 
+function updateDocumentApartmentNumber(document: ObjectAnalysis, rawValue: string): ObjectAnalysis {
+  const value = rawValue.trim();
+  if (!value) {
+    return {
+      ...document,
+      apartmentNumber: emptyField<string>(),
+      renovatedApartments: emptyField<string[]>(),
+      renovatedApartmentCount: hasManualSource(document.renovatedApartmentCount)
+        ? emptyField<number>()
+        : document.renovatedApartmentCount
+    };
+  }
+
+  return {
+    ...document,
+    apartmentNumber: manualField(value),
+    renovatedApartments: manualArrayField([value]),
+    renovatedApartmentCount: document.renovatedApartmentCount.value
+      ? document.renovatedApartmentCount
+      : manualNumberField("1")
+  };
+}
+
 function setCluster(
   documentId: string,
   value: string,
@@ -5078,6 +5150,16 @@ function manualField<T extends string>(value: T): ExtractedField<T> {
   if (!value.trim()) return emptyField<T>();
   return {
     value,
+    sources: [{ documentId: "manual", fileName: "Manuelle Korrektur", method: "Manuell", confidence: 1 }],
+    confidence: 1
+  };
+}
+
+function manualArrayField<T extends string>(value: T[]): ExtractedField<T[]> {
+  const cleaned = value.map((entry) => entry.trim()).filter(Boolean) as T[];
+  if (!cleaned.length) return emptyField<T[]>();
+  return {
+    value: cleaned,
     sources: [{ documentId: "manual", fileName: "Manuelle Korrektur", method: "Manuell", confidence: 1 }],
     confidence: 1
   };
