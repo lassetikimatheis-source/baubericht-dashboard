@@ -1,4 +1,5 @@
 import type { ObjectAnalysis } from "../types/analysis";
+import { normalizeDocumentTrades } from "./trades";
 
 export interface StoredObjectRecord {
   id: string;
@@ -133,13 +134,15 @@ export function getProjects(): StoredProjectRecord[] {
 }
 
 export function saveDocument(document: ObjectAnalysis): ObjectAnalysis {
-  upsertItem(STORAGE_KEYS.documents, document);
-  return document;
+  const normalized = normalizeDocumentTrades(document).document;
+  upsertItem(STORAGE_KEYS.documents, normalized);
+  return normalized;
 }
 
 export function updateDocument(document: ObjectAnalysis): ObjectAnalysis {
-  upsertItem(STORAGE_KEYS.documents, document);
-  return document;
+  const normalized = normalizeDocumentTrades(document).document;
+  upsertItem(STORAGE_KEYS.documents, normalized);
+  return normalized;
 }
 
 export function deleteDocument(id: string): void {
@@ -147,7 +150,15 @@ export function deleteDocument(id: string): void {
 }
 
 export function getDocuments(): ObjectAnalysis[] {
-  return readCollection<ObjectAnalysis>(STORAGE_KEYS.documents);
+  const documents = readCollection<ObjectAnalysis>(STORAGE_KEYS.documents);
+  let changed = false;
+  const normalized = documents.map((document) => {
+    const result = normalizeDocumentTrades(document);
+    if (result.changed) changed = true;
+    return result.document;
+  });
+  if (changed) writeJson(STORAGE_KEYS.documents, normalized);
+  return normalized;
 }
 
 export function saveAssignments(assignments: Record<string, string | null>): void {

@@ -18,6 +18,7 @@ import type { ObjectMapEntry } from "./map/ObjectMap";
 import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
+import { normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
   deleteDocument as deleteStoredDocument,
   deleteEntrance as deleteStoredEntrance,
@@ -311,8 +312,8 @@ const standardTradeCatalog: MeasureCluster[] = [
   "Fenster",
   "Türen",
   "Balkone",
-  "Heizung",
-  "Sanitär",
+  "Heizung und Sanitär",
+  "Fliesen und Estricharbeiten",
   "Elektro",
   "Brandschutz",
   "Aufzüge",
@@ -4035,30 +4036,33 @@ function buildAnalysisFromDocuments(
   documents: ObjectAnalysis[],
   base: PortfolioAnalysisState = emptyAnalysisState
 ): PortfolioAnalysisState {
-  const costDocuments = documents;
+  const normalizedDocuments = documents.map((document) => normalizeDocumentTrades(document).document);
+  const costDocuments = normalizedDocuments;
   return {
     ...base,
-    objects: documents,
-    clusterSummary: documents.flatMap((document) => document.clusters),
+    objects: normalizedDocuments,
+    clusterSummary: normalizedDocuments.flatMap((document) => document.clusters),
     totalCost: aggregateNumberField(costDocuments.map((document) => document.totalCost)),
     averageCostPerApartment: aggregateAverageField(
       costDocuments.map((document) => document.totalCost),
-      documents.map((document) => document.renovatedApartmentCount)
+      normalizedDocuments.map((document) => document.renovatedApartmentCount)
     ),
     averageCostPerSqm: aggregateAverageField(
       costDocuments.map((document) => document.totalCost),
-      documents.map((document) => document.livingAreaSqm)
+      normalizedDocuments.map((document) => document.livingAreaSqm)
     ),
-    reviewRequiredCount: countReviewCases(documents),
+    reviewRequiredCount: countReviewCases(normalizedDocuments),
     issues: base.issues ?? []
   };
 }
 
 function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: ObjectAnalysis[]): ObjectAnalysis[] {
-  const byId = new Map(existing.map((document) => [document.id, document]));
-  const merged = [...existing];
+  const normalizedExisting = existing.map((document) => normalizeDocumentTrades(document).document);
+  const normalizedIncoming = incoming.map((document) => normalizeDocumentTrades(document).document);
+  const byId = new Map(normalizedExisting.map((document) => [document.id, document]));
+  const merged = [...normalizedExisting];
 
-  incoming.forEach((document) => {
+  normalizedIncoming.forEach((document) => {
     const match = byId.get(document.id);
     if (!match) {
       merged.push(document);
@@ -4634,6 +4638,8 @@ function buildObjectPageFilterOptions(documents: ObjectAnalysis[]) {
 
 function normalizeTradeCluster(value: string, description = ""): MeasureCluster {
   const text = `${value} ${description}`.toLowerCase();
+  const normalizedName = normalizeTradeName(value, description);
+  if (standardTradeCatalog.includes(normalizedName as MeasureCluster)) return normalizedName as MeasureCluster;
   if (standardTradeCatalog.includes(value as MeasureCluster)) return value as MeasureCluster;
   if (/dachentw[aä]sser|regenrinne|fallrohr/.test(text)) return "Dachentwässerung";
   if (/dach|ziegel|abdichtung|attika/.test(text)) return "Dach";
@@ -4642,10 +4648,10 @@ function normalizeTradeCluster(value: string, description = ""): MeasureCluster 
   if (/fenster/.test(text)) return "Fenster";
   if (/t[uü]r|tuer|tischler/.test(text)) return "Türen";
   if (/balkon|loggia/.test(text)) return "Balkone";
-  if (/heizung|therme|kessel|radiator|fernw[aä]rme/.test(text)) return "Heizung";
+  if (/heizung|therme|kessel|radiator|fernw[aä]rme|sanit[aä]r|\b(hls|shk|san)\b/.test(text)) return "Heizung und Sanitär";
   if (/trinkwasser/.test(text)) return "Trinkwasser";
   if (/abwasser|kanal/.test(text)) return "Abwasser";
-  if (/sanit[aä]r|bad|fliesen|estrich/.test(text)) return "Sanitär";
+  if (/bad\s*\/\s*fliesen|fliesen|estrich|badboden|bodenaufbau/.test(text)) return "Fliesen und Estricharbeiten";
   if (/elektro|z[aä]hler|installation|leitung/.test(text)) return "Elektro";
   if (/trockenbau|gipskarton|rigips/.test(text)) return "Trockenbau";
   if (/brand|rauchmelder|rwa|feuer/.test(text)) return "Brandschutz";
