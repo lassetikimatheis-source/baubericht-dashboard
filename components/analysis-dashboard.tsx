@@ -523,6 +523,12 @@ export function AnalysisDashboard() {
   }
 
   async function exportFile(type: "excel" | "pdf") {
+    if (type === "pdf" && selectedObject) {
+      const objectDocuments = analysis.objects.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments));
+      exportObjectReport(selectedObject, objectDocuments, objectImages[selectedObject.id] ?? []);
+      return;
+    }
+
     const response = await fetch(`/api/export/${type}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -5557,4 +5563,311 @@ function formatShortEuroAxis(value: number): string {
   if (value >= 1000000) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(value / 1000000)} Mio. €`;
   if (value >= 1000) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value / 1000)} Tsd. €`;
   return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value)} €`;
+}
+
+function exportObjectReport(object: ObjectRecord, documents: ObjectAnalysis[], images: string[]): void {
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) return;
+  reportWindow.document.write(buildObjectReportHtml(object, documents, images));
+  reportWindow.document.close();
+  reportWindow.focus();
+  window.setTimeout(() => reportWindow.print(), 500);
+}
+
+function buildObjectReportHtml(object: ObjectRecord, documents: ObjectAnalysis[], images: string[]): string {
+  const gross = sumValues(documents.map((document) => document.totalCost.value));
+  const net = sumValues(documents.map((document) => document.netCost.value));
+  const vat = sumValues(documents.map((document) => document.vatCost.value));
+  const averageCostPerApartment = safeDivide(gross, documents.length);
+  const renovatedArea = parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "");
+  const costPerSqm = safeDivide(gross, renovatedArea);
+  const averageApartmentSize = calculateAverageApartmentSize(object, documents);
+  const tradeRows = groupByCluster(documents).filter((row) => row.total > 0);
+  const topTrades = tradeRows.slice(0, 8);
+  const documentRows = documents.slice().sort((left, right) =>
+    String(fieldOrUnknown(right.documentDate)).localeCompare(String(fieldOrUnknown(left.documentDate)), "de")
+  );
+  const heroImage = images[0] ?? "";
+  const title = escapeReportHtml(firstKnown(object.objectNumber, object.objectName, object.address));
+  const subtitle = escapeReportHtml(firstKnown(object.address, object.city));
+
+  return `<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Paribus Sanierungsreport ${title}</title>
+  <style>${buildReportCss()}</style>
+</head>
+<body>
+  ${reportPage(1, 3, `
+    <section class="reportHero">
+      <div>
+        <img class="reportLogo" src="/paribus-logo.png" alt="PARIBUS" />
+        <p class="eyebrow">Sanierungsreport</p>
+        <h1>${title}</h1>
+        <h2>${subtitle}</h2>
+        <div class="metaGrid">
+          ${reportMeta("Fonds", object.fund)}
+          ${reportMeta("Baujahr", object.constructionYear)}
+          ${reportMeta("Wohneinheiten", object.unitCount)}
+          ${reportMeta("Wohnfläche saniert", renovatedArea !== null ? formatArea(renovatedArea) : "k.A.")}
+          ${reportMeta("Ø Wohnungsgröße", averageApartmentSize !== null ? formatArea(averageApartmentSize) : "k.A.")}
+          ${reportMeta("Datenqualität", documents.length ? formatKiStatus(documents[0]) : "k.A.")}
+        </div>
+      </div>
+      ${heroImage ? `<img class="heroImage" src="${escapeReportAttribute(heroImage)}" alt="Objektbild" />` : ""}
+    </section>
+    <section class="kpiGrid">
+      ${reportKpi("Gesamtkosten", formatNullableCurrency(gross), "brutto", true)}
+      ${reportKpi("Netto", formatNullableCurrency(net), "erkannte Nettosumme", false)}
+      ${reportKpi("MwSt.", formatNullableCurrency(vat), "erkannte Steuerbeträge", false)}
+      ${reportKpi("Ø Kosten / Wohnung", formatNullableCurrency(averageCostPerApartment), `${formatNumber(documents.length)} Dokumente`, false)}
+      ${reportKpi("Kosten pro m²", costPerSqm !== null ? `${formatNullableCurrency(costPerSqm)} / m²` : "k.A.", "sanierte Wohnfläche", false)}
+      ${reportKpi("Dokumente", formatNumber(documents.length), "zugeordnet", false)}
+    </section>
+    <section class="masterData">
+      <strong>Stammdaten</strong>
+      ${reportMaster("Objekt", object.objectName)}
+      ${reportMaster("Adresse", object.address)}
+      ${reportMaster("PLZ / Ort", [object.postalCode, object.city].filter(Boolean).join(" "))}
+      ${reportMaster("Asset Manager", object.assetManager)}
+      ${reportMaster("Portfolio Manager", object.portfolioManager)}
+      ${reportMaster("Gesamtwohnfläche", object.totalLivingAreaSqm ? `${escapeReportHtml(object.totalLivingAreaSqm)} m²` : "k.A.")}
+    </section>
+  `)}
+
+  ${reportPage(2, 3, `
+    ${reportHeader("Kostenübersicht", object)}
+    <section class="kpiGrid compact">
+      ${reportKpi("Gesamtkosten", formatNullableCurrency(gross), "brutto", true)}
+      ${reportKpi("Ø Kosten / Wohnung", formatNullableCurrency(averageCostPerApartment), "Basis Dokumente", false)}
+      ${reportKpi("Kosten pro m²", costPerSqm !== null ? `${formatNullableCurrency(costPerSqm)} / m²` : "k.A.", "sanierte Fläche", false)}
+      ${reportKpi("Gewerke", formatNumber(tradeRows.length), "mit Kosten", false)}
+    </section>
+    <section class="twoColumn">
+      <article class="card">
+        <h3>Kosten nach Gewerk</h3>
+        <p>Bruttokosten nach erkanntem Maßnahmencluster.</p>
+        ${reportBarChart(topTrades, gross)}
+      </article>
+      <article class="card">
+        <h3>Kostenverteilung nach Gewerk</h3>
+        <p>Anteil an den Bruttokosten je Gewerk.</p>
+        ${reportShareList(topTrades)}
+      </article>
+    </section>
+    <section class="card">
+      <h3>Gewerke Details</h3>
+      ${reportTradeTable(tradeRows)}
+    </section>
+  `)}
+
+  ${reportPage(3, 3, `
+    ${reportHeader("Dokumente und Prüfung", object)}
+    <section class="twoColumn">
+      <article class="card">
+        <h3>Dokumentenübersicht</h3>
+        ${reportDocumentTable(documentRows)}
+      </article>
+      <article class="card">
+        <h3>Prüfhinweise</h3>
+        ${reportIssueList(documents)}
+      </article>
+    </section>
+    <section class="card">
+      <h3>Maßnahmenübersicht</h3>
+      ${reportMeasureTable(documents)}
+    </section>
+  `)}
+</body>
+</html>`;
+}
+
+function buildReportCss(): string {
+  return `
+    @page { size: A4 landscape; margin: 0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f6f8; color: #13263f; font-family: Aptos, "Segoe UI", Calibri, Arial, sans-serif; }
+    .reportPage { width: 297mm; min-height: 210mm; padding: 16mm 18mm 12mm; margin: 0 auto 12px; background: #fff; position: relative; page-break-after: always; box-shadow: 0 12px 36px rgba(19, 38, 63, 0.12); }
+    .reportLogo { width: 190px; max-height: 48px; object-fit: contain; object-position: left center; display: block; margin-bottom: 24px; }
+    .reportFooter { position: absolute; left: 18mm; right: 18mm; bottom: 8mm; display: flex; justify-content: space-between; align-items: center; color: #52627a; font-size: 9px; border-top: 1px solid #e3e8ef; padding-top: 6px; }
+    .reportHero { display: grid; grid-template-columns: 1fr 0.9fr; gap: 28px; align-items: start; min-height: 280px; }
+    .heroImage { width: 100%; height: 270px; object-fit: cover; border-radius: 12px; box-shadow: 0 14px 34px rgba(19, 38, 63, 0.15); }
+    .eyebrow { margin: 0 0 8px; color: #f36f21; font-size: 18px; font-weight: 800; letter-spacing: 0; }
+    h1 { margin: 0; font-size: 46px; line-height: 1; color: #13263f; }
+    h2 { margin: 10px 0 22px; font-size: 22px; font-weight: 500; color: #13263f; }
+    h3 { margin: 0 0 6px; font-size: 18px; color: #13263f; }
+    p { margin: 0 0 12px; color: #52627a; font-size: 11px; }
+    .metaGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .metaItem, .kpi, .card { border: 1px solid #e3e8ef; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgba(19, 38, 63, 0.06); }
+    .metaItem { padding: 10px 12px; background: #f5f6f8; min-height: 58px; }
+    .metaItem span, .kpi span, .masterData span { display: block; color: #52627a; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+    .metaItem strong, .kpi strong, .masterData b { display: block; margin-top: 4px; color: #13263f; font-size: 13px; line-height: 1.25; }
+    .kpiGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+    .kpiGrid.compact { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }
+    .kpi { padding: 14px; min-height: 94px; position: relative; overflow: hidden; }
+    .kpi::before { content: ""; width: 24px; height: 24px; border: 6px solid rgba(243, 111, 33, 0.18); border-radius: 999px; position: absolute; right: 12px; top: 12px; }
+    .kpi.highlight { border-color: rgba(243, 111, 33, 0.5); }
+    .kpi strong { font-size: 20px; margin-top: 8px; }
+    .kpi em { display: block; margin-top: 6px; color: #52627a; font-style: normal; font-size: 10px; }
+    .masterData { display: grid; grid-template-columns: 1.2fr repeat(6, 1fr); gap: 14px; align-items: center; padding: 18px; background: #13263f; color: #fff; border-radius: 10px; margin-top: 22px; }
+    .masterData strong { color: #fff; font-size: 16px; }
+    .masterData span { color: rgba(255,255,255,0.65); }
+    .masterData b { color: #fff; font-size: 11px; }
+    .pageHeader { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+    .pageHeader .reportLogo { margin-bottom: 0; width: 150px; }
+    .pageHeader h2 { margin: 0; font-size: 28px; font-weight: 800; }
+    .twoColumn { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 14px; margin-bottom: 14px; }
+    .card { padding: 16px; background: #fff; }
+    .barChart { display: grid; gap: 9px; margin-top: 14px; }
+    .barRow { display: grid; grid-template-columns: 150px 1fr 90px; gap: 10px; align-items: center; font-size: 11px; }
+    .barTrack { height: 11px; background: #f5f6f8; border-radius: 999px; overflow: hidden; }
+    .barFill { height: 100%; border-radius: 999px; background: #13263f; }
+    .barRow:first-child .barFill { background: #f36f21; }
+    .barValue { text-align: right; font-weight: 800; }
+    .shareList { display: grid; gap: 10px; margin-top: 14px; }
+    .shareRow { display: grid; grid-template-columns: 12px 1fr 54px; gap: 8px; align-items: center; font-size: 11px; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: #13263f; }
+    .shareRow:first-child .dot { background: #f36f21; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10.5px; overflow: hidden; border-radius: 10px; border: 1px solid #e3e8ef; }
+    th { background: #13263f; color: #fff; text-align: left; padding: 9px 10px; font-weight: 800; }
+    td { padding: 9px 10px; border-bottom: 1px solid #e3e8ef; vertical-align: top; color: #13263f; }
+    tr:last-child td { border-bottom: 0; }
+    td.number, th.number { text-align: right; white-space: nowrap; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; background: rgba(243,111,33,0.12); color: #f36f21; font-weight: 800; font-size: 9px; }
+    .issueList { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+    .issueList li { padding: 10px 12px; border-radius: 10px; background: #f5f6f8; color: #13263f; font-size: 11px; }
+    .empty { padding: 18px; background: #f5f6f8; border-radius: 10px; color: #52627a; font-size: 12px; }
+    @media print { body { background: #fff; } .reportPage { box-shadow: none; margin: 0; } }
+  `;
+}
+
+function reportPage(page: number, total: number, content: string): string {
+  return `<section class="reportPage">${content}${reportFooter(page, total)}</section>`;
+}
+
+function reportHeader(title: string, object: ObjectRecord): string {
+  return `<header class="pageHeader">
+    <div><img class="reportLogo" src="/paribus-logo.png" alt="PARIBUS" /></div>
+    <div>
+      <h2>${escapeReportHtml(title)}</h2>
+      <p>${escapeReportHtml(firstKnown(object.objectNumber, "k.A."))} · ${escapeReportHtml(firstKnown(object.address, "k.A."))}</p>
+    </div>
+  </header>`;
+}
+
+function reportFooter(page: number, total: number): string {
+  return `<footer class="reportFooter"><span>Paribus Asset Management</span><span>www.paribus.de</span><span>Seite ${page} von ${total}</span></footer>`;
+}
+
+function reportMeta(label: string, value: string): string {
+  return `<div class="metaItem"><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(firstKnown(value, "k.A."))}</strong></div>`;
+}
+
+function reportMaster(label: string, value: string): string {
+  return `<div><span>${escapeReportHtml(label)}</span><b>${escapeReportHtml(firstKnown(value, "k.A."))}</b></div>`;
+}
+
+function reportKpi(title: string, value: string, detail: string, highlight: boolean): string {
+  return `<article class="${highlight ? "kpi highlight" : "kpi"}"><span>${escapeReportHtml(title)}</span><strong>${escapeReportHtml(value)}</strong><em>${escapeReportHtml(detail)}</em></article>`;
+}
+
+function reportBarChart(rows: TradeGroupRow[], gross: number | null): string {
+  if (rows.length === 0) return `<div class="empty">Keine Gewerkekosten vorhanden.</div>`;
+  const max = Math.max(...rows.map((row) => row.total), 1);
+  return `<div class="barChart">${rows.map((row) => {
+    const width = Math.max((row.total / max) * 100, 1);
+    const share = gross && gross > 0 ? ` · ${formatNullableNumber(roundMoney((row.total / gross) * 100))} %` : "";
+    return `<div class="barRow">
+      <strong>${escapeReportHtml(row.cluster)}</strong>
+      <div class="barTrack"><div class="barFill" style="width:${width}%"></div></div>
+      <span class="barValue">${escapeReportHtml(formatNullableCurrency(row.total))}${escapeReportHtml(share)}</span>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function reportShareList(rows: TradeGroupRow[]): string {
+  if (rows.length === 0) return `<div class="empty">Keine Verteilung vorhanden.</div>`;
+  return `<div class="shareList">${rows.map((row) => `
+    <div class="shareRow">
+      <span class="dot"></span>
+      <strong>${escapeReportHtml(row.cluster)}</strong>
+      <span class="barValue">${row.share === null ? "k.A." : `${escapeReportHtml(formatNullableNumber(roundMoney(row.share)))} %`}</span>
+    </div>`).join("")}</div>`;
+}
+
+function reportTradeTable(rows: TradeGroupRow[]): string {
+  if (rows.length === 0) return `<div class="empty">Keine Gewerke mit Kosten vorhanden.</div>`;
+  return `<table>
+    <thead><tr><th>Gewerk</th><th class="number">Gesamtkosten</th><th class="number">Anteil</th><th class="number">Dokumente</th><th>Status</th></tr></thead>
+    <tbody>${rows.map((row) => `<tr>
+      <td>${escapeReportHtml(row.cluster)}</td>
+      <td class="number">${escapeReportHtml(formatNullableCurrency(row.total))}</td>
+      <td class="number">${row.share === null ? "k.A." : `${escapeReportHtml(formatNullableNumber(roundMoney(row.share)))} %`}</td>
+      <td class="number">${escapeReportHtml(formatNumber(row.count))}</td>
+      <td><span class="badge">${escapeReportHtml(germanizeUiText(row.status))}</span></td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function reportDocumentTable(documents: ObjectAnalysis[]): string {
+  if (documents.length === 0) return `<div class="empty">Keine Dokumente vorhanden.</div>`;
+  return `<table>
+    <thead><tr><th>Dokument</th><th>Anbieter</th><th>WE</th><th>Gewerk</th><th class="number">Brutto</th><th>KI-Status</th></tr></thead>
+    <tbody>${documents.map((document) => `<tr>
+      <td>${escapeReportHtml(fieldOrUnknown(document.documentType))}<br><span>${escapeReportHtml(fieldOrUnknown(document.documentNumber))}</span></td>
+      <td>${escapeReportHtml(fieldOrUnknown(document.provider))}</td>
+      <td>${escapeReportHtml(fieldOrUnknown(document.apartmentNumber))}</td>
+      <td>${escapeReportHtml(formatClusters(document))}</td>
+      <td class="number">${escapeReportHtml(formatNullableCurrency(document.totalCost.value))}</td>
+      <td><span class="badge">${escapeReportHtml(formatKiStatus(document))}</span></td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function reportMeasureTable(documents: ObjectAnalysis[]): string {
+  const rows = documents.flatMap((document) =>
+    document.clusters.map((cluster) => ({
+      trade: normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description)),
+      description: fieldOrUnknown(cluster.description),
+      cost: reliableClusterCost(document, cluster),
+      source: sourceLabel(cluster.totalCost),
+      status: formatKiStatus(document)
+    }))
+  ).filter((row) => row.cost !== null || row.description !== "k.A.");
+
+  if (rows.length === 0) return `<div class="empty">Keine Maßnahmen vorhanden.</div>`;
+  return `<table>
+    <thead><tr><th>Gewerk</th><th>Beschreibung</th><th class="number">Kosten brutto</th><th>Quelle</th><th>Status</th></tr></thead>
+    <tbody>${rows.slice(0, 14).map((row) => `<tr>
+      <td>${escapeReportHtml(row.trade)}</td>
+      <td>${escapeReportHtml(row.description)}</td>
+      <td class="number">${escapeReportHtml(formatNullableCurrency(row.cost))}</td>
+      <td>${escapeReportHtml(row.source)}</td>
+      <td><span class="badge">${escapeReportHtml(row.status)}</span></td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function reportIssueList(documents: ObjectAnalysis[]): string {
+  const issues = documents.flatMap((document) => document.missingInformation.value ?? []);
+  const uniqueIssues = Array.from(new Set(issues)).slice(0, 10);
+  if (uniqueIssues.length === 0 && documents.length > 0) {
+    return `<ul class="issueList"><li>Keine offenen Pflichtangaben aus den analysierten Dokumenten gemeldet.</li></ul>`;
+  }
+  if (documents.length === 0) return `<div class="empty">Keine KI-Prüfung möglich, da keine Dokumente vorhanden sind.</div>`;
+  return `<ul class="issueList">${uniqueIssues.map((issue) => `<li>${escapeReportHtml(issue)}</li>`).join("")}</ul>`;
+}
+
+function escapeReportHtml(value: string | number | null | undefined): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function escapeReportAttribute(value: string): string {
+  return escapeReportHtml(value).replace(/`/g, "&#096;");
 }
