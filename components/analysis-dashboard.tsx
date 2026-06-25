@@ -210,6 +210,7 @@ interface MeasureRow {
 interface TradeGroupRow {
   cluster: MeasureCluster;
   count: number;
+  uniqueDocumentIds?: string[];
   total: number;
   averagePerDocument: number | null;
   offer: number;
@@ -2886,6 +2887,7 @@ function AverageTradeCostBarChart({
   const chartRows = rows
     .filter((row) => row.averagePerDocument !== null && row.averagePerDocument > 0)
     .sort((a, b) => (b.averagePerDocument ?? 0) - (a.averagePerDocument ?? 0));
+  const chartHeight = Math.max(360, chartRows.length * 42);
 
   if (chartRows.length === 0) {
     return (
@@ -2902,34 +2904,37 @@ function AverageTradeCostBarChart({
   }
 
   return (
-    <section className="tradeChartCard">
+    <section className="tradeChartCard averageTradeChartCard">
       <div className="panelHeader compactHeader">
         <div>
           <h3>Ø Kosten pro Wohnung je Gewerk</h3>
           <p>Durchschnittliche Bruttokosten pro sanierter Wohnung auf Basis der PDF-Dokumente je Gewerk.</p>
         </div>
+        <span className="chartInfoBadge">Eindeutige PDF-Dokumente</span>
       </div>
-      <div className="tradeChart">
-        <ResponsiveContainer width="100%" height={Math.max(300, chartRows.length * 44)}>
+      <div className="tradeChart averageTradeChart">
+        <ResponsiveContainer width="100%" height={chartHeight}>
           <BarChart
             data={chartRows}
             layout="vertical"
-            margin={{ top: 12, right: 70, bottom: 16, left: 30 }}
-            barCategoryGap={14}
+            margin={{ top: 18, right: 130, bottom: 28, left: 52 }}
+            barCategoryGap={18}
+            barSize={16}
           >
             <XAxis
               type="number"
               axisLine={{ stroke: "#DCE2E8" }}
               tickLine={false}
               tick={{ fill: "#63748A", fontSize: 12 }}
-              tickFormatter={(value) => formatShortEuroAxis(Number(value))}
+              tickFormatter={(value) => formatEuroAxis(Number(value))}
             />
             <YAxis
               type="category"
               dataKey="cluster"
-              width={170}
+              width={230}
               axisLine={{ stroke: "#DCE2E8" }}
               tickLine={false}
+              interval={0}
               tick={{ fill: "#24364D", fontSize: 12, fontWeight: 800 }}
             />
             <Tooltip
@@ -2941,7 +2946,7 @@ function AverageTradeCostBarChart({
                   <div className="tradeTooltip">
                     <strong>{row.cluster}</strong>
                     <span>{formatNullableCurrency(row.averagePerDocument)} pro Wohnung</span>
-                    <span>{formatNullableCurrency(row.total)} / {formatNumber(row.count)} Dokument(e)</span>
+                    <span>{formatNullableCurrency(row.total)} / {formatNumber(getDocumentCountByTrade(row))} eindeutige Dokument(e)</span>
                   </div>
                 );
               }}
@@ -5042,10 +5047,12 @@ function reliableClusterCost(
 
 function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
   const groups = new Map<MeasureCluster, TradeGroupRow>();
+  const documentIdsByTrade = new Map<MeasureCluster, Set<string>>();
   standardTradeCatalog.forEach((cluster) => {
     groups.set(cluster, {
       cluster,
       count: 0,
+      uniqueDocumentIds: [],
       total: 0,
       averagePerDocument: null,
       offer: 0,
@@ -5053,14 +5060,16 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
       share: null,
       status: "Keine Dokumente"
     });
+    documentIdsByTrade.set(cluster, new Set());
   });
 
   documents.forEach((document) => {
     getTradeAllocations(document).forEach((allocation) => {
-      const name = allocation.cluster;
+      const name = normalizeTradeCluster(allocation.cluster, fieldOrUnknown(allocation.document.measureDescription));
       const current = groups.get(name) ?? {
         cluster: name,
         count: 0,
+        uniqueDocumentIds: [],
         total: 0,
         averagePerDocument: null,
         offer: 0,
@@ -5068,11 +5077,15 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
         share: null,
         status: "Keine Dokumente"
       };
+      const tradeDocumentIds = documentIdsByTrade.get(name) ?? new Set<string>();
+      tradeDocumentIds.add(documentUniqueKey(allocation.document));
+      documentIdsByTrade.set(name, tradeDocumentIds);
       const value = allocation.value ?? 0;
       const nextTotal = current.total + value;
       groups.set(name, {
         ...current,
-        count: current.count + 1,
+        count: tradeDocumentIds.size,
+        uniqueDocumentIds: Array.from(tradeDocumentIds),
         total: nextTotal,
         offer: isOfferDocument(allocation.document) ? current.offer + value : current.offer,
         invoice: isInvoiceLikeDocument(allocation.document) ? current.invoice + value : current.invoice,
@@ -5085,6 +5098,7 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
   return Array.from(groups.values())
     .map((entry) => ({
       ...entry,
+      count: getDocumentCountByTrade(entry),
       share: total > 0 ? (entry.total / total) * 100 : null,
       averagePerDocument: calculateAverageCostPerTrade(entry)
     }))
@@ -5116,7 +5130,33 @@ function calculateAverageCostPerTrade(trade: TradeGroupRow): number | null {
 }
 
 function getDocumentCountByTrade(trade: TradeGroupRow): number {
-  return trade.count;
+  return trade.uniqueDocumentIds?.length ?? trade.count;
+}
+
+function documentUniqueKey(document: ObjectAnalysis): string {
+  const sourceFileNames = document.totalCost.sources
+    .map((source) => source.fileName)
+    .filter(Boolean);
+  const sourceKey = sourceFileNames[0] ?? "";
+  const documentNumber = fieldOrUnknown(document.documentNumber);
+  return firstKnown(
+    sourceKey && documentNumber !== "k.A." ? `${sourceKey}-${documentNumber}` : "",
+    sourceKey ? `${sourceKey}-${fieldOrUnknown(document.documentDate)}-${fieldOrUnknown(document.totalCost)}` : "",
+    documentNumber !== "k.A." ? `${fieldOrUnknown(document.provider)}-${documentNumber}-${fieldOrUnknown(document.totalCost)}` : "",
+    document.sourceDocumentIds?.[0] ?? "",
+    document.id
+  );
+}
+
+function debugAverageCostPerTrade(rows: TradeGroupRow[]): void {
+  if (typeof window === "undefined") return;
+  console.table(rows.map((row) => ({
+    gewerk: row.cluster,
+    bruttokosten: row.total,
+    eindeutigeDokumente: row.uniqueDocumentIds?.join(", ") ?? "",
+    anzahlEindeutigeDokumente: getDocumentCountByTrade(row),
+    durchschnitt: row.averagePerDocument
+  })));
 }
 
 function getFilteredDocuments(documents: ObjectAnalysis[], filters: ObjectPageFilters): ObjectAnalysis[] {
@@ -5725,6 +5765,14 @@ function formatShortEuroAxis(value: number): string {
   if (value >= 1000000) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(value / 1000000)} Mio. €`;
   if (value >= 1000) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value / 1000)} Tsd. €`;
   return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(value)} €`;
+}
+
+function formatEuroAxis(value: number): string {
+  return new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0
+  }).format(value);
 }
 
 function exportObjectReport(object: ObjectRecord, documents: ObjectAnalysis[], images: string[]): void {

@@ -2128,6 +2128,43 @@ select {
   min-height: 280px;
 }
 
+.averageTradeChartCard {
+  grid-column: 1 / -1;
+  min-width: 50%;
+  padding: 22px;
+}
+
+.averageTradeChartCard .compactHeader {
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.averageTradeChartCard h3 {
+  font-size: 21px;
+}
+
+.averageTradeChartCard p {
+  color: #6b778c;
+  font-size: 13px;
+}
+
+.averageTradeChart {
+  min-height: 360px;
+  padding-top: 8px;
+}
+
+.chartInfoBadge {
+  justify-self: end;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #526174;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
 .tradeTooltip {
   display: grid;
   gap: 4px;
