@@ -6,11 +6,23 @@ export const ASBESTOS_TRADE: MeasureCluster = "Asbestarbeiten";
 export const FACADE_TRADE: MeasureCluster = "Fassadenarbeiten";
 export const FLOORING_TRADE: MeasureCluster = "Bodenbelagsarbeiten";
 export const CARPENTRY_TRADE: MeasureCluster = "Tischlerarbeiten";
+export const ROOF_TRADE: MeasureCluster = "Dacharbeiten";
+export const WINDOW_TRADE: MeasureCluster = "Fensterarbeiten";
+export const OTHER_TRADE: MeasureCluster = "Sonstige";
+export const ELECTRICAL_TRADE: MeasureCluster = "Elektroarbeiten";
 
 export function normalizeTradeName(value: string | null | undefined, description = ""): MeasureCluster | string {
   const raw = `${value ?? ""} ${description}`.trim();
   const text = raw.toLowerCase();
   if (!text || text === "k.a.") return value ?? "";
+
+  if (text === "sonstiges" || text === "sonstige") {
+    return OTHER_TRADE;
+  }
+
+  if (/trockenbau|brandschutz|aufz[uü]g|aufzug|treppenhaus|keller|schornstein|kamin|l[uü]ftung|photovoltaik|solar|pv\b/.test(text)) {
+    return OTHER_TRADE;
+  }
 
   if (/asbest|schadstoffsanierung|\bbt\s*(?:11|17\.45)\b|flexplatten|asbesthaltig|beprobung\s+auf\s+asbest/.test(text)) {
     return ASBESTOS_TRADE;
@@ -18,6 +30,14 @@ export function normalizeTradeName(value: string | null | undefined, description
 
   if (text === "fassade" || /fassadenarbeiten|fassadensanierung|\bwdvs\b|außenfassade|aussenfassade/.test(text)) {
     return FACADE_TRADE;
+  }
+
+  if (/dacharbeiten|dachsanierung|dach\b/.test(text)) {
+    return ROOF_TRADE;
+  }
+
+  if (text === "fenster" || /fensterarbeiten|fenstersanierung|fenstertausch/.test(text)) {
+    return WINDOW_TRADE;
   }
 
   if (/\b(hls|shk|san)\b|sanit[aä]r|heizung|therme|kessel|radiator|fernw[aä]rme|heizk[oö]rper|wasseranschluss|armatur|wc|waschbecken|dusche/.test(text)) {
@@ -32,7 +52,11 @@ export function normalizeTradeName(value: string | null | undefined, description
     return FLOORING_TRADE;
   }
 
-  if (/tischlerarbeiten|tischler/.test(text)) {
+  if (/elektro|elektrik|z[aä]hler|installation|leitung|elektroschlitz/.test(text)) {
+    return ELECTRICAL_TRADE;
+  }
+
+  if (/tischlerarbeiten|tischler|t[uü]ren?\b|tuer|t[üu]rschloss|t[üu]rblatt/.test(text)) {
     return CARPENTRY_TRADE;
   }
 

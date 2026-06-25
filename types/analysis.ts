@@ -12,10 +12,12 @@ export type MeasureCluster =
   | "Bodenbelagsarbeiten"
   | "Brandschutz"
   | "Dach"
+  | "Dacharbeiten"
   | "Dachentwässerung"
   | "Fassade"
   | "Fassadenarbeiten"
   | "Fenster"
+  | "Fensterarbeiten"
   | "Heizung"
   | "Heizung und Sanitär"
   | "Keller"
@@ -23,6 +25,7 @@ export type MeasureCluster =
   | "Lüftung"
   | "Boden"
   | "Elektro"
+  | "Elektroarbeiten"
   | "Maler"
   | "Malerarbeiten"
   | "Photovoltaik"
@@ -40,6 +43,7 @@ export type MeasureCluster =
   | "Tischlerarbeiten"
   | "Trockenbau"
   | "Wärmedämmung"
+  | "Sonstige"
   | "Sonstiges";
 
 export type CostAllocation = "GE" | "SE" | null;

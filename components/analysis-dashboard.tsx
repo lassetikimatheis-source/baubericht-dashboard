@@ -308,32 +308,19 @@ const emptyObjectPageFilters: ObjectPageFilters = {
 
 const standardTradeCatalog: MeasureCluster[] = [
   "Asbestarbeiten",
-  "Dach",
-  "Fassadenarbeiten",
-  "Fenster",
-  "Türen",
-  "Tischlerarbeiten",
-  "Balkone",
-  "Heizung und Sanitär",
-  "Fliesen und Estricharbeiten",
-  "Elektro",
-  "Brandschutz",
-  "Aufzüge",
-  "Treppenhäuser",
-  "Keller",
-  "Außenanlagen",
-  "Tiefgarage",
-  "Malerarbeiten",
   "Bodenbelagsarbeiten",
-  "Trockenbau",
-  "Dachentwässerung",
-  "Wärmedämmung",
-  "Schornstein",
-  "Trinkwasser",
-  "Abwasser",
-  "Lüftung",
-  "Photovoltaik",
-  "Sonstiges"
+  "Malerarbeiten",
+  "Fliesen und Estricharbeiten",
+  "Heizung und Sanitär",
+  "Elektroarbeiten",
+  "Tischlerarbeiten",
+  "Fassadenarbeiten",
+  "Dacharbeiten",
+  "Fensterarbeiten",
+  "Außenanlagen",
+  "Reinigung",
+  "Planung / Dokumentation",
+  "Sonstige"
 ];
 
 export function AnalysisDashboard() {
@@ -4644,32 +4631,31 @@ function normalizeTradeCluster(value: string, description = ""): MeasureCluster 
   if (standardTradeCatalog.includes(normalizedName as MeasureCluster)) return normalizedName as MeasureCluster;
   if (standardTradeCatalog.includes(value as MeasureCluster)) return value as MeasureCluster;
   if (/asbest|schadstoffsanierung|\bbt\s*(?:11|17\.45)\b|flexplatten|asbesthaltig|beprobung\s+auf\s+asbest/.test(text)) return "Asbestarbeiten";
-  if (/dachentw[aä]sser|regenrinne|fallrohr/.test(text)) return "Dachentwässerung";
-  if (/dach|ziegel|abdichtung|attika/.test(text)) return "Dach";
+  if (/dacharbeiten|dachsanierung|dachentw[aä]sser|regenrinne|fallrohr|ziegel|abdichtung|attika/.test(text)) return "Dacharbeiten";
   if (/fassadenarbeiten|fassadensanierung|\bwdvs\b|außenfassade|aussenfassade/.test(text)) return "Fassadenarbeiten";
-  if (/w[aä]rmed[aä]mm|dämm|daemm/.test(text)) return "Wärmedämmung";
-  if (/fenster/.test(text)) return "Fenster";
+  if (/w[aä]rmed[aä]mm|dämm|daemm/.test(text)) return "Fassadenarbeiten";
+  if (/fensterarbeiten|fenstersanierung|fenstertausch/.test(text)) return "Fensterarbeiten";
   if (/tischler/.test(text)) return "Tischlerarbeiten";
-  if (/t[uü]r|tuer|tischler/.test(text)) return "Türen";
-  if (/balkon|loggia/.test(text)) return "Balkone";
+  if (/t[uü]r|tuer|tischler/.test(text)) return "Tischlerarbeiten";
+  if (/balkon|loggia/.test(text)) return "Außenanlagen";
   if (/heizung|therme|kessel|radiator|fernw[aä]rme|sanit[aä]r|\b(hls|shk|san)\b/.test(text)) return "Heizung und Sanitär";
   if (/trinkwasser/.test(text)) return "Trinkwasser";
   if (/abwasser|kanal/.test(text)) return "Abwasser";
   if (/bad\s*\/\s*fliesen|fliesen|estrich|badboden|bodenaufbau/.test(text)) return "Fliesen und Estricharbeiten";
-  if (/elektro|z[aä]hler|installation|leitung/.test(text)) return "Elektro";
-  if (/trockenbau|gipskarton|rigips/.test(text)) return "Trockenbau";
-  if (/brand|rauchmelder|rwa|feuer/.test(text)) return "Brandschutz";
-  if (/aufzug|lift/.test(text)) return "Aufzüge";
-  if (/treppenhaus|treppe|gel[aä]nder/.test(text)) return "Treppenhäuser";
-  if (/keller/.test(text)) return "Keller";
+  if (/elektro|z[aä]hler|installation|leitung/.test(text)) return "Elektroarbeiten";
+  if (/trockenbau|gipskarton|rigips/.test(text)) return "Sonstige";
+  if (/brand|rauchmelder|rwa|feuer/.test(text)) return "Sonstige";
+  if (/aufzug|lift/.test(text)) return "Sonstige";
+  if (/treppenhaus|treppe|gel[aä]nder/.test(text)) return "Sonstige";
+  if (/keller/.test(text)) return "Sonstige";
   if (/außen|aussen|garten|hof|pflaster|gr[uü]n/.test(text)) return "Außenanlagen";
-  if (/tiefgarage|garage|stellplatz/.test(text)) return "Tiefgarage";
+  if (/tiefgarage|garage|stellplatz/.test(text)) return "Außenanlagen";
   if (/maler|anstrich|tapezier/.test(text)) return "Malerarbeiten";
   if (/boden|belag|parkett|vinyl|sockel/.test(text)) return "Bodenbelagsarbeiten";
-  if (/schornstein|kamin/.test(text)) return "Schornstein";
-  if (/l[uü]ftung|ventilat/.test(text)) return "Lüftung";
-  if (/photovoltaik|solar|pv\b/.test(text)) return "Photovoltaik";
-  return "Sonstiges";
+  if (/schornstein|kamin/.test(text)) return "Sonstige";
+  if (/l[uü]ftung|ventilat/.test(text)) return "Sonstige";
+  if (/photovoltaik|solar|pv\b/.test(text)) return "Sonstige";
+  return "Sonstige";
 }
 
 function documentMatchesTrade(document: ObjectAnalysis, trade: string): boolean {
@@ -4713,7 +4699,7 @@ function getDocumentTradeNames(document: ObjectAnalysis): string[] {
     ...(document.measureDetails ?? []).map((detail) => detail.cluster),
     fieldOrUnknown(document.measureDescription)
   ].filter((value) => value && value !== "k.A.");
-  return names.length ? names : ["Sonstiges"];
+  return names.length ? names : ["Sonstige"];
 }
 
 function getTradeAllocations(document: ObjectAnalysis): TradeAllocation[] {
@@ -4733,7 +4719,7 @@ function getTradeAllocations(document: ObjectAnalysis): TradeAllocation[] {
 
   if (document.clusters.length === 0) {
     return [{
-      cluster: normalizeTradeCluster("Sonstiges", fieldOrUnknown(document.measureDescription)),
+      cluster: normalizeTradeCluster("Sonstige", fieldOrUnknown(document.measureDescription)),
       value: document.totalCost.value,
       document
     }];
