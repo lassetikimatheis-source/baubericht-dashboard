@@ -178,10 +178,11 @@ async function runOpenAiExtractionPerDocument(
             "Erkenne Abschlagsrechnungen streng: Abschlagsrechnung, 1. Abschlagsrechnung, 2. Abschlagsrechnung, Teilrechnung, Teilzahlung, Akonto, Vorauszahlung, Zahlung gemaess Baufortschritt oder Abschlag. Wenn erkennbar, dokumenttyp Abschlagsrechnung und abschlagsnummer z.B. 1. Abschlag setzen.",
             "anbieter ist ausschliesslich die ausfuehrende Firma oder der Lieferant, z.B. eine GmbH, AG, KG oder GbR. Leistungsbereiche wie Fliesenarbeiten, Malerarbeiten, Elektroarbeiten, Bodenbelagsarbeiten, Sanitaer oder Heizung niemals als anbieter ausgeben.",
             "Leistungsbereiche gehoeren in measures, massnahmen_details, cluster und beschreibung_massnahmen, nicht in anbieter.",
-            "Erlaubte cluster: Dach, Fassade, Fenster, Türen, Balkone, Heizung und Sanitär, Fliesen und Estricharbeiten, Elektro, Brandschutz, Aufzüge, Treppenhäuser, Keller, Außenanlagen, Tiefgarage, Malerarbeiten, Bodenbeläge, Trockenbau, Dachentwässerung, Wärmedämmung, Schornstein, Trinkwasser, Abwasser, Lüftung, Photovoltaik, Sonstiges.",
+            "Erlaubte cluster: Asbestarbeiten, Fassadenarbeiten, Dach, Fenster, Türen, Tischlerarbeiten, Balkone, Heizung und Sanitär, Fliesen und Estricharbeiten, Elektro, Brandschutz, Aufzüge, Treppenhäuser, Keller, Außenanlagen, Tiefgarage, Malerarbeiten, Bodenbelagsarbeiten, Trockenbau, Dachentwässerung, Wärmedämmung, Schornstein, Trinkwasser, Abwasser, Lüftung, Photovoltaik, Sonstiges.",
             "Erlaubte allocation: GE, SE oder null.",
             "Feste Vorverarbeitung vor freier Klassifizierung: Wenn nummerierte Positionsgruppen oder Summenzeilen wie 1. Bodenbelag, 2. Malerarbeiten oder Summe 1. Bodenbelag 4.702,73 € vorhanden sind, übernimm diese direkt als measures und rate nicht frei.",
-            "Mapping auf den Standard-Gewerkekatalog: Heizung/Sanitär/HLS/SHK/San -> Heizung und Sanitär; Fliesen/Estrich/Badboden/Bodenaufbau/Bad / Fliesen -> Fliesen und Estricharbeiten; Bodenbelag/Bodenbelagsarbeiten -> Bodenbeläge; Malerarbeiten/Maler- und Lackierarbeiten -> Malerarbeiten; Tischlerarbeiten/Türen -> Türen; Elektroarbeiten -> Elektro; Reinigung -> Reinigung; Dacharbeiten -> Dach; Fassadenarbeiten -> Fassade; Trockenbauarbeiten -> Trockenbau; Erstbegehung/Zusatzarbeiten -> Sonstiges.",
+            "Kapitelueberschriften haben Vorrang vor Einzelwoertern in Positionen. Wenn eine Position mit Fassadenflaechen im Abschnitt Malerarbeiten steht, bleibt sie Malerarbeiten und wird nicht als Fassadenarbeiten ausgegeben.",
+            "Mapping auf den Standard-Gewerkekatalog: Asbestsanierung/Asbestarbeiten/Schadstoffsanierung/BT 11/BT 17.45/Flexplatten/asbesthaltiger Klebstoff/Beprobung auf Asbest -> Asbestarbeiten; echte Fassadenarbeiten/Fassadensanierung/WDVS/Aussenfassade als eigener Abschnitt -> Fassadenarbeiten; einzelne Woerter wie Fassadenflaeche, Fassadenfarbe, Silikonharzfarbe oder Aussenwand erzeugen kein eigenes Fassaden-Gewerk; Heizung/Sanitär/HLS/SHK/San -> Heizung und Sanitär; Fliesen/Estrich/Badboden/Bodenaufbau/Bad / Fliesen -> Fliesen und Estricharbeiten; Bodenbelag/Bodenbelagsarbeiten -> Bodenbelagsarbeiten; Malerarbeiten/Maler- und Lackierarbeiten -> Malerarbeiten; Tischlerarbeiten -> Tischlerarbeiten; Türen -> Türen; Elektroarbeiten -> Elektro; Reinigung -> Reinigung; Dacharbeiten -> Dach; Trockenbauarbeiten -> Trockenbau; Erstbegehung/Zusatzarbeiten -> Sonstiges.",
             "Wenn der Betreff ein Muster wie 760005-1008 enthaelt: erster Teil objectNumber, zweiter Teil wohnungsnummer.",
             "Wenn im Betreff eine Lage wie 2.OG 3.v.li steht, als lage speichern.",
             "Projektart aus dem Dokument ableiten, z.B. Wohnungssanierung, Fassadensanierung, Dacharbeiten oder Elektroarbeiten, aber nur bei belegbarer Quelle.",
@@ -1040,17 +1041,19 @@ function detectMeasures(text: string): Array<{
   sumEvidence: string | null;
 }> {
   const mappings: Array<{ pattern: RegExp; cluster: MeasureCluster; description: string; projectType: string }> = [
+    { pattern: /Asbest(?:sanierung|arbeiten)?|Schadstoffsanierung|\bBT\s*(?:11|17\.45)\b|Flexplatten|asbesthaltig|Beprobung\s+auf\s+Asbest/i, cluster: "Asbestarbeiten", description: "Asbestarbeiten", projectType: "Asbestarbeiten" },
     { pattern: /Dachentw[aä]sserung|Regenrinne|Fallrohr/i, cluster: "Dachentwässerung", description: "Dachentwässerung", projectType: "Dachentwässerung" },
     { pattern: /Dach(?:arbeiten|sanierung)?/i, cluster: "Dach", description: "Dacharbeiten", projectType: "Dacharbeiten" },
-    { pattern: /Fassade(?:narbeiten|nsanierung)?/i, cluster: "Fassade", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
+    { pattern: /Fassadenarbeiten|Fassadensanierung|\bWDVS\b|Au(?:ß|ss)enfassade/i, cluster: "Fassadenarbeiten", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
     { pattern: /Fenster(?:arbeiten|tausch)?/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung(?:sarbeiten)?|Sanit(?:aer|\u00e4r)(?:arbeiten)?|\b(?:HLS|SHK|San)\b/i, cluster: "Heizung und Sanitär", description: "Heizungs- und Sanitärarbeiten", projectType: "Heizung und Sanitär" },
     { pattern: /Elektro(?:arbeiten)?/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
     { pattern: /Trockenbau(?:arbeiten)?|Gipskarton|Rigips/i, cluster: "Trockenbau", description: "Trockenbauarbeiten", projectType: "Trockenbauarbeiten" },
     { pattern: /Fliesen(?:arbeiten)?|Fliesenspiegel|Estrich(?:arbeiten)?|Badboden|Bodenaufbau/i, cluster: "Fliesen und Estricharbeiten", description: "Fliesen- und Estricharbeiten", projectType: "Fliesen und Estricharbeiten" },
     { pattern: /Maler(?:arbeiten)?/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
-    { pattern: /Boden(?:belag|belagsarbeiten|arbeiten)?/i, cluster: "Bodenbeläge", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
-    { pattern: /Tischler(?:arbeiten)?|T(?:ue|\u00fc)ren/i, cluster: "Türen", description: "Tischlerarbeiten / Türen", projectType: "Tischlerarbeiten" },
+    { pattern: /Boden(?:belag|belagsarbeiten|arbeiten)?/i, cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten", projectType: "Bodenbelagsarbeiten" },
+    { pattern: /Tischler(?:arbeiten)?/i, cluster: "Tischlerarbeiten", description: "Tischlerarbeiten", projectType: "Tischlerarbeiten" },
+    { pattern: /T(?:ue|\u00fc)ren/i, cluster: "Türen", description: "Türen", projectType: "Türen" },
     { pattern: /Brand(?:schutz)?|Rauchmelder|RWA/i, cluster: "Brandschutz", description: "Brandschutzarbeiten", projectType: "Brandschutz" },
     { pattern: /Aufzug|Lift/i, cluster: "Aufzüge", description: "Aufzugsarbeiten", projectType: "Aufzüge" },
     { pattern: /Treppenhaus|Treppenh(?:ae|\u00e4)user/i, cluster: "Treppenhäuser", description: "Treppenhausarbeiten", projectType: "Treppenhäuser" },
@@ -1102,17 +1105,19 @@ function findMeasureSum(text: string, pattern: RegExp): { value: number | null; 
 
 function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; description: string; projectType: string; evidence: string } | null {
   const mappings: Array<{ pattern: RegExp; cluster: MeasureCluster; description: string; projectType: string }> = [
+    { pattern: /Asbest(?:sanierung|arbeiten)?|Schadstoffsanierung|\bBT\s*(?:11|17\.45)\b|Flexplatten|asbesthaltig|Beprobung\s+auf\s+Asbest/i, cluster: "Asbestarbeiten", description: "Asbestarbeiten", projectType: "Asbestarbeiten" },
     { pattern: /Dachentw[aä]sserung|Regenrinne|Fallrohr/i, cluster: "Dachentwässerung", description: "Dachentwässerung", projectType: "Dachentwässerung" },
     { pattern: /Dach/i, cluster: "Dach", description: "Dacharbeiten", projectType: "Dacharbeiten" },
-    { pattern: /Fassade/i, cluster: "Fassade", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
+    { pattern: /Fassadenarbeiten|Fassadensanierung|\bWDVS\b|Au(?:ß|ss)enfassade/i, cluster: "Fassadenarbeiten", description: "Fassadenarbeiten", projectType: "Fassadensanierung" },
     { pattern: /Fenster/i, cluster: "Fenster", description: "Fensterarbeiten", projectType: "Fensterarbeiten" },
     { pattern: /Heizung|Sanit[aä]r|\b(?:HLS|SHK|San)\b/i, cluster: "Heizung und Sanitär", description: "Heizungs- und Sanitärarbeiten", projectType: "Heizung und Sanitär" },
     { pattern: /Elektro/i, cluster: "Elektro", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
     { pattern: /Trockenbau|Gipskarton|Rigips/i, cluster: "Trockenbau", description: "Trockenbauarbeiten", projectType: "Trockenbauarbeiten" },
     { pattern: /Fliesen|Fliesenspiegel|Estrich|Badboden|Bodenaufbau/i, cluster: "Fliesen und Estricharbeiten", description: "Fliesen- und Estricharbeiten", projectType: "Fliesen und Estricharbeiten" },
     { pattern: /Maler/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
-    { pattern: /Boden/i, cluster: "Bodenbeläge", description: "Bodenarbeiten", projectType: "Bodenarbeiten" },
-    { pattern: /T[uü]r|Tischler/i, cluster: "Türen", description: "Türen / Tischlerarbeiten", projectType: "Tischlerarbeiten" },
+    { pattern: /Boden/i, cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten", projectType: "Bodenbelagsarbeiten" },
+    { pattern: /Tischler/i, cluster: "Tischlerarbeiten", description: "Tischlerarbeiten", projectType: "Tischlerarbeiten" },
+    { pattern: /T[uü]r/i, cluster: "Türen", description: "Türen", projectType: "Türen" },
     { pattern: /Brand|Rauchmelder|RWA/i, cluster: "Brandschutz", description: "Brandschutzarbeiten", projectType: "Brandschutz" },
     { pattern: /Wohnungssanierung/i, cluster: "Sonstiges", description: "Wohnungssanierung", projectType: "Wohnungssanierung" }
   ];
@@ -1296,18 +1301,19 @@ function offerMeasureDefinitions(): Array<{
 }> {
   return [
     { section: 1, heading: "Erstbegehung", aliases: [/Erstbegehung/i], cluster: "Sonstiges", description: "Erstbegehung und Dokumentation" },
-    { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelag(?:sarbeiten)?/i, /Bodenarbeiten/i], cluster: "Bodenbeläge", description: "Bodenbelagsarbeiten" },
+    { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelag(?:sarbeiten)?/i, /Bodenarbeiten/i], cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten" },
     { section: 3, heading: "Malerarbeiten", aliases: [/Malerarbeiten/i], cluster: "Malerarbeiten", description: "Malerarbeiten" },
     { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesen(?:arbeiten)?(?:\s*(?:und|\/|-)\s*Estrich(?:arbeiten)?)?/i, /Estrich(?:arbeiten)?/i, /Fliesenspiegel/i], cluster: "Fliesen und Estricharbeiten", description: "Fliesen und Estricharbeiten" },
     { section: 5, heading: "Sanitär - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i, /\b(?:HLS|SHK|San)\b/i], cluster: "Heizung und Sanitär", description: "Heizung und Sanitär" },
     { section: 6, heading: "Elektroarbeiten", aliases: [/Elektroarbeiten/i], cluster: "Elektro", description: "Elektroarbeiten" },
-    { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Türen", description: "Tischlerarbeiten" },
+    { section: 7, heading: "Tischlerarbeiten", aliases: [/Tischlerarbeiten/i], cluster: "Tischlerarbeiten", description: "Tischlerarbeiten" },
     { section: 8, heading: "Reinigung", aliases: [/Reinigung/i], cluster: "Reinigung", description: "Reinigung" },
     { section: 9, heading: "Zusatzarbeiten", aliases: [/(?:Stundenlohn\s+)?Zusatzarbeiten/i], cluster: "Sonstiges", description: "Zusatzarbeiten" },
     { section: 10, heading: "Dacharbeiten", aliases: [/Dacharbeiten|Dachsanierung/i], cluster: "Dach", description: "Dacharbeiten" },
-    { section: 11, heading: "Fassadenarbeiten", aliases: [/Fassadenarbeiten|Fassade(?:nsanierung)?/i], cluster: "Fassade", description: "Fassadenarbeiten" },
+    { section: 11, heading: "Fassadenarbeiten", aliases: [/Fassadenarbeiten|Fassadensanierung|\bWDVS\b|Au(?:ß|ss)enfassade/i], cluster: "Fassadenarbeiten", description: "Fassadenarbeiten" },
     { section: 12, heading: "Trockenbauarbeiten", aliases: [/Trockenbauarbeiten|Trockenbau/i], cluster: "Trockenbau", description: "Trockenbauarbeiten" },
-    { section: 13, heading: "Maler- und Lackierarbeiten", aliases: [/Maler-\s*und\s*Lackierarbeiten|Lackierarbeiten/i], cluster: "Malerarbeiten", description: "Maler- und Lackierarbeiten" }
+    { section: 13, heading: "Maler- und Lackierarbeiten", aliases: [/Maler-\s*und\s*Lackierarbeiten|Lackierarbeiten/i], cluster: "Malerarbeiten", description: "Maler- und Lackierarbeiten" },
+    { section: 14, heading: "Asbestsanierung", aliases: [/Asbest(?:sanierung|arbeiten)?|Schadstoffsanierung|\bBT\s*(?:11|17\.45)\b|Flexplatten|asbesthaltig|Beprobung\s+auf\s+Asbest/i], cluster: "Asbestarbeiten", description: "Asbestarbeiten" }
   ];
 }
 
@@ -1394,12 +1400,12 @@ function buildOfferMeasureSummary(details: MeasureDetail[]): string | null {
 function parseOfferMeasuresLegacy(text: string): AiMeasureResult[] {
   const mappings: Array<{ section: number; heading: RegExp; cluster: MeasureCluster; description: string }> = [
     { section: 1, heading: /Summe\s+1\.\s+Erstbegehung\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Erstbegehung und Dokumentation" },
-    { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Bodenbeläge", description: "Bodenbelagsarbeiten" },
+    { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten" },
     { section: 3, heading: /Summe\s+3\.\s+Malerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Malerarbeiten", description: "Malerarbeiten" },
     { section: 4, heading: /Summe\s+4\.\s+Fliesenarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Fliesen und Estricharbeiten", description: "Fliesen und Estricharbeiten" },
     { section: 5, heading: /Summe\s+5\.\s+Sanit[aä]r\s*-\s*Heizungsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Heizung und Sanitär", description: "Heizung und Sanitär" },
     { section: 6, heading: /Summe\s+6\.\s+Elektroarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Elektro", description: "Elektroarbeiten" },
-    { section: 7, heading: /Summe\s+7\.\s+Tischlerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Türen", description: "Tischlerarbeiten" },
+    { section: 7, heading: /Summe\s+7\.\s+Tischlerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Tischlerarbeiten", description: "Tischlerarbeiten" },
     { section: 8, heading: /Summe\s+8\.\s+Reinigung\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Reinigung" },
     { section: 9, heading: /Summe\s+9\.\s+(?:Stundenlohn\s+)?Zusatzarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Sonstiges", description: "Zusatzarbeiten" }
   ];

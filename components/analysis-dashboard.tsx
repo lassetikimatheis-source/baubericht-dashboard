@@ -307,10 +307,12 @@ const emptyObjectPageFilters: ObjectPageFilters = {
 };
 
 const standardTradeCatalog: MeasureCluster[] = [
+  "Asbestarbeiten",
   "Dach",
-  "Fassade",
+  "Fassadenarbeiten",
   "Fenster",
   "Türen",
+  "Tischlerarbeiten",
   "Balkone",
   "Heizung und Sanitär",
   "Fliesen und Estricharbeiten",
@@ -322,7 +324,7 @@ const standardTradeCatalog: MeasureCluster[] = [
   "Außenanlagen",
   "Tiefgarage",
   "Malerarbeiten",
-  "Bodenbeläge",
+  "Bodenbelagsarbeiten",
   "Trockenbau",
   "Dachentwässerung",
   "Wärmedämmung",
@@ -4641,11 +4643,13 @@ function normalizeTradeCluster(value: string, description = ""): MeasureCluster 
   const normalizedName = normalizeTradeName(value, description);
   if (standardTradeCatalog.includes(normalizedName as MeasureCluster)) return normalizedName as MeasureCluster;
   if (standardTradeCatalog.includes(value as MeasureCluster)) return value as MeasureCluster;
+  if (/asbest|schadstoffsanierung|\bbt\s*(?:11|17\.45)\b|flexplatten|asbesthaltig|beprobung\s+auf\s+asbest/.test(text)) return "Asbestarbeiten";
   if (/dachentw[aä]sser|regenrinne|fallrohr/.test(text)) return "Dachentwässerung";
   if (/dach|ziegel|abdichtung|attika/.test(text)) return "Dach";
-  if (/fassade|putz|wdvs/.test(text)) return "Fassade";
+  if (/fassadenarbeiten|fassadensanierung|\bwdvs\b|außenfassade|aussenfassade/.test(text)) return "Fassadenarbeiten";
   if (/w[aä]rmed[aä]mm|dämm|daemm/.test(text)) return "Wärmedämmung";
   if (/fenster/.test(text)) return "Fenster";
+  if (/tischler/.test(text)) return "Tischlerarbeiten";
   if (/t[uü]r|tuer|tischler/.test(text)) return "Türen";
   if (/balkon|loggia/.test(text)) return "Balkone";
   if (/heizung|therme|kessel|radiator|fernw[aä]rme|sanit[aä]r|\b(hls|shk|san)\b/.test(text)) return "Heizung und Sanitär";
@@ -4661,7 +4665,7 @@ function normalizeTradeCluster(value: string, description = ""): MeasureCluster 
   if (/außen|aussen|garten|hof|pflaster|gr[uü]n/.test(text)) return "Außenanlagen";
   if (/tiefgarage|garage|stellplatz/.test(text)) return "Tiefgarage";
   if (/maler|anstrich|tapezier/.test(text)) return "Malerarbeiten";
-  if (/boden|belag|parkett|vinyl|sockel/.test(text)) return "Bodenbeläge";
+  if (/boden|belag|parkett|vinyl|sockel/.test(text)) return "Bodenbelagsarbeiten";
   if (/schornstein|kamin/.test(text)) return "Schornstein";
   if (/l[uü]ftung|ventilat/.test(text)) return "Lüftung";
   if (/photovoltaik|solar|pv\b/.test(text)) return "Photovoltaik";

@@ -1,6 +1,7 @@
 export type ExtractedValue<T> = T | null;
 
 export type MeasureCluster =
+  | "Asbestarbeiten"
   | "Bad"
   | "Bad / Fliesen"
   | "Abwasser"
@@ -8,10 +9,12 @@ export type MeasureCluster =
   | "Aufzüge"
   | "Balkone"
   | "Bodenbeläge"
+  | "Bodenbelagsarbeiten"
   | "Brandschutz"
   | "Dach"
   | "Dachentwässerung"
   | "Fassade"
+  | "Fassadenarbeiten"
   | "Fenster"
   | "Heizung"
   | "Heizung und Sanitär"
@@ -34,6 +37,7 @@ export type MeasureCluster =
   | "Trinkwasser"
   | "Türen / Fenster"
   | "Türen"
+  | "Tischlerarbeiten"
   | "Trockenbau"
   | "Wärmedämmung"
   | "Sonstiges";
