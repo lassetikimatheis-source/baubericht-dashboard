@@ -5252,3 +5252,181 @@ video {
     min-height: 340px;
   }
 }
+
+/* Supabase diagnostics */
+.diagnosticPage {
+  width: min(1280px, 100%);
+  min-height: 100vh;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.diagnosticHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 20px;
+}
+
+.diagnosticHeader p {
+  max-width: 860px;
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.diagnosticSummary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diagnosticCard,
+.diagnosticPanel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.diagnosticCard {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  align-content: start;
+  padding: 14px;
+}
+
+.diagnosticCard span:first-child {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.diagnosticCard strong {
+  color: #172234;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.diagnosticCard p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.diagnosticPanel {
+  padding: 18px;
+}
+
+.diagnosticTableWrap {
+  overflow-x: auto;
+}
+
+.diagnosticTable {
+  min-width: 0;
+}
+
+.diagnosticTable th,
+.diagnosticTable td {
+  font-size: 13px;
+}
+
+.diagnosticTable td:first-child {
+  min-width: 230px;
+  font-family: Consolas, "Courier New", monospace;
+  font-weight: 800;
+}
+
+.diagnosticCheckList {
+  display: grid;
+  gap: 10px;
+}
+
+.diagnosticCheckRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.diagnosticCheckRow strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #172234;
+}
+
+.diagnosticCheckRow p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diagnosticCheckMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.diagnosticBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.diagnosticBadgePass {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.diagnosticBadgeFail {
+  background: var(--orange-soft);
+  color: #b84520;
+}
+
+.diagnosticBadgeSkip {
+  background: #eef2f6;
+  color: var(--muted);
+}
+
+@media (max-width: 1180px) {
+  .diagnosticSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .diagnosticPage {
+    padding: 14px;
+  }
+
+  .diagnosticHeader,
+  .diagnosticCheckRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .diagnosticSummary {
+    grid-template-columns: 1fr;
+  }
+}
