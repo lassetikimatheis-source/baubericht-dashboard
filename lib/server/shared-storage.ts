@@ -12,6 +12,42 @@ export function sharedStorageConfigured(): boolean {
   return Boolean(supabaseProjectUrl() && supabaseServerKey());
 }
 
+export async function checkSharedStorageStatus() {
+  const projectUrl = supabaseProjectUrl();
+  const serverKey = supabaseServerKey();
+  const bucket = process.env.SUPABASE_STORAGE_BUCKET || "paribus-files";
+  const status = {
+    configured: Boolean(projectUrl && serverKey),
+    hasProjectUrl: Boolean(projectUrl),
+    hasPublishableKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY),
+    hasServerKey: Boolean(serverKey),
+    storageBucket: bucket,
+    bucketExists: false,
+    canReadTables: false,
+    message: ""
+  };
+  if (!status.configured) {
+    status.message = "Supabase ist nicht vollständig konfiguriert. Project URL und serverseitiger Secret/Service-Key fehlen oder sind ungültig.";
+    return status;
+  }
+  try {
+    await supabaseFetch(`/storage/v1/bucket/${encodeURIComponent(bucket)}`);
+    status.bucketExists = true;
+  } catch (error) {
+    status.message = `Storage Bucket '${bucket}' wurde nicht gefunden oder ist nicht erreichbar.`;
+  }
+  try {
+    await supabaseFetch("/rest/v1/objects?select=id&limit=1");
+    status.canReadTables = true;
+  } catch (error) {
+    status.message = status.message || "Supabase Tabellen sind nicht erreichbar. Bitte supabase-schema.sql ausführen.";
+  }
+  if (status.bucketExists && status.canReadTables) {
+    status.message = "Supabase ist verbunden.";
+  }
+  return status;
+}
+
 export async function readSharedSnapshot(): Promise<SharedStorageSnapshot> {
   if (!sharedStorageConfigured()) return emptySnapshot();
 

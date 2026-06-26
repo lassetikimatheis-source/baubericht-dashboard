@@ -221,6 +221,34 @@ export async function loadSharedStorageSnapshot(): Promise<SharedStorageSnapshot
   }
 }
 
+export async function getSharedStorageStatus(): Promise<{ configured: boolean; message: string; bucketExists?: boolean; canReadTables?: boolean } | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const response = await fetch("/api/shared-storage/status", { cache: "no-store" });
+    if (!response.ok) return null;
+    const data = await response.json() as { configured: boolean; message: string; bucketExists?: boolean; canReadTables?: boolean };
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+export async function migrateLocalStorageToSharedStorage(): Promise<{ ok: boolean; message: string }> {
+  const status = await getSharedStorageStatus();
+  if (!status?.configured || !status.bucketExists || !status.canReadTables) {
+    return { ok: false, message: status?.message || "Supabase ist nicht verbunden. Migration wurde nicht gestartet." };
+  }
+  const operations: Array<Promise<void>> = [];
+  getObjects().forEach((object) => operations.push(postSharedRecord("objects", object.id, object)));
+  getEntrances().forEach((entrance) => operations.push(postSharedRecord("entrances", entrance.id, entrance)));
+  getProjects().forEach((project) => operations.push(postSharedRecord("projects", project.id, project)));
+  getDocuments().forEach((document) => operations.push(postSharedRecord("documents", document.id, document)));
+  operations.push(postSharedRecord("assignments", "default", getAssignments()));
+  Object.entries(getObjectImages()).forEach(([objectId, urls]) => operations.push(postSharedRecord("objectImages", objectId, urls)));
+  await Promise.all(operations);
+  return { ok: true, message: "Lokale Daten wurden nach Supabase übertragen." };
+}
+
 export function applySharedSnapshot(snapshot: SharedStorageSnapshot): void {
   writeJson(STORAGE_KEYS.objects, snapshot.objects ?? []);
   writeJson(STORAGE_KEYS.entrances, snapshot.entrances ?? []);
@@ -262,11 +290,21 @@ function writeJson<T>(key: string, value: T): void {
 
 function syncSharedRecord(collection: SharedCollectionName, id: string, data: unknown): void {
   if (typeof window === "undefined") return;
-  void fetch("/api/shared-storage", {
+  void postSharedRecord(collection, id, data).catch((error) => console.warn("Zentrale Speicherung konnte nicht synchronisiert werden.", error));
+}
+
+async function postSharedRecord(collection: SharedCollectionName, id: string, data: unknown): Promise<void> {
+  const payload = { collection, id, data };
+  const response = await fetch("/api/shared-storage", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ collection, id, data })
-  }).catch((error) => console.warn("Zentrale Speicherung konnte nicht synchronisiert werden.", error));
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(message || "Zentrale Speicherung fehlgeschlagen.");
+  }
 }
 
 function deleteSharedRecord(collection: SharedCollectionName, id: string): void {

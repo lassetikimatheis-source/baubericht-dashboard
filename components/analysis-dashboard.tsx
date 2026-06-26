@@ -32,7 +32,9 @@ import {
   getObjectImages,
   getObjects,
   getProjects,
+  getSharedStorageStatus,
   loadSharedStorageSnapshot,
+  migrateLocalStorageToSharedStorage,
   saveAssignments,
   saveDocument,
   saveEntrance,
@@ -377,15 +379,18 @@ export function AnalysisDashboard() {
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
 
     let cancelled = false;
+    void getSharedStorageStatus().then((status) => {
+      if (cancelled || !status) return;
+      if (!status.configured || !status.bucketExists || !status.canReadTables) {
+        setMessage(status.message || "Supabase ist nicht verbunden. Daten werden nur lokal angezeigt.");
+      }
+    });
     void loadSharedStorageSnapshot().then((snapshot) => {
       if (cancelled || !snapshot) return;
       if (!sharedSnapshotHasData(snapshot) && (storedObjects.length || storedDocuments.length || storedProjects.length)) {
-        storedObjects.forEach(saveObject);
-        storedEntrances.forEach(saveEntrance);
-        storedProjects.forEach(saveProject);
-        storedDocuments.forEach(saveDocument);
-        saveAssignments(storedAssignments);
-        Object.entries(storedObjectImages).forEach(([objectId, urls]) => saveObjectImages(objectId, urls));
+        void migrateLocalStorageToSharedStorage().then((result) => {
+          if (!cancelled) setMessage(result.message);
+        });
         return;
       }
       setObjects(snapshot.objects);
