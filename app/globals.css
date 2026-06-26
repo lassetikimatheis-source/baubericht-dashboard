@@ -1318,6 +1318,76 @@ tbody tr:hover,
   line-height: 1.15;
 }
 
+.storageKeyAudit {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #f0d6ca;
+  padding-top: 12px;
+}
+
+.storageKeyAuditHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.storageKeyAuditHeader strong,
+.storageKeyAuditHeader span {
+  display: block;
+}
+
+.storageKeyAuditHeader strong {
+  color: #172234;
+  font-size: 13px;
+}
+
+.storageKeyGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.storageKeyItem {
+  min-width: 0;
+  border: 1px solid #f0d6ca;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.storageKeyItem strong,
+.storageKeyItem span,
+.storageKeyItem small {
+  display: block;
+}
+
+.storageKeyItem strong {
+  overflow: hidden;
+  color: #172234;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storageKeyItem span {
+  margin-top: 6px;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.storageKeyItem small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .possibleMatchBox {
   border-color: rgba(255, 110, 66, 0.38);
   background: var(--orange-soft);
@@ -5275,7 +5345,8 @@ video {
   .filterPanelHeader,
   .uploadFooter,
   .objectPageHeader,
-  .storageSafetyHeader {
+  .storageSafetyHeader,
+  .storageKeyAuditHeader {
     align-items: stretch;
     flex-direction: column;
   }
@@ -5291,7 +5362,8 @@ video {
   .objectHeaderMetrics,
   .kpiGrid,
   .objectKpiStrip,
-  .storageSafetyGrid {
+  .storageSafetyGrid,
+  .storageKeyGrid {
     grid-template-columns: 1fr;
   }
 

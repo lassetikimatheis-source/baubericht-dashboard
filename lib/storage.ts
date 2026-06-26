@@ -60,6 +60,23 @@ export interface StoredEntranceRecord {
   updatedAt?: string;
 }
 
+export interface LocalStorageKeyDiagnostic {
+  key: string;
+  expected: boolean;
+  present: boolean;
+  entries: number | null;
+  chars: number;
+  validJson: boolean | null;
+  valueType: string;
+}
+
+export interface LocalStorageDiagnostics {
+  origin: string;
+  totalKeys: number;
+  totalChars: number;
+  keys: LocalStorageKeyDiagnostic[];
+}
+
 const STORAGE_KEYS = {
   objects: "paribus-baukosten.objects.v1",
   entrances: "paribus-baukosten.entrances.v1",
@@ -195,6 +212,32 @@ export function getObjectImages(): Record<string, string[]> {
   return readJson<Record<string, string[]>>(STORAGE_KEYS.objectImages, {});
 }
 
+export function getLocalStorageDiagnostics(): LocalStorageDiagnostics {
+  if (typeof window === "undefined") {
+    return { origin: "server", totalKeys: 0, totalChars: 0, keys: [] };
+  }
+
+  const expectedKeys = new Set(Object.values(STORAGE_KEYS));
+  const discoveredKeys = new Set<string>(expectedKeys);
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (key?.startsWith("paribus-baukosten")) discoveredKeys.add(key);
+  }
+
+  const keys = Array.from(discoveredKeys).sort((left, right) => {
+    const leftExpected = expectedKeys.has(left) ? 0 : 1;
+    const rightExpected = expectedKeys.has(right) ? 0 : 1;
+    return leftExpected - rightExpected || left.localeCompare(right);
+  }).map((key) => inspectLocalStorageKey(key, expectedKeys.has(key)));
+
+  return {
+    origin: window.location.origin,
+    totalKeys: keys.filter((entry) => entry.present).length,
+    totalChars: keys.reduce((sum, entry) => sum + entry.chars, 0),
+    keys
+  };
+}
+
 export async function uploadSharedFiles(files: File[], folder: string): Promise<string[]> {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
@@ -301,6 +344,45 @@ function deleteItem(key: string, id: string): void {
 
 function readCollection<T>(key: string): T[] {
   return readJson<T[]>(key, []);
+}
+
+function inspectLocalStorageKey(key: string, expected: boolean): LocalStorageKeyDiagnostic {
+  if (typeof window === "undefined") {
+    return { key, expected, present: false, entries: null, chars: 0, validJson: null, valueType: "server" };
+  }
+
+  const raw = window.localStorage.getItem(key);
+  if (raw === null) {
+    return { key, expected, present: false, entries: null, chars: 0, validJson: null, valueType: "missing" };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const entries = Array.isArray(parsed)
+      ? parsed.length
+      : parsed && typeof parsed === "object"
+        ? Object.keys(parsed).length
+        : null;
+    return {
+      key,
+      expected,
+      present: true,
+      entries,
+      chars: raw.length,
+      validJson: true,
+      valueType: Array.isArray(parsed) ? "array" : parsed === null ? "null" : typeof parsed
+    };
+  } catch {
+    return {
+      key,
+      expected,
+      present: true,
+      entries: null,
+      chars: raw.length,
+      validJson: false,
+      valueType: "invalid-json"
+    };
+  }
 }
 
 function readJson<T>(key: string, fallback: T): T {

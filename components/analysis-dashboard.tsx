@@ -29,6 +29,7 @@ import {
   getAssignments,
   getDocuments,
   getEntrances,
+  getLocalStorageDiagnostics,
   getObjectImages,
   getObjects,
   getProjects,
@@ -46,6 +47,7 @@ import {
   updateObject as updateStoredObject,
   updateProject as updateStoredProject,
   uploadSharedFiles,
+  type LocalStorageDiagnostics,
   type StoredEntranceRecord,
   type StoredObjectRecord,
   type StoredProjectRecord
@@ -264,6 +266,7 @@ interface StorageSafetyState {
   message: string;
   canMigrate: boolean;
   isMigrating: boolean;
+  localStorageDiagnostics: LocalStorageDiagnostics | null;
 }
 
 
@@ -359,7 +362,8 @@ const initialStorageSafetyState: StorageSafetyState = {
   migrationStatus: "checking",
   message: "Speicherstatus wird geprueft. LocalStorage bleibt unangetastet.",
   canMigrate: false,
-  isMigrating: false
+  isMigrating: false,
+  localStorageDiagnostics: null
 };
 
 export function AnalysisDashboard() {
@@ -396,6 +400,7 @@ export function AnalysisDashboard() {
     const storedDocuments = getDocuments();
     const storedAssignments = getAssignments();
     const storedObjectImages = getObjectImages();
+    const localStorageDiagnostics = getLocalStorageDiagnostics();
     const localCounts = {
       localObjects: storedObjects.length,
       localProjects: storedProjects.length,
@@ -414,6 +419,7 @@ export function AnalysisDashboard() {
     setStorageSafety((current) => ({
       ...current,
       ...localCounts,
+      localStorageDiagnostics,
       migrationStatus: "checking",
       message: "Lokale Daten wurden gelesen. Supabase wird geprueft."
     }));
@@ -426,6 +432,7 @@ export function AnalysisDashboard() {
         setStorageSafety((current) => ({
           ...current,
           ...localCounts,
+          localStorageDiagnostics,
           supabaseObjects: null,
           supabaseProjects: null,
           supabaseDocuments: null,
@@ -444,6 +451,7 @@ export function AnalysisDashboard() {
         setStorageSafety((current) => ({
           ...current,
           ...localCounts,
+          localStorageDiagnostics,
           supabaseObjects: null,
           supabaseProjects: null,
           supabaseDocuments: null,
@@ -463,6 +471,7 @@ export function AnalysisDashboard() {
         setStorageSafety((current) => ({
           ...current,
           ...localCounts,
+          localStorageDiagnostics,
           migrationStatus: "error",
           message: fallbackMessage,
           canMigrate: false,
@@ -482,6 +491,7 @@ export function AnalysisDashboard() {
           ...current,
           ...localCounts,
           ...supabaseCounts,
+          localStorageDiagnostics,
           migrationStatus: "supabase-empty",
           message: fallbackMessage,
           canMigrate: localHasData,
@@ -495,6 +505,7 @@ export function AnalysisDashboard() {
         ...current,
         ...localCounts,
         ...supabaseCounts,
+        localStorageDiagnostics,
         migrationStatus: "supabase-ready",
         message: "Supabase enthaelt Daten. Ansicht nutzt den Supabase-Snapshot; LocalStorage wurde nicht ueberschrieben.",
         canMigrate: false,
@@ -521,7 +532,8 @@ export function AnalysisDashboard() {
       ...current,
       localObjects: getObjects().length,
       localProjects: getProjects().length,
-      localDocuments: getDocuments().length
+      localDocuments: getDocuments().length,
+      localStorageDiagnostics: getLocalStorageDiagnostics()
     }));
   }, [objects.length, projects.length, analysis.objects.length]);
 
@@ -541,10 +553,15 @@ export function AnalysisDashboard() {
         supabaseProjects: null,
         supabaseDocuments: null
       };
+      const localStorageDiagnostics = getLocalStorageDiagnostics();
       const supabaseHasData = Boolean(snapshot && sharedSnapshotHasData(snapshot));
       setStorageSafety((current) => ({
         ...current,
         ...supabaseCounts,
+        localObjects: getObjects().length,
+        localProjects: getProjects().length,
+        localDocuments: getDocuments().length,
+        localStorageDiagnostics,
         migrationStatus: result.ok ? "migrated" : "blocked",
         message: result.message,
         isMigrating: false,
@@ -566,6 +583,7 @@ export function AnalysisDashboard() {
       const errorMessage = error instanceof Error ? error.message : "Migration fehlgeschlagen. Es wurde nichts geloescht oder ueberschrieben.";
       setStorageSafety((current) => ({
         ...current,
+        localStorageDiagnostics: getLocalStorageDiagnostics(),
         migrationStatus: "error",
         message: errorMessage,
         isMigrating: false,
@@ -1221,6 +1239,7 @@ function StorageSafetyPanel({
     error: "Fehler"
   };
   const buttonDisabled = !state.canMigrate || state.isMigrating;
+  const diagnostics = state.localStorageDiagnostics;
 
   return (
     <section className="storageSafetyPanel" aria-label="Speicher Sicherheitsanzeige">
@@ -1260,6 +1279,26 @@ function StorageSafetyPanel({
           <strong>{statusLabel[state.migrationStatus]}</strong>
           <small>LocalStorage wird nicht geloescht oder ueberschrieben.</small>
         </div>
+      </div>
+      <div className="storageKeyAudit">
+        <div className="storageKeyAuditHeader">
+          <div>
+            <strong>Browser-Speicher</strong>
+            <span>{diagnostics?.origin ?? "Origin noch nicht gelesen"}</span>
+          </div>
+          <span>{diagnostics ? `${formatNumber(diagnostics.totalKeys)} Key(s), ${formatNumber(diagnostics.totalChars)} Zeichen` : "k.A."}</span>
+        </div>
+        {diagnostics ? (
+          <div className="storageKeyGrid">
+            {diagnostics.keys.map((entry) => (
+              <div className="storageKeyItem" key={entry.key}>
+                <strong>{entry.key}</strong>
+                <span>{entry.present ? `${entry.entries ?? "k.A."} Eintrag(e)` : "fehlt"}</span>
+                <small>{entry.expected ? "erwartet" : "zusaetzlich"} - {entry.validJson === null ? "kein JSON" : entry.validJson ? entry.valueType : "ungueltiges JSON"} - {formatNumber(entry.chars)} Zeichen</small>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     </section>
   );
