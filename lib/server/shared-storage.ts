@@ -11,6 +11,7 @@ const REST_TABLES: Record<Exclude<SharedCollectionName, "objectImages">, string>
 const EXPECTED_STORAGE_BUCKET = "paribus-files";
 const DIAGNOSTIC_TABLES = ["objects", "entrances", "projects", "documents", "assignments", "object_images"] as const;
 const DIAGNOSTIC_WRITE_ID = "__shared_storage_diagnostic__";
+const SUPABASE_PROJECT_URL_PATTERN = /^https:\/\/[a-zA-Z0-9-]+\.supabase\.co\/?$/;
 
 type DiagnosticState = "pass" | "fail" | "skip";
 
@@ -27,6 +28,8 @@ interface EnvVarCheck {
   present: boolean;
   valid?: boolean;
   used: boolean;
+  required?: boolean;
+  fallbackFor?: string;
   note?: string;
 }
 
@@ -34,6 +37,21 @@ interface DiagnosticRequestResult {
   ok: boolean;
   status: number | null;
   detail: string;
+}
+
+interface ProjectUrlValidation {
+  ok: boolean;
+  reason: string;
+  expectedFormat: string;
+  checks: {
+    hasValue: boolean;
+    parsesAsUrl: boolean;
+    protocolIsHttps: boolean | null;
+    hostEndsWithSupabaseCo: boolean | null;
+    hostMatchesProjectPattern: boolean | null;
+    hasNoPathQueryOrHash: boolean | null;
+    matchesRequiredPattern: boolean;
+  };
 }
 
 export function sharedStorageConfigured(): boolean {
@@ -56,20 +74,26 @@ export async function checkSharedStorageStatus() {
     canReadTables: false,
     canWrite: false,
     environment: {
+      expectedVariableNames: env.expectedVariableNames,
       variables: env.variables,
       projectUrl: {
         present: env.projectUrl.present,
         valid: env.projectUrl.valid,
         source: env.projectUrl.source,
-        message: env.projectUrl.message
+        message: env.projectUrl.message,
+        validation: env.projectUrl.validation
       },
       publishableKey: {
         present: env.publishableKey.present,
+        primaryName: env.publishableKey.primaryName,
+        fallbackNames: env.publishableKey.fallbackNames,
         source: env.publishableKey.source,
         message: env.publishableKey.message
       },
       serverKey: {
         present: env.serverKey.present,
+        primaryName: env.serverKey.primaryName,
+        fallbackNames: env.serverKey.fallbackNames,
         source: env.serverKey.source,
         message: env.serverKey.message
       },
@@ -275,6 +299,7 @@ function readSupabaseEnv() {
   const storageBucket = envVar("SUPABASE_STORAGE_BUCKET");
   const projectUrlSource = supabaseUrl.present ? supabaseUrl.name : nextPublicSupabaseUrl.present ? nextPublicSupabaseUrl.name : null;
   const projectUrlRaw = supabaseUrl.value || nextPublicSupabaseUrl.value;
+  const projectUrlValidation = validateSupabaseProjectUrl(projectUrlRaw);
   const projectUrl = normalizeSupabaseProjectUrl(projectUrlRaw);
   const serverKeySource = serviceRoleKey.present ? serviceRoleKey.name : secretKey.present ? secretKey.name : null;
   const serverKey = serviceRoleKey.value || secretKey.value || null;
@@ -285,39 +310,45 @@ function readSupabaseEnv() {
     {
       name: supabaseUrl.name,
       present: supabaseUrl.present,
-      valid: supabaseUrl.present ? Boolean(normalizeSupabaseProjectUrl(supabaseUrl.value)) : false,
+      valid: supabaseUrl.present ? validateSupabaseProjectUrl(supabaseUrl.value).ok : false,
       used: projectUrlSource === supabaseUrl.name,
+      required: true,
       note: "Serverseitige Project URL."
     },
     {
       name: nextPublicSupabaseUrl.name,
       present: nextPublicSupabaseUrl.present,
-      valid: nextPublicSupabaseUrl.present ? Boolean(normalizeSupabaseProjectUrl(nextPublicSupabaseUrl.value)) : false,
+      valid: nextPublicSupabaseUrl.present ? validateSupabaseProjectUrl(nextPublicSupabaseUrl.value).ok : false,
       used: projectUrlSource === nextPublicSupabaseUrl.name,
+      fallbackFor: "SUPABASE_URL",
       note: "Fallback fuer die Project URL."
     },
     {
       name: publishableKey.name,
       present: publishableKey.present,
       used: publishableKeySource === publishableKey.name,
-      note: "Publishable Key, wird nicht als Secret angezeigt."
+      required: true,
+      note: "Primaer erwarteter Publishable Key; wird nicht als Secret angezeigt."
     },
     {
       name: fallbackPublishableKey.name,
       present: fallbackPublishableKey.present,
       used: publishableKeySource === fallbackPublishableKey.name,
+      fallbackFor: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
       note: "Fallback Publishable Key."
     },
     {
       name: serviceRoleKey.name,
       present: serviceRoleKey.present,
       used: serverKeySource === serviceRoleKey.name,
-      note: "Serverseitiger Schreib-/Leseschluessel."
+      required: true,
+      note: "Primaer erwarteter serverseitiger Schreib-/Leseschluessel."
     },
     {
       name: secretKey.name,
       present: secretKey.present,
       used: serverKeySource === secretKey.name,
+      fallbackFor: "SUPABASE_SERVICE_ROLE_KEY",
       note: "Fallback fuer serverseitigen Schreib-/Leseschluessel."
     },
     {
@@ -325,37 +356,61 @@ function readSupabaseEnv() {
       present: storageBucket.present,
       valid: bucket === EXPECTED_STORAGE_BUCKET,
       used: storageBucket.present,
+      required: true,
       note: storageBucket.present ? "Konfigurierter Storage Bucket." : `Nicht gesetzt, Standard '${EXPECTED_STORAGE_BUCKET}' wird genutzt.`
     }
   ];
 
   return {
+    expectedVariableNames: {
+      projectUrl: {
+        primary: "SUPABASE_URL",
+        fallbacks: ["NEXT_PUBLIC_SUPABASE_URL"]
+      },
+      publishableKey: {
+        primary: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+        fallbacks: ["SUPABASE_PUBLISHABLE_KEY"]
+      },
+      serverKey: {
+        primary: "SUPABASE_SERVICE_ROLE_KEY",
+        fallbacks: ["SUPABASE_SECRET_KEY"]
+      },
+      storageBucket: {
+        primary: "SUPABASE_STORAGE_BUCKET",
+        expectedValue: EXPECTED_STORAGE_BUCKET
+      }
+    },
     variables,
     projectUrl: {
       value: projectUrl,
       present: Boolean(projectUrlRaw),
       valid: Boolean(projectUrl),
       source: projectUrlSource,
+      validation: projectUrlValidation,
       message: projectUrl
         ? "Project URL ist gueltig."
         : projectUrlRaw
-          ? "Project URL ist gesetzt, aber ungueltig. Erwartet wird https://xxxxx.supabase.co."
+          ? `Project URL ist gesetzt, aber ungueltig: ${projectUrlValidation.reason}`
           : "Project URL fehlt. Setze SUPABASE_URL oder NEXT_PUBLIC_SUPABASE_URL."
     },
     publishableKey: {
       present: Boolean(publishableKeySource),
+      primaryName: "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+      fallbackNames: ["SUPABASE_PUBLISHABLE_KEY"],
       source: publishableKeySource,
       message: publishableKeySource
-        ? "Publishable Key ist vorhanden."
-        : "Publishable Key fehlt. Fuer die aktuelle Server-Diagnose ist er nicht entscheidend, sollte aber in Vercel gesetzt sein."
+        ? `Publishable Key ist vorhanden (${publishableKeySource}).`
+        : "Publishable Key fehlt. Primaer erwartet: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY; Fallback: SUPABASE_PUBLISHABLE_KEY."
     },
     serverKey: {
       value: serverKey,
       present: Boolean(serverKey),
+      primaryName: "SUPABASE_SERVICE_ROLE_KEY",
+      fallbackNames: ["SUPABASE_SECRET_KEY"],
       source: serverKeySource,
       message: serverKey
-        ? "Serverseitiger Secret/Service-Key ist vorhanden."
-        : "Serverseitiger Secret/Service-Key fehlt. Setze SUPABASE_SERVICE_ROLE_KEY oder SUPABASE_SECRET_KEY."
+        ? `Serverseitiger Secret/Service-Key ist vorhanden (${serverKeySource}).`
+        : "Serverseitiger Secret/Service-Key fehlt. Primaer erwartet: SUPABASE_SERVICE_ROLE_KEY; Fallback: SUPABASE_SECRET_KEY."
     },
     storageBucket: {
       value: bucket,
@@ -367,6 +422,83 @@ function readSupabaseEnv() {
 function envVar(name: string): { name: string; value: string; present: boolean } {
   const value = process.env[name]?.trim() || "";
   return { name, value, present: Boolean(value) };
+}
+
+function validateSupabaseProjectUrl(value: string): ProjectUrlValidation {
+  const trimmed = value.trim();
+  const expectedFormat = "https://<project-ref>.supabase.co";
+  const emptyChecks = {
+    hasValue: Boolean(trimmed),
+    parsesAsUrl: false,
+    protocolIsHttps: null,
+    hostEndsWithSupabaseCo: null,
+    hostMatchesProjectPattern: null,
+    hasNoPathQueryOrHash: null,
+    matchesRequiredPattern: false
+  };
+
+  if (!trimmed) {
+    return {
+      ok: false,
+      reason: `Kein Wert gesetzt. Erwartetes Format: ${expectedFormat}.`,
+      expectedFormat,
+      checks: emptyChecks
+    };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return {
+      ok: false,
+      reason: `Der Wert ist keine gueltige absolute URL. Erwartetes Format: ${expectedFormat}.`,
+      expectedFormat,
+      checks: emptyChecks
+    };
+  }
+
+  const protocolIsHttps = parsed.protocol === "https:";
+  const hostEndsWithSupabaseCo = parsed.hostname.endsWith(".supabase.co");
+  const hostMatchesProjectPattern = /^[a-zA-Z0-9-]+\.supabase\.co$/.test(parsed.hostname);
+  const hasNoPathQueryOrHash = (parsed.pathname === "" || parsed.pathname === "/") && !parsed.search && !parsed.hash;
+  const matchesRequiredPattern = SUPABASE_PROJECT_URL_PATTERN.test(trimmed);
+  const checks = {
+    hasValue: true,
+    parsesAsUrl: true,
+    protocolIsHttps,
+    hostEndsWithSupabaseCo,
+    hostMatchesProjectPattern,
+    hasNoPathQueryOrHash,
+    matchesRequiredPattern
+  };
+
+  if (matchesRequiredPattern) {
+    return {
+      ok: true,
+      reason: `Format entspricht ${expectedFormat}.`,
+      expectedFormat,
+      checks
+    };
+  }
+
+  let reason = `Regex-Pruefung fehlgeschlagen. Erwartetes Format: ${expectedFormat}.`;
+  if (!protocolIsHttps) {
+    reason = "Protokoll ist nicht https. Erwartet wird eine Project URL mit https.";
+  } else if (!hostEndsWithSupabaseCo) {
+    reason = "Host endet nicht auf .supabase.co.";
+  } else if (!hostMatchesProjectPattern) {
+    reason = "Host entspricht nicht dem Muster <project-ref>.supabase.co.";
+  } else if (!hasNoPathQueryOrHash) {
+    reason = "URL enthaelt Pfad, Query-Parameter oder Fragment. Erwartet wird nur die Project URL.";
+  }
+
+  return {
+    ok: false,
+    reason,
+    expectedFormat,
+    checks
+  };
 }
 
 function skippedCheck(message: string): DiagnosticCheck {
@@ -504,7 +636,7 @@ function supabaseProjectUrl(): string | null {
 
 function normalizeSupabaseProjectUrl(value: string): string | null {
   const normalized = value.trim().replace(/\/$/, "");
-  return /^https:\/\/[a-zA-Z0-9-]+\.supabase\.co$/.test(normalized) ? normalized : null;
+  return validateSupabaseProjectUrl(value).ok ? normalized : null;
 }
 
 function supabaseServerKey(): string | null {
