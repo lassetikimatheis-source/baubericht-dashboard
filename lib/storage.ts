@@ -253,7 +253,10 @@ export async function loadSharedStorageSnapshot(): Promise<SharedStorageSnapshot
   if (typeof window === "undefined") return null;
   try {
     const response = await fetch("/api/shared-storage", { cache: "no-store" });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn(`Zentrale Speicherung konnte nicht geladen werden. HTTP ${response.status}`);
+      return null;
+    }
     const data = await response.json() as { ok: boolean; configured?: boolean; snapshot?: SharedStorageSnapshot };
     if (!data.ok || !data.configured || !data.snapshot) return null;
     return data.snapshot;
@@ -267,11 +270,27 @@ export async function getSharedStorageStatus(): Promise<{ configured: boolean; m
   if (typeof window === "undefined") return null;
   try {
     const response = await fetch("/api/shared-storage/status", { cache: "no-store" });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      return {
+        configured: false,
+        bucketExists: false,
+        canReadTables: false,
+        canWrite: false,
+        message: `/api/shared-storage/status ist nicht erreichbar. HTTP ${response.status}. Lokale Daten bleiben aktiv.`
+      };
+    }
     const data = await response.json() as { configured: boolean; message: string; bucketExists?: boolean; canReadTables?: boolean; canWrite?: boolean };
     return data;
-  } catch {
-    return null;
+  } catch (error) {
+    return {
+      configured: false,
+      bucketExists: false,
+      canReadTables: false,
+      canWrite: false,
+      message: error instanceof Error
+        ? `Supabase Status konnte nicht geladen werden: ${error.message}. Lokale Daten bleiben aktiv.`
+        : "Supabase Status konnte nicht geladen werden. Lokale Daten bleiben aktiv."
+    };
   }
 }
 

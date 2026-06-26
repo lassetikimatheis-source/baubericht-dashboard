@@ -483,10 +483,26 @@ export function AnalysisDashboard() {
 
       const supabaseCounts = countSharedSnapshot(snapshot);
       const supabaseHasData = sharedSnapshotHasData(snapshot);
+      if (localHasData) {
+        const fallbackMessage = supabaseHasData
+          ? "Lokale Daten sind vorhanden und haben Vorrang. Supabase wurde nur gezaehlt; LocalStorage wurde nicht ueberschrieben."
+          : "Supabase ist leer. Lokale Daten bleiben aktiv; Migration kann manuell gestartet werden.";
+        setStorageSafety((current) => ({
+          ...current,
+          ...localCounts,
+          ...supabaseCounts,
+          localStorageDiagnostics,
+          migrationStatus: supabaseHasData ? "local-fallback" : "supabase-empty",
+          message: fallbackMessage,
+          canMigrate: !supabaseHasData,
+          isMigrating: false
+        }));
+        setMessage(fallbackMessage);
+        return;
+      }
+
       if (!supabaseHasData) {
-        const fallbackMessage = localHasData
-          ? "Supabase ist leer. Lokale Daten bleiben aktiv; Migration kann manuell gestartet werden."
-          : "Supabase ist leer und lokal wurden keine Daten gefunden.";
+        const fallbackMessage = "Supabase ist leer und lokal wurden keine Daten gefunden.";
         setStorageSafety((current) => ({
           ...current,
           ...localCounts,
