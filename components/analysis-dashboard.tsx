@@ -5813,25 +5813,42 @@ async function exportObjectReport(
     pdf.text(lines, x, y, { lineHeightFactor: 1.15 });
     return y + lines.length * size * 1.18;
   };
+  const fitText = (value: string, x: number, y: number, maxWidth: number, size = 16, minSize = 8, style: "normal" | "bold" = "bold", color = orange, align: "left" | "center" | "right" = "left") => {
+    let nextSize = size;
+    pdf.setFont("helvetica", style);
+    while (nextSize > minSize) {
+      pdf.setFontSize(nextSize);
+      if (pdf.getTextWidth(value) <= maxWidth) break;
+      nextSize -= 0.5;
+    }
+    setColor(color);
+    const width = pdf.getTextWidth(value);
+    const offset = align === "center" ? (maxWidth - width) / 2 : align === "right" ? maxWidth - width : 0;
+    pdf.text(value, x + Math.max(offset, 0), y);
+  };
   const card = (x: number, y: number, w: number, h: number) => {
     pdf.setFillColor(255, 255, 255);
     pdf.setDrawColor(border[0], border[1], border[2]);
     pdf.roundedRect(x, y, w, h, 8, 8, "FD");
   };
   const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number, icon = "□") => {
-    text(icon, x + w / 2 - 6, y + 20, 17, "bold", navy);
-    text(title.toUpperCase(), x + 8, y + 48, 7.5, "bold", navy, w - 16);
-    text(value, x + w / 2 - pdf.getTextWidth(value) / 2, y + 76, 16, "bold", orange);
-    text(detail, x + w / 2 - pdf.getTextWidth(detail) / 2, y + 96, 9, "normal", navy);
+    pdf.setFillColor(255, 243, 238);
+    pdf.circle(x + w / 2, y + 18, 10, "F");
+    pdf.setDrawColor(orange[0], orange[1], orange[2]);
+    pdf.circle(x + w / 2, y + 18, 10, "S");
+    text(title.toUpperCase(), x + 8, y + 47, 7.2, "bold", navy, w - 16);
+    fitText(value, x + 8, y + 76, w - 16, 14.5, 9, "bold", orange, "center");
+    fitText(detail, x + 8, y + 98, w - 16, 8.5, 7, "normal", navy, "center");
   };
   const bigKpi = (title: string, value: string, subtitle: string, x: number, y: number, w: number, h: number, icon: string) => {
     card(x, y, w, h);
-    text(title.toUpperCase(), x + 14, y + 25, 9, "bold", navy, w - 60);
-    text(value, x + 14, y + 60, 22, "bold", orange, w - 28);
-    text(subtitle, x + 14, y + h - 24, 9, "normal", navy, w - 28);
+    text(title.toUpperCase(), x + 14, y + 25, 8.5, "bold", navy, w - 54);
+    fitText(value, x + 14, y + 64, w - 28, 22, 14, "bold", orange);
+    text(subtitle, x + 14, y + h - 16, 8.5, "normal", navy, w - 28);
+    pdf.setFillColor(255, 243, 238);
+    pdf.circle(x + w - 28, y + 29, 13, "F");
     pdf.setDrawColor(orange[0], orange[1], orange[2]);
     pdf.circle(x + w - 28, y + 29, 13, "S");
-    text(icon, x + w - 33, y + 34, 12, "bold", orange);
   };
   const footer = (page: number) => {
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
