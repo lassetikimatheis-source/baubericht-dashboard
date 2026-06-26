@@ -6048,10 +6048,11 @@ function buildTwoPageReportCss(): string {
     @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #f5f6f8; color: #13263f; font-family: Aptos, "Segoe UI", Calibri, Arial, sans-serif; }
-    .reportPage { width: 794px; min-height: 1123px; padding: 48px 56px; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
+    .reportPage { width: 794px; height: 1123px; padding: 48px 56px; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
+    .reportPage2 { padding-top: 72px; }
     .reportTop, .objectReportHeader { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 24px; align-items: start; width: 100%; }
-    .reportLogoPanel { display: grid; gap: 18px; justify-items: end; }
-    .reportLogoRight { width: 132px; max-height: 42px; object-fit: contain; object-position: right center; }
+    .reportLogoPanel { display: grid; gap: 18px; justify-items: end; padding-top: 58px; }
+    .reportLogoRight { position: absolute; top: 48px; right: 56px; width: 132px; max-height: 42px; object-fit: contain; object-position: right center; }
     .reportEyebrow { margin: 0 0 8px; color: #f36f21; font-size: 15px; font-weight: 800; }
     h1 { margin: 0; color: #13263f; font-size: 34px; line-height: 1.04; letter-spacing: -0.01em; }
     h2 { margin: 8px 0 0; color: #13263f; font-size: 21px; font-weight: 600; line-height: 1.22; }
@@ -6066,45 +6067,45 @@ function buildTwoPageReportCss(): string {
     .infoLine span, .portfolioKpi span, .bigReportKpi span, .objectMeta span { color: #13263f; font-size: 10px; font-weight: 900; text-transform: uppercase; }
     .infoLine strong { color: #13263f; font-size: 14px; line-height: 1.35; }
     .portfolioKpiStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 24px; padding: 14px 8px; width: 100%; }
-    .portfolioKpi { min-height: 100px; display: grid; align-content: center; justify-items: center; gap: 6px; padding: 0 8px; border-right: 1px solid #dbe2ec; text-align: center; min-width: 0; }
+    .portfolioKpi { min-height: 100px; display: grid; grid-template-rows: 30px 34px 28px 14px; align-items: center; justify-items: center; gap: 4px; padding: 0 8px; border-right: 1px solid #dbe2ec; text-align: center; min-width: 0; }
     .portfolioKpi:last-child { border-right: 0; }
-    .portfolioKpi strong { color: #f36f21; font-size: 21px; line-height: 1; overflow-wrap: anywhere; }
+    .portfolioKpi strong { color: #f36f21; font-size: 18px; line-height: 1; white-space: nowrap; }
     .portfolioKpi em, .bigReportKpi em { color: #13263f; font-size: 11px; font-style: normal; }
     .bigKpiGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; width: 100%; }
     .bigReportKpi { min-height: 116px; position: relative; display: grid; align-content: center; gap: 11px; padding: 18px; min-width: 0; }
-    .bigReportKpi b { color: #f36f21; font-size: 27px; line-height: 1; overflow-wrap: anywhere; }
+    .bigReportKpi b { color: #f36f21; font-size: 24px; line-height: 1; white-space: nowrap; max-width: calc(100% - 42px); }
     .kpiIcon { position: absolute; right: 16px; top: 16px; width: 32px; height: 32px; display: grid; place-items: center; border: 2px solid #f36f21; border-radius: 999px; color: #f36f21; font-weight: 900; }
     .reportChartGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; width: 100%; }
-    .reportCard { min-height: 318px; padding: 14px; min-width: 0; }
+    .reportCard { height: 318px; padding: 14px; min-width: 0; overflow: hidden; }
     .reportBarList { display: grid; gap: 8px; margin-top: 14px; }
-    .reportBarRow { display: grid; grid-template-columns: 112px minmax(0, 1fr) 78px; gap: 8px; align-items: center; min-height: 21px; color: #13263f; font-size: 10px; font-weight: 800; min-width: 0; }
+    .reportBarRow { display: grid; grid-template-columns: 108px minmax(0, 1fr) 82px; gap: 7px; align-items: center; min-height: 21px; color: #13263f; font-size: 10px; font-weight: 800; min-width: 0; }
     .objectBars .reportBarRow { grid-template-columns: 82px minmax(0, 1fr) 86px; min-height: 48px; }
     .reportTrack { height: 10px; border-radius: 999px; background: #edf1f6; overflow: hidden; }
     .reportFill { height: 100%; border-radius: 999px; background: #13263f; }
     .reportBarRow.highlight .reportFill { background: #f36f21; }
-    .reportValue { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .reportValue { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 9.5px; }
     .reportAxis { display: flex; justify-content: space-between; margin: 7px 78px 0 112px; border-top: 1px solid #dbe2ec; color: #52627a; font-size: 8px; padding-top: 4px; }
     .bottomInfoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 16px; padding: 14px 16px; width: 100%; }
     .bottomInfoGrid article { display: grid; grid-template-columns: 58px 1fr; gap: 14px; align-items: center; padding: 0 14px; border-right: 1px solid #dbe2ec; min-width: 0; }
     .bottomInfoGrid article:last-child { border-right: 0; }
     .roundIcon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 999px; background: rgba(243,111,33,0.1); color: #f36f21; font-size: 22px; font-weight: 900; }
-    .objectReportHeader h1 { font-size: 40px; margin-top: 12px; }
-    .objectMetaStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-top: 22px; width: 100%; }
-    .objectMeta { display: grid; justify-items: center; gap: 6px; min-height: 76px; padding: 0 6px; text-align: center; border-right: 1px solid #dbe2ec; min-width: 0; }
+    .objectReportHeader h1 { font-size: 38px; margin-top: 10px; }
+    .objectMetaStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-top: 20px; width: 100%; }
+    .objectMeta { display: grid; justify-items: center; gap: 5px; min-height: 72px; padding: 0 6px; text-align: center; border-right: 1px solid #dbe2ec; min-width: 0; }
     .objectMeta:last-child { border-right: 0; }
     .objectMeta strong { color: #13263f; font-size: 15px; line-height: 1.15; overflow-wrap: anywhere; }
     .metaIcon { color: #13263f; line-height: 1; }
-    .objectKpiGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; width: 100%; }
-    .objectKpiGrid .bigReportKpi { min-height: 104px; padding: 16px; }
-    .objectKpiGrid .bigReportKpi b { font-size: 25px; }
-    .objectTradeTableCard { margin-top: 18px; min-height: 500px; padding: 15px; overflow: hidden; }
-    .reportTradeTable { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; margin-top: 14px; font-size: 9.5px; }
-    .reportTradeTable th { color: #13263f; text-align: left; border-bottom: 1px solid #dbe2ec; padding: 7px 5px; text-transform: uppercase; }
-    .reportTradeTable td { padding: 8px 5px; border-bottom: 1px solid #eef2f6; color: #13263f; font-weight: 800; vertical-align: middle; }
+    .objectKpiGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; width: 100%; }
+    .objectKpiGrid .bigReportKpi { min-height: 98px; padding: 15px; }
+    .objectKpiGrid .bigReportKpi b { font-size: 22px; }
+    .objectTradeTableCard { margin-top: 16px; height: 530px; padding: 14px; overflow: hidden; }
+    .reportTradeTable { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; margin-top: 12px; font-size: 9px; }
+    .reportTradeTable th { color: #13263f; text-align: left; border-bottom: 1px solid #dbe2ec; padding: 6px 4px; text-transform: uppercase; white-space: normal; line-height: 1.15; overflow-wrap: normal; }
+    .reportTradeTable td { padding: 7px 4px; border-bottom: 1px solid #eef2f6; color: #13263f; font-weight: 800; vertical-align: middle; }
     .reportTradeTable th:nth-child(1), .reportTradeTable td:nth-child(1) { width: 24%; }
-    .reportTradeTable th:nth-child(2), .reportTradeTable td:nth-child(2) { width: 34%; }
+    .reportTradeTable th:nth-child(2), .reportTradeTable td:nth-child(2) { width: 32%; }
     .reportTradeTable th:nth-child(3), .reportTradeTable td:nth-child(3) { width: 16%; }
-    .reportTradeTable th:nth-child(4), .reportTradeTable td:nth-child(4) { width: 16%; }
+    .reportTradeTable th:nth-child(4), .reportTradeTable td:nth-child(4) { width: 18%; }
     .reportTradeTable th:nth-child(5), .reportTradeTable td:nth-child(5) { width: 10%; }
     .tableBar { min-width: 0; }
     .tableBar .reportTrack { height: 10px; }
@@ -6121,7 +6122,7 @@ function buildTwoPageReportCss(): string {
 }
 
 function twoPageReportPage(page: number, content: string): string {
-  return `<section class="reportPage">${content}${reportFooter(page, 2)}</section>`;
+  return `<section class="reportPage reportPage${page}">${content}${reportFooter(page, 2)}</section>`;
 }
 
 function reportInfoLine(label: string, value: string): string {
@@ -6187,7 +6188,7 @@ function reportTradeRowsTable(rows: ReportTradeRow[]): string {
 }
 
 function reportAxis(max: number, left: number, right: number): string {
-  const steps = [0, max * 0.25, max * 0.5, max * 0.75, max].map((value) => formatEuroAxis(roundMoney(value)));
+  const steps = [0, max * 0.5, max].map((value) => formatEuroAxis(roundMoney(value)));
   return `<div class="reportAxis" style="margin-left:${left}px;margin-right:${right}px">${steps.map((step) => `<span>${escapeReportHtml(step)}</span>`).join("")}</div>`;
 }
 
