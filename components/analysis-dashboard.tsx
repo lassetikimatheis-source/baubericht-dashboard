@@ -2785,6 +2785,10 @@ function ObjectCostsTab({
 function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
   const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
   const groups = groupByCluster(documents);
+  const tradeDebugKey = groups.map((row) => `${row.cluster}:${row.total}:${getDocumentCountByTrade(row)}:${row.averagePerDocument ?? ""}`).join("|");
+  useEffect(() => {
+    debugAverageCostPerTrade(firstKnown(documents[0]?.objectNumber.value ?? "", documents[0]?.objectAddress.value ?? "", "k.A."), groups);
+  }, [tradeDebugKey, documents]);
   const totalGross = groups.reduce((sum, row) => sum + row.total, 0);
   const chartRows: TradeCostChartRow[] = groups.map((row) => ({
     id: row.cluster,
@@ -5065,7 +5069,7 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
 
   documents.forEach((document) => {
     getTradeAllocations(document).forEach((allocation) => {
-      const name = normalizeTradeCluster(allocation.cluster, fieldOrUnknown(allocation.document.measureDescription));
+      const name = normalizeTradeCluster(allocation.cluster, "");
       const current = groups.get(name) ?? {
         cluster: name,
         count: 0,
@@ -5148,9 +5152,10 @@ function documentUniqueKey(document: ObjectAnalysis): string {
   );
 }
 
-function debugAverageCostPerTrade(rows: TradeGroupRow[]): void {
+function debugAverageCostPerTrade(objectId: string, rows: TradeGroupRow[]): void {
   if (typeof window === "undefined") return;
   console.table(rows.map((row) => ({
+    objekt: objectId,
     gewerk: row.cluster,
     bruttokosten: row.total,
     eindeutigeDokumente: row.uniqueDocumentIds?.join(", ") ?? "",

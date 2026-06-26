@@ -12,6 +12,9 @@ export const OTHER_TRADE: MeasureCluster = "Sonstige";
 export const ELECTRICAL_TRADE: MeasureCluster = "Elektroarbeiten";
 
 export function normalizeTradeName(value: string | null | undefined, description = ""): MeasureCluster | string {
+  const explicitTrade = normalizeExplicitTradeValue(value);
+  if (explicitTrade) return explicitTrade;
+
   const raw = `${value ?? ""} ${description}`.trim();
   const text = raw.toLowerCase();
   if (!text || text === "k.a.") return value ?? "";
@@ -61,6 +64,65 @@ export function normalizeTradeName(value: string | null | undefined, description
   }
 
   return value ?? "";
+}
+
+function normalizeExplicitTradeValue(value: string | null | undefined): MeasureCluster | null {
+  const key = compactTradeKey(value);
+  if (!key || key === "ka") return null;
+
+  const explicitMap: Record<string, MeasureCluster> = {
+    asbestarbeiten: ASBESTOS_TRADE,
+    asbestsanierung: ASBESTOS_TRADE,
+    bodenbelagsarbeiten: FLOORING_TRADE,
+    bodenbelaege: FLOORING_TRADE,
+    bodenbelage: FLOORING_TRADE,
+    malerarbeiten: "Malerarbeiten",
+    fliesenundestricharbeiten: TILING_SCREED_TRADE,
+    fliesen: TILING_SCREED_TRADE,
+    fliesenarbeiten: TILING_SCREED_TRADE,
+    estrich: TILING_SCREED_TRADE,
+    estricharbeiten: TILING_SCREED_TRADE,
+    badfliesen: TILING_SCREED_TRADE,
+    heizungundsanitaer: HEATING_SANITARY_TRADE,
+    heizung: HEATING_SANITARY_TRADE,
+    sanitaer: HEATING_SANITARY_TRADE,
+    sanitar: HEATING_SANITARY_TRADE,
+    san: HEATING_SANITARY_TRADE,
+    hls: HEATING_SANITARY_TRADE,
+    shk: HEATING_SANITARY_TRADE,
+    sanitaerheizung: HEATING_SANITARY_TRADE,
+    sanitarheizung: HEATING_SANITARY_TRADE,
+    heizungsanitaer: HEATING_SANITARY_TRADE,
+    heizungsanitar: HEATING_SANITARY_TRADE,
+    elektroarbeiten: ELECTRICAL_TRADE,
+    elektro: ELECTRICAL_TRADE,
+    tischlerarbeiten: CARPENTRY_TRADE,
+    fassadenarbeiten: FACADE_TRADE,
+    dacharbeiten: ROOF_TRADE,
+    fensterarbeiten: WINDOW_TRADE,
+    aussenanlagen: "Außenanlagen",
+    auszenanlagen: "Außenanlagen",
+    reinigung: "Reinigung",
+    planungdokumentation: "Planung / Dokumentation",
+    sonstige: OTHER_TRADE,
+    sonstiges: OTHER_TRADE
+  };
+
+  return explicitMap[key] ?? null;
+}
+
+function compactTradeKey(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/Ã¤|ä/g, "ae")
+    .replace(/Ã¶|ö/g, "oe")
+    .replace(/Ã¼|ü/g, "ue")
+    .replace(/ÃŸ|ß/g, "ss")
+    .replace(/Ã„|Ä/g, "ae")
+    .replace(/Ã–|Ö/g, "oe")
+    .replace(/Ãœ|Ü/g, "ue")
+    .replace(/[^a-z0-9]/g, "");
 }
 
 export function normalizeDocumentTrades(document: ObjectAnalysis): { document: ObjectAnalysis; changed: boolean } {
