@@ -29,17 +29,21 @@ import {
   getAssignments,
   getDocuments,
   getEntrances,
+  getObjectImages,
   getObjects,
   getProjects,
+  loadSharedStorageSnapshot,
   saveAssignments,
   saveDocument,
   saveEntrance,
   saveObject,
+  saveObjectImages,
   saveProject,
   updateDocument as updateStoredDocument,
   updateEntrance as updateStoredEntrance,
   updateObject as updateStoredObject,
   updateProject as updateStoredProject,
+  uploadSharedFiles,
   type StoredEntranceRecord,
   type StoredObjectRecord,
   type StoredProjectRecord
@@ -360,15 +364,43 @@ export function AnalysisDashboard() {
     const storedProjects = getProjects();
     const storedDocuments = getDocuments();
     const storedAssignments = getAssignments();
+    const storedObjectImages = getObjectImages();
 
     setObjects(storedObjects);
     setEntrances(storedEntrances);
     setProjects(storedProjects);
     setAssignments(storedAssignments);
+    setObjectImages(storedObjectImages);
     setAnalysis(buildAnalysisFromDocuments(storedDocuments));
     setSelectedObjectId(storedObjects[0]?.id ?? null);
     setSelectedProjectId(storedProjects[0]?.id ?? null);
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
+
+    let cancelled = false;
+    void loadSharedStorageSnapshot().then((snapshot) => {
+      if (cancelled || !snapshot) return;
+      if (!sharedSnapshotHasData(snapshot) && (storedObjects.length || storedDocuments.length || storedProjects.length)) {
+        storedObjects.forEach(saveObject);
+        storedEntrances.forEach(saveEntrance);
+        storedProjects.forEach(saveProject);
+        storedDocuments.forEach(saveDocument);
+        saveAssignments(storedAssignments);
+        Object.entries(storedObjectImages).forEach(([objectId, urls]) => saveObjectImages(objectId, urls));
+        return;
+      }
+      setObjects(snapshot.objects);
+      setEntrances(snapshot.entrances);
+      setProjects(snapshot.projects);
+      setAssignments(snapshot.assignments);
+      setObjectImages(snapshot.objectImages);
+      setAnalysis(buildAnalysisFromDocuments(snapshot.documents));
+      setSelectedObjectId((current) => current ?? snapshot.objects[0]?.id ?? null);
+      setSelectedProjectId((current) => current ?? snapshot.projects[0]?.id ?? null);
+      setSelectedDocumentId((current) => current ?? snapshot.documents[0]?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -453,6 +485,10 @@ export function AnalysisDashboard() {
     try {
       const formData = new FormData();
       files.forEach((file) => formData.append("files", file));
+      const sharedFileUrlsPromise = uploadSharedFiles(files, "documents").catch(() => {
+        setMessage("Analyse läuft. Hinweis: Dateien konnten nicht zentral gespeichert werden, bitte Supabase Storage prüfen.");
+        return [] as string[];
+      });
 
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -464,16 +500,22 @@ export function AnalysisDashboard() {
         throw new Error(data.message || "Analyse fehlgeschlagen.");
       }
 
-      const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), data.analysis.objects);
+      const sharedFileUrls = await sharedFileUrlsPromise;
+      const sourceDocuments = (data.analysis.sourceDocuments ?? []).map((source: SourceDocument, index: number) => ({
+        ...source,
+        publicUrl: sharedFileUrls[index] ?? source.publicUrl
+      }));
+      const analyzedObjects = (data.analysis.objects ?? []).map((document: ObjectAnalysis) => attachPublicUrlToSources(document, sourceDocuments));
+      const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), analyzedObjects);
       mergedDocuments.forEach(saveDocument);
-      const currentDocument = data.analysis.objects[0] ?? null;
-      const currentSourceDocument = data.analysis.sourceDocuments?.[0] ?? null;
+      const currentDocument = analyzedObjects[0] ?? null;
+      const currentSourceDocument = sourceDocuments[0] ?? null;
       const nextDraft = uploadDraftFromDocument(currentDocument ?? undefined, uploadSourceName(files));
-      setAnalysis(buildAnalysisFromDocuments(mergedDocuments, data.analysis));
+      setAnalysis(buildAnalysisFromDocuments(mergedDocuments, { ...data.analysis, objects: analyzedObjects, sourceDocuments }));
       setUploadDocument(currentDocument);
-      setUploadDocuments(data.analysis.objects ?? []);
+      setUploadDocuments(analyzedObjects);
       setUploadSourceDocument(currentSourceDocument);
-      setUploadSourceDocuments(data.analysis.sourceDocuments ?? []);
+      setUploadSourceDocuments(sourceDocuments);
       setObjectDraft(nextDraft);
       setUploadPhase("analyzed");
       setSelectedDocumentId(currentDocument?.id ?? null);
@@ -641,6 +683,12 @@ export function AnalysisDashboard() {
       if (project.objectId !== objectId) return project;
       return updateStoredProject({ ...project, objectId: "", object: "", entranceId: "", entrance: "" });
     }));
+    setObjectImages((current) => {
+      const next = { ...current };
+      delete next[objectId];
+      saveObjectImages(objectId, []);
+      return next;
+    });
     setSelectedObjectId(null);
   }
 
@@ -861,9 +909,21 @@ export function AnalysisDashboard() {
                 onUpdateObject={updateObject}
                 onUpdateEntrance={updateEntrance}
                 onUpdateDocument={updateDocument}
-                onAddObjectImages={(objectId, files) => {
-                  const urls = Array.from(files).map((file) => URL.createObjectURL(file));
-                  setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
+                onAddObjectImages={async (objectId, files) => {
+                  const fileList = Array.from(files);
+                  let urls: string[];
+                  try {
+                    urls = await uploadSharedFiles(fileList, `objects/${objectId}/images`);
+                  } catch {
+                    urls = fileList.map((file) => URL.createObjectURL(file));
+                    setMessage("Bilder wurden nur lokal als Vorschau gespeichert. Für geteilte Links bitte zentralen Datei-Speicher konfigurieren.");
+                  }
+                  setObjectImages((current) => {
+                    const nextUrls = [...(current[objectId] ?? []), ...urls];
+                    const next = { ...current, [objectId]: nextUrls };
+                    saveObjectImages(objectId, nextUrls);
+                    return next;
+                  });
                 }}
                 onSelectDocument={setSelectedDocumentId}
                 onOpenObject={openObjectDetail}
@@ -1870,7 +1930,7 @@ function ObjectsView({
   onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
   onUpdateEntrance: (id: string, field: keyof EntranceRecord, value: string) => void;
   onUpdateDocument: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
-  onAddObjectImages: (id: string, files: FileList) => void;
+  onAddObjectImages: (id: string, files: FileList) => void | Promise<void>;
   onSelectDocument: (id: string) => void;
   onOpenObject: (id: string) => void;
 }) {
@@ -4137,6 +4197,61 @@ function uploadSourceName(files: File[]): string {
   if (files.length === 0) return "";
   if (files.length === 1) return files[0].name;
   return files.map((file) => file.name).join(", ");
+}
+
+function attachPublicUrlToSources(document: ObjectAnalysis, sourceDocuments: SourceDocument[]): ObjectAnalysis {
+  const sourceById = new Map(sourceDocuments.map((source) => [source.id, source]));
+  const sourceByName = new Map(sourceDocuments.map((source) => [source.fileName, source]));
+  const attach = <T,>(field: ExtractedField<T>): ExtractedField<T> => ({
+    ...field,
+    sources: field.sources.map((source) => {
+      const match = sourceById.get(source.documentId) ?? sourceByName.get(source.fileName);
+      return match?.publicUrl ? { ...source, publicUrl: match.publicUrl } : source;
+    })
+  });
+  return {
+    ...document,
+    documentType: attach(document.documentType),
+    provider: attach(document.provider),
+    documentNumber: attach(document.documentNumber),
+    documentDate: attach(document.documentDate),
+    fund: attach(document.fund),
+    objectNumber: attach(document.objectNumber),
+    objectAddress: attach(document.objectAddress),
+    apartmentNumber: attach(document.apartmentNumber),
+    location: attach(document.location),
+    projectType: attach(document.projectType),
+    netCost: attach(document.netCost),
+    vatCost: attach(document.vatCost),
+    totalCost: attach(document.totalCost),
+    renovatedApartmentCount: attach(document.renovatedApartmentCount),
+    livingAreaSqm: attach(document.livingAreaSqm),
+    clusters: document.clusters.map((cluster) => ({
+      ...cluster,
+      cluster: attach(cluster.cluster),
+      description: attach(cluster.description),
+      totalCost: attach(cluster.totalCost),
+      allocation: attach(cluster.allocation)
+    }))
+  };
+}
+
+function sharedSnapshotHasData(snapshot: {
+  objects: ObjectRecord[];
+  entrances: EntranceRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
+  objectImages: Record<string, string[]>;
+}): boolean {
+  return Boolean(
+    snapshot.objects.length ||
+    snapshot.entrances.length ||
+    snapshot.projects.length ||
+    snapshot.documents.length ||
+    Object.keys(snapshot.assignments).length ||
+    Object.keys(snapshot.objectImages).length
+  );
 }
 
 function buildUploadGroupRows(documents: ObjectAnalysis[]) {

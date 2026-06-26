@@ -63,6 +63,7 @@ export interface FieldSource {
   sheet?: string | null;
   cell?: string | null;
   textSnippet?: string | null;
+  publicUrl?: string | null;
   confidence?: number | null;
 }
 
@@ -80,6 +81,8 @@ export interface SourceDocument {
   status: ProcessingStatus;
   textLength: number;
   extractedText?: string;
+  publicUrl?: string;
+  storagePath?: string;
   fileSize?: number;
   parseDebug?: DocumentParseDebug;
   duplicateOf?: string | null;
