@@ -5837,16 +5837,16 @@ function buildTwoPageObjectReportHtml(
     </header>
 
     <section class="portfolioKpiStrip">
-      ${portfolioKpi("Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt")}
-      ${portfolioKpi("Wohneinheiten gesamt", portfolio.units === null ? "k.A." : formatNumber(portfolio.units), "gesamt")}
-      ${portfolioKpi("GU sanierte Fläche", portfolio.renovatedArea === null ? "k.A." : formatArea(portfolio.renovatedArea), "gesamt")}
-      ${portfolioKpi("GU sanierte Wohnungen", portfolio.renovatedApartments === null ? "k.A." : formatNumber(portfolio.renovatedApartments), "gesamt")}
-      ${portfolioKpi("Durchschnittliche Wohnungsgröße", portfolio.averageApartmentSize === null ? "k.A." : formatArea(portfolio.averageApartmentSize), "gesamt")}
+      ${portfolioKpi("Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt", "coins")}
+      ${portfolioKpi("Wohneinheiten gesamt", portfolio.units === null ? "k.A." : formatNumber(portfolio.units), "gesamt", "building")}
+      ${portfolioKpi("GU sanierte Fläche", portfolio.renovatedArea === null ? "k.A." : formatArea(portfolio.renovatedArea), "gesamt", "home")}
+      ${portfolioKpi("GU sanierte Wohnungen", portfolio.renovatedApartments === null ? "k.A." : formatNumber(portfolio.renovatedApartments), "gesamt", "house")}
+      ${portfolioKpi("Durchschnittliche Wohnungsgröße", portfolio.averageApartmentSize === null ? "k.A." : formatArea(portfolio.averageApartmentSize), "gesamt", "scan")}
     </section>
 
     <section class="bigKpiGrid">
-      ${bigReportKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", "⌂")}
-      ${bigReportKpi("Durchschnittliche GU Kosten pro m²", portfolio.averageCostPerSqm === null ? "k.A." : `${formatNullableCurrency(portfolio.averageCostPerSqm)} / m²`, "Durchschnitt über alle Objekte (sanierte Fläche)", "m²")}
+      ${bigReportKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", "home")}
+      ${bigReportKpi("Durchschnittliche GU Kosten pro m²", portfolio.averageCostPerSqm === null ? "k.A." : `${formatNullableCurrency(portfolio.averageCostPerSqm)} / m²`, "Durchschnitt über alle Objekte (sanierte Fläche)", "ruler")}
     </section>
 
     <section class="reportChartGrid">
@@ -5879,17 +5879,17 @@ function buildTwoPageObjectReportHtml(
     </header>
 
     <section class="objectMetaStrip">
-      ${objectMeta("Baujahr", object.constructionYear)}
-      ${objectMeta("Wohneinheiten", object.unitCount)}
-      ${objectMeta("Gesamtwohnfläche", object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m²` : "k.A.")}
-      ${objectMeta("GU Fläche saniert", objectMetrics.renovatedArea === null ? "k.A." : formatArea(objectMetrics.renovatedArea))}
-      ${objectMeta("Durchschnittliche Wohnungsgröße GU", objectMetrics.averageApartmentSize === null ? "k.A." : formatArea(objectMetrics.averageApartmentSize))}
+      ${objectMeta("Baujahr", object.constructionYear, "calendar")}
+      ${objectMeta("Wohneinheiten", object.unitCount, "building")}
+      ${objectMeta("Gesamtwohnfläche", object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m²` : "k.A.", "building2")}
+      ${objectMeta("GU Fläche saniert", objectMetrics.renovatedArea === null ? "k.A." : formatArea(objectMetrics.renovatedArea), "home")}
+      ${objectMeta("Durchschnittliche Wohnungsgröße GU", objectMetrics.averageApartmentSize === null ? "k.A." : formatArea(objectMetrics.averageApartmentSize), "scan")}
     </section>
 
     <section class="objectKpiGrid">
-      ${bigReportKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", "€")}
-      ${bigReportKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt je Dokument / WE", "⌂")}
-      ${bigReportKpi("GU Kosten pro QM", objectMetrics.costPerSqm === null ? "k.A." : `${formatNullableCurrency(objectMetrics.costPerSqm)} / m²`, "sanierte Fläche", "m²")}
+      ${bigReportKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", "euro")}
+      ${bigReportKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt je Dokument / WE", "home")}
+      ${bigReportKpi("GU Kosten pro QM", objectMetrics.costPerSqm === null ? "k.A." : `${formatNullableCurrency(objectMetrics.costPerSqm)} / m²`, "sanierte Fläche", "ruler")}
     </section>
 
     <section class="reportCard objectTradeTableCard">
@@ -6048,61 +6048,74 @@ function buildTwoPageReportCss(): string {
     @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #f5f6f8; color: #13263f; font-family: Aptos, "Segoe UI", Calibri, Arial, sans-serif; }
-    .reportPage { width: 210mm; min-height: 297mm; padding: 18mm 18mm 12mm; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
-    .reportTop, .objectReportHeader { display: grid; grid-template-columns: 1fr 270px; gap: 28px; align-items: start; }
-    .reportLogoPanel { display: grid; gap: 22px; justify-items: end; }
-    .reportLogoRight { width: 150px; max-height: 48px; object-fit: contain; object-position: right center; }
-    .reportEyebrow { margin: 0 0 10px; color: #f36f21; font-size: 16px; font-weight: 800; }
-    h1 { margin: 0; color: #13263f; font-size: 36px; line-height: 1.05; letter-spacing: -0.01em; }
-    h2 { margin: 10px 0 0; color: #13263f; font-size: 22px; font-weight: 600; line-height: 1.25; }
-    h3 { margin: 0 0 8px; color: #13263f; font-size: 15px; line-height: 1.25; text-transform: uppercase; }
-    h4 { margin: 0 0 6px; color: #13263f; font-size: 15px; text-transform: uppercase; }
-    p { margin: 0; color: #475879; font-size: 11px; line-height: 1.55; }
-    .reportLead { max-width: 340px; margin-top: 24px; font-size: 14px; }
+    .reportPage { width: 794px; min-height: 1123px; padding: 48px 56px; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
+    .reportTop, .objectReportHeader { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 24px; align-items: start; width: 100%; }
+    .reportLogoPanel { display: grid; gap: 18px; justify-items: end; }
+    .reportLogoRight { width: 132px; max-height: 42px; object-fit: contain; object-position: right center; }
+    .reportEyebrow { margin: 0 0 8px; color: #f36f21; font-size: 15px; font-weight: 800; }
+    h1 { margin: 0; color: #13263f; font-size: 34px; line-height: 1.04; letter-spacing: -0.01em; }
+    h2 { margin: 8px 0 0; color: #13263f; font-size: 21px; font-weight: 600; line-height: 1.22; }
+    h3 { margin: 0 0 7px; color: #13263f; font-size: 13px; line-height: 1.25; text-transform: uppercase; }
+    h4 { margin: 0 0 5px; color: #13263f; font-size: 13px; text-transform: uppercase; }
+    p { margin: 0; color: #475879; font-size: 10px; line-height: 1.45; }
+    .reportLead { max-width: 330px; margin-top: 20px; font-size: 13px; }
     .infoCard, .reportCard, .bigReportKpi, .portfolioKpiStrip, .bottomInfoGrid { border: 1px solid #e3e8ef; border-radius: 12px; background: #fff; box-shadow: 0 10px 26px rgba(19, 38, 63, 0.08); }
-    .infoCard { width: 250px; display: grid; gap: 14px; padding: 18px 20px; }
+    .infoCard { width: 230px; max-width: 100%; display: grid; gap: 12px; padding: 16px 18px; }
     .infoLine { display: grid; gap: 5px; border-bottom: 1px solid #e3e8ef; padding-bottom: 12px; }
     .infoLine:last-child { border-bottom: 0; padding-bottom: 0; }
     .infoLine span, .portfolioKpi span, .bigReportKpi span, .objectMeta span { color: #13263f; font-size: 10px; font-weight: 900; text-transform: uppercase; }
     .infoLine strong { color: #13263f; font-size: 14px; line-height: 1.35; }
-    .portfolioKpiStrip { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 28px; padding: 18px 10px; }
-    .portfolioKpi { min-height: 112px; display: grid; align-content: center; justify-items: center; gap: 8px; padding: 0 12px; border-right: 1px solid #dbe2ec; text-align: center; }
+    .portfolioKpiStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 24px; padding: 14px 8px; width: 100%; }
+    .portfolioKpi { min-height: 100px; display: grid; align-content: center; justify-items: center; gap: 6px; padding: 0 8px; border-right: 1px solid #dbe2ec; text-align: center; min-width: 0; }
     .portfolioKpi:last-child { border-right: 0; }
-    .portfolioKpi strong { color: #f36f21; font-size: 24px; line-height: 1; }
+    .portfolioKpi strong { color: #f36f21; font-size: 21px; line-height: 1; overflow-wrap: anywhere; }
     .portfolioKpi em, .bigReportKpi em { color: #13263f; font-size: 11px; font-style: normal; }
-    .bigKpiGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 18px; }
-    .bigReportKpi { min-height: 134px; position: relative; display: grid; align-content: center; gap: 14px; padding: 22px; }
-    .bigReportKpi b { color: #f36f21; font-size: 31px; line-height: 1; }
-    .kpiIcon { position: absolute; right: 22px; top: 22px; min-width: 34px; height: 34px; display: grid; place-items: center; border: 2px solid #f36f21; border-radius: 999px; color: #f36f21; font-weight: 900; }
-    .reportChartGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
-    .reportCard { min-height: 352px; padding: 16px; }
-    .reportBarList { display: grid; gap: 10px; margin-top: 16px; }
-    .reportBarRow { display: grid; grid-template-columns: 116px minmax(0, 1fr) 82px; gap: 10px; align-items: center; min-height: 22px; color: #13263f; font-size: 11px; font-weight: 800; }
-    .objectBars .reportBarRow { grid-template-columns: 88px minmax(0, 1fr) 90px; min-height: 54px; }
+    .bigKpiGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; width: 100%; }
+    .bigReportKpi { min-height: 116px; position: relative; display: grid; align-content: center; gap: 11px; padding: 18px; min-width: 0; }
+    .bigReportKpi b { color: #f36f21; font-size: 27px; line-height: 1; overflow-wrap: anywhere; }
+    .kpiIcon { position: absolute; right: 16px; top: 16px; width: 32px; height: 32px; display: grid; place-items: center; border: 2px solid #f36f21; border-radius: 999px; color: #f36f21; font-weight: 900; }
+    .reportChartGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; width: 100%; }
+    .reportCard { min-height: 318px; padding: 14px; min-width: 0; }
+    .reportBarList { display: grid; gap: 8px; margin-top: 14px; }
+    .reportBarRow { display: grid; grid-template-columns: 112px minmax(0, 1fr) 78px; gap: 8px; align-items: center; min-height: 21px; color: #13263f; font-size: 10px; font-weight: 800; min-width: 0; }
+    .objectBars .reportBarRow { grid-template-columns: 82px minmax(0, 1fr) 86px; min-height: 48px; }
     .reportTrack { height: 10px; border-radius: 999px; background: #edf1f6; overflow: hidden; }
     .reportFill { height: 100%; border-radius: 999px; background: #13263f; }
     .reportBarRow.highlight .reportFill { background: #f36f21; }
     .reportValue { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-    .reportAxis { display: flex; justify-content: space-between; margin: 8px 82px 0 116px; border-top: 1px solid #dbe2ec; color: #52627a; font-size: 9px; padding-top: 4px; }
-    .bottomInfoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 18px; padding: 16px 18px; }
-    .bottomInfoGrid article { display: grid; grid-template-columns: 70px 1fr; gap: 16px; align-items: center; padding: 0 18px; border-right: 1px solid #dbe2ec; }
+    .reportAxis { display: flex; justify-content: space-between; margin: 7px 78px 0 112px; border-top: 1px solid #dbe2ec; color: #52627a; font-size: 8px; padding-top: 4px; }
+    .bottomInfoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 16px; padding: 14px 16px; width: 100%; }
+    .bottomInfoGrid article { display: grid; grid-template-columns: 58px 1fr; gap: 14px; align-items: center; padding: 0 14px; border-right: 1px solid #dbe2ec; min-width: 0; }
     .bottomInfoGrid article:last-child { border-right: 0; }
-    .roundIcon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 999px; background: rgba(243,111,33,0.1); color: #f36f21; font-size: 26px; font-weight: 900; }
-    .objectReportHeader h1 { font-size: 42px; margin-top: 14px; }
-    .objectMetaStrip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-top: 28px; }
-    .objectMeta { display: grid; justify-items: center; gap: 8px; min-height: 90px; padding: 0 10px; text-align: center; border-right: 1px solid #dbe2ec; }
+    .roundIcon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 999px; background: rgba(243,111,33,0.1); color: #f36f21; font-size: 22px; font-weight: 900; }
+    .objectReportHeader h1 { font-size: 40px; margin-top: 12px; }
+    .objectMetaStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-top: 22px; width: 100%; }
+    .objectMeta { display: grid; justify-items: center; gap: 6px; min-height: 76px; padding: 0 6px; text-align: center; border-right: 1px solid #dbe2ec; min-width: 0; }
     .objectMeta:last-child { border-right: 0; }
-    .objectMeta strong { color: #13263f; font-size: 18px; line-height: 1.2; }
-    .metaIcon { color: #13263f; font-size: 30px; line-height: 1; }
-    .objectKpiGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 28px; }
-    .objectTradeTableCard { margin-top: 24px; min-height: 540px; }
-    .reportTradeTable { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 16px; font-size: 11px; }
-    .reportTradeTable th { color: #13263f; text-align: left; border-bottom: 1px solid #dbe2ec; padding: 8px 7px; text-transform: uppercase; }
-    .reportTradeTable td { padding: 10px 7px; border-bottom: 1px solid #eef2f6; color: #13263f; font-weight: 800; vertical-align: middle; }
-    .tableBar { min-width: 220px; }
-    .tableBar .reportTrack { height: 11px; }
+    .objectMeta strong { color: #13263f; font-size: 15px; line-height: 1.15; overflow-wrap: anywhere; }
+    .metaIcon { color: #13263f; line-height: 1; }
+    .objectKpiGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; width: 100%; }
+    .objectKpiGrid .bigReportKpi { min-height: 104px; padding: 16px; }
+    .objectKpiGrid .bigReportKpi b { font-size: 25px; }
+    .objectTradeTableCard { margin-top: 18px; min-height: 500px; padding: 15px; overflow: hidden; }
+    .reportTradeTable { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; margin-top: 14px; font-size: 9.5px; }
+    .reportTradeTable th { color: #13263f; text-align: left; border-bottom: 1px solid #dbe2ec; padding: 7px 5px; text-transform: uppercase; }
+    .reportTradeTable td { padding: 8px 5px; border-bottom: 1px solid #eef2f6; color: #13263f; font-weight: 800; vertical-align: middle; }
+    .reportTradeTable th:nth-child(1), .reportTradeTable td:nth-child(1) { width: 24%; }
+    .reportTradeTable th:nth-child(2), .reportTradeTable td:nth-child(2) { width: 34%; }
+    .reportTradeTable th:nth-child(3), .reportTradeTable td:nth-child(3) { width: 16%; }
+    .reportTradeTable th:nth-child(4), .reportTradeTable td:nth-child(4) { width: 16%; }
+    .reportTradeTable th:nth-child(5), .reportTradeTable td:nth-child(5) { width: 10%; }
+    .tableBar { min-width: 0; }
+    .tableBar .reportTrack { height: 10px; }
     .number { text-align: right; white-space: nowrap; }
-    .reportFooter { position: absolute; left: 18mm; right: 18mm; bottom: 8mm; display: flex; justify-content: space-between; border-top: 1px solid #13263f; padding-top: 8px; color: #13263f; font-size: 11px; }
+    .tradeLabel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+    .tradeLabel .reportSvg { flex: 0 0 auto; }
+    .reportSvg { width: 19px; height: 19px; color: currentColor; }
+    .portfolioKpi > .reportSvg { width: 30px; height: 30px; color: #13263f; }
+    .metaIcon .reportSvg { width: 28px; height: 28px; color: #13263f; }
+    .kpiIcon .reportSvg { width: 18px; height: 18px; color: #f36f21; }
+    .reportFooter { position: absolute; left: 56px; right: 56px; bottom: 32px; display: flex; justify-content: space-between; border-top: 1px solid #13263f; padding-top: 8px; color: #13263f; font-size: 11px; }
     @media print { body { background: #fff; } .reportPage { margin: 0; box-shadow: none; } }
   `;
 }
@@ -6115,16 +6128,16 @@ function reportInfoLine(label: string, value: string): string {
   return `<div class="infoLine"><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(firstKnown(value, "k.A."))}</strong></div>`;
 }
 
-function portfolioKpi(label: string, value: string, detail: string): string {
-  return `<article class="portfolioKpi"><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(value)}</strong><em>${escapeReportHtml(detail)}</em></article>`;
+function portfolioKpi(label: string, value: string, detail: string, icon: string): string {
+  return `<article class="portfolioKpi">${reportIcon(icon)}<span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(value)}</strong><em>${escapeReportHtml(detail)}</em></article>`;
 }
 
 function bigReportKpi(title: string, value: string, subtitle: string, icon: string): string {
-  return `<article class="bigReportKpi"><span>${escapeReportHtml(title)}</span><b>${escapeReportHtml(value)}</b><em>${escapeReportHtml(subtitle)}</em><i class="kpiIcon">${escapeReportHtml(icon)}</i></article>`;
+  return `<article class="bigReportKpi"><span>${escapeReportHtml(title)}</span><b>${escapeReportHtml(value)}</b><em>${escapeReportHtml(subtitle)}</em><i class="kpiIcon">${reportIcon(icon)}</i></article>`;
 }
 
-function objectMeta(label: string, value: string): string {
-  return `<article class="objectMeta"><i class="metaIcon">▦</i><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(firstKnown(value, "k.A."))}</strong></article>`;
+function objectMeta(label: string, value: string, icon: string): string {
+  return `<article class="objectMeta"><i class="metaIcon">${reportIcon(icon)}</i><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(firstKnown(value, "k.A."))}</strong></article>`;
 }
 
 function reportAverageTradeBars(rows: ReportTradeRow[]): string {
@@ -6134,7 +6147,7 @@ function reportAverageTradeBars(rows: ReportTradeRow[]): string {
     const value = row.average ?? 0;
     const width = value > 0 ? Math.max((value / max) * 100, 2) : 0;
     return `<div class="reportBarRow ${highest?.key === row.key ? "highlight" : ""}">
-      <span>${escapeReportHtml(row.label)}</span>
+      <span class="tradeLabel">${reportIcon(reportTradeIcon(row.key))}${escapeReportHtml(row.label)}</span>
       <div class="reportTrack"><div class="reportFill" style="width:${width}%"></div></div>
       <span class="reportValue">${row.average === null ? "k.A." : escapeReportHtml(formatNullableCurrency(row.average))}</span>
     </div>`;
@@ -6163,7 +6176,7 @@ function reportTradeRowsTable(rows: ReportTradeRow[]): string {
       const value = row.average ?? 0;
       const width = value > 0 ? Math.max((value / max) * 100, 2) : 0;
       return `<tr>
-        <td>${escapeReportHtml(row.label)}</td>
+        <td><span class="tradeLabel">${reportIcon(reportTradeIcon(row.key))}${escapeReportHtml(row.label)}</span></td>
         <td class="tableBar"><div class="reportTrack"><div class="reportFill" style="width:${width}%; background:${highest?.key === row.key ? "#f36f21" : "#13263f"}"></div></div></td>
         <td class="number">${row.average === null ? "k.A." : escapeReportHtml(formatNullableCurrency(row.average))}</td>
         <td class="number">${row.share === null ? "k.A." : `${escapeReportHtml(formatNullableNumber(row.share))} %`}</td>
@@ -6180,6 +6193,46 @@ function reportAxis(max: number, left: number, right: number): string {
 
 function roundIcon(value: string): string {
   return `<span class="roundIcon">${escapeReportHtml(value)}</span>`;
+}
+
+function reportTradeIcon(key: string): string {
+  const icons: Record<string, string> = {
+    asbest: "alert",
+    elektro: "zap",
+    "heizung-sanitaer": "wrench",
+    "fliesen-estrich": "grid",
+    boden: "grid2",
+    maler: "roller",
+    tischler: "hammer",
+    reinigung: "brush",
+    sonstiges: "ellipsis"
+  };
+  return icons[key] ?? "ellipsis";
+}
+
+function reportIcon(name: string): string {
+  const common = `class="reportSvg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"`;
+  const icons: Record<string, string> = {
+    coins: `<svg ${common}><circle cx="8" cy="8" r="5"/><path d="M12 8c3 0 5 1.2 5 2.7S15 13.4 12 13.4 7 12.2 7 10.7"/><path d="M17 10.7v4.6c0 1.5-2 2.7-5 2.7s-5-1.2-5-2.7v-4.6"/></svg>`,
+    building: `<svg ${common}><path d="M4 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16"/><path d="M9 21v-5h3v5"/><path d="M8 7h1M12 7h1M8 11h1M12 11h1"/></svg>`,
+    building2: `<svg ${common}><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/><path d="M9 9h.01M15 9h.01M9 12h.01M15 12h.01"/></svg>`,
+    home: `<svg ${common}><path d="m3 11 9-8 9 8"/><path d="M5 10v11h14V10"/><path d="M10 21v-6h4v6"/></svg>`,
+    house: `<svg ${common}><path d="m4 10 8-7 8 7"/><path d="M6 9v12h12V9"/><circle cx="9" cy="16" r="2"/><circle cx="15" cy="16" r="2"/></svg>`,
+    scan: `<svg ${common}><path d="M7 3H5a2 2 0 0 0-2 2v2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>`,
+    ruler: `<svg ${common}><path d="M3 17 17 3l4 4L7 21l-4-4Z"/><path d="m14 6 4 4M11 9l2 2M8 12l2 2M5 15l2 2"/></svg>`,
+    calendar: `<svg ${common}><path d="M8 2v4M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/></svg>`,
+    euro: `<svg ${common}><path d="M16 6.5A6 6 0 1 0 16 17.5"/><path d="M4 10h9M4 14h9"/></svg>`,
+    alert: `<svg ${common}><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v4M12 17h.01"/></svg>`,
+    zap: `<svg ${common}><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></svg>`,
+    wrench: `<svg ${common}><path d="M14.7 6.3a4 4 0 0 0-5 5L3 18l3 3 6.7-6.7a4 4 0 0 0 5-5l-2.8 2.8-3-3 2.8-2.8Z"/></svg>`,
+    grid: `<svg ${common}><path d="M3 3h18v18H3z"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>`,
+    grid2: `<svg ${common}><path d="M3 3h18v18H3z"/><path d="M12 3v18M3 12h18"/></svg>`,
+    roller: `<svg ${common}><path d="M4 6h11v5H4z"/><path d="M15 8h3a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-6v3"/><path d="M12 16v5"/></svg>`,
+    hammer: `<svg ${common}><path d="m15 12-8 8-3-3 8-8"/><path d="m14 4 6 6"/><path d="M12 6 9 3l-2 2 3 3"/></svg>`,
+    brush: `<svg ${common}><path d="M9 11 4 6l2-2 5 5"/><path d="M20 4 8 16"/><path d="M7 17c-2 0-3 1.5-3 3 2 0 4-.5 5-2"/></svg>`,
+    ellipsis: `<svg ${common}><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>`
+  };
+  return icons[name] ?? icons.ellipsis;
 }
 
 function buildObjectReportHtml(object: ObjectRecord, documents: ObjectAnalysis[], images: string[]): string {
