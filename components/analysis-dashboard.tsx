@@ -527,7 +527,7 @@ export function AnalysisDashboard() {
   async function exportFile(type: "excel" | "pdf") {
     if (type === "pdf" && selectedObject) {
       const objectDocuments = analysis.objects.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments));
-      exportObjectReport(selectedObject, objectDocuments, objectImages[selectedObject.id] ?? []);
+      exportObjectReport(selectedObject, objectDocuments, objects, analysis.objects, projects, assignments);
       return;
     }
 
@@ -5780,13 +5780,406 @@ function formatEuroAxis(value: number): string {
   }).format(value);
 }
 
-function exportObjectReport(object: ObjectRecord, documents: ObjectAnalysis[], images: string[]): void {
+function exportObjectReport(
+  object: ObjectRecord,
+  documents: ObjectAnalysis[],
+  portfolioObjects: ObjectRecord[],
+  portfolioDocuments: ObjectAnalysis[],
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+): void {
   const reportWindow = window.open("", "_blank");
   if (!reportWindow) return;
-  reportWindow.document.write(buildObjectReportHtml(object, documents, images));
+  reportWindow.document.write(buildTwoPageObjectReportHtml(object, documents, portfolioObjects, portfolioDocuments, projects, assignments));
   reportWindow.document.close();
   reportWindow.focus();
   window.setTimeout(() => reportWindow.print(), 500);
+}
+
+function buildTwoPageObjectReportHtml(
+  object: ObjectRecord,
+  documents: ObjectAnalysis[],
+  portfolioObjects: ObjectRecord[],
+  portfolioDocuments: ObjectAnalysis[],
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+): string {
+  const portfolio = buildReportPortfolioMetrics(portfolioObjects, portfolioDocuments, projects, assignments);
+  const objectMetrics = buildReportObjectMetrics(object, documents);
+  const portfolioTrades = buildReportTradeRows(portfolioDocuments);
+  const objectTrades = buildReportTradeRows(documents);
+  const objectBars = buildReportObjectBars(portfolioObjects, portfolioDocuments, projects, assignments);
+  const portfolioTopTrade = portfolioTrades.reduce<ReportTradeRow | null>((best, row) => !best || row.total > best.total ? row : best, null);
+
+  return `<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Paribus Sanierungsreport ${escapeReportHtml(firstKnown(object.objectNumber, object.address, "Objekt"))}</title>
+  <style>${buildTwoPageReportCss()}</style>
+</head>
+<body>
+  ${twoPageReportPage(1, `
+    <header class="reportTop">
+      <div>
+        <p class="reportEyebrow">Portfolioüberblick</p>
+        <h1>Sanierungsreport</h1>
+        <h2>Teil- und Vollsanierung (GU)</h2>
+        <p class="reportLead">Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.</p>
+      </div>
+      <div class="reportLogoPanel">
+        <img class="reportLogoRight" src="/paribus-logo.png" alt="PARIBUS" />
+        <div class="infoCard">
+          ${reportInfoLine("Berichtsdatum", formatReportDate(new Date()))}
+          ${reportInfoLine("Portfolio / Fonds", portfolio.fund)}
+        </div>
+      </div>
+    </header>
+
+    <section class="portfolioKpiStrip">
+      ${portfolioKpi("Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt")}
+      ${portfolioKpi("Wohneinheiten gesamt", portfolio.units === null ? "k.A." : formatNumber(portfolio.units), "gesamt")}
+      ${portfolioKpi("GU sanierte Fläche", portfolio.renovatedArea === null ? "k.A." : formatArea(portfolio.renovatedArea), "gesamt")}
+      ${portfolioKpi("GU sanierte Wohnungen", portfolio.renovatedApartments === null ? "k.A." : formatNumber(portfolio.renovatedApartments), "gesamt")}
+      ${portfolioKpi("Durchschnittliche Wohnungsgröße", portfolio.averageApartmentSize === null ? "k.A." : formatArea(portfolio.averageApartmentSize), "gesamt")}
+    </section>
+
+    <section class="bigKpiGrid">
+      ${bigReportKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", "⌂")}
+      ${bigReportKpi("Durchschnittliche GU Kosten pro m²", portfolio.averageCostPerSqm === null ? "k.A." : `${formatNullableCurrency(portfolio.averageCostPerSqm)} / m²`, "Durchschnitt über alle Objekte (sanierte Fläche)", "m²")}
+    </section>
+
+    <section class="reportChartGrid">
+      <article class="reportCard">
+        <h3>Durchschnittliche Kosten pro Wohnung nach Gewerk</h3>
+        <p>Durchschnittliche Bruttokosten pro sanierter Wohnung.</p>
+        ${reportAverageTradeBars(portfolioTrades)}
+      </article>
+      <article class="reportCard">
+        <h3>Gesamtkosten nach Objekt (brutto)</h3>
+        <p>Teuerstes Objekt, durchschnittliches Objekt und günstigstes Objekt.</p>
+        ${reportObjectCostBars(objectBars)}
+      </article>
+    </section>
+
+    <section class="bottomInfoGrid">
+      <article>${roundIcon("◔")}<div><h4>Kostenverteilung</h4><p>${portfolioTopTrade ? `Die größten Kosten entstehen in ${escapeReportHtml(portfolioTopTrade.label)} mit ${formatNullableNumber(portfolioTopTrade.share)} % aller Bruttokosten.` : "k.A."}</p></div></article>
+      <article>${roundIcon("↗")}<div><h4>Effizienz</h4><p>Durchschnittliche Kosten pro m² sanierter Fläche liegen bei ${portfolio.averageCostPerSqm === null ? "k.A." : `${formatNullableCurrency(portfolio.averageCostPerSqm)}`}.</p></div></article>
+    </section>
+  `)}
+
+  ${twoPageReportPage(2, `
+    <header class="objectReportHeader">
+      <div>
+        <p class="reportEyebrow">Teil- und Vollsanierung (GU)</p>
+        <h1>${escapeReportHtml(firstKnown(object.objectNumber, "k.A."))}</h1>
+        <h2>${escapeReportHtml(firstKnown(object.address, "k.A."))}</h2>
+      </div>
+      <img class="reportLogoRight" src="/paribus-logo.png" alt="PARIBUS" />
+    </header>
+
+    <section class="objectMetaStrip">
+      ${objectMeta("Baujahr", object.constructionYear)}
+      ${objectMeta("Wohneinheiten", object.unitCount)}
+      ${objectMeta("Gesamtwohnfläche", object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m²` : "k.A.")}
+      ${objectMeta("GU Fläche saniert", objectMetrics.renovatedArea === null ? "k.A." : formatArea(objectMetrics.renovatedArea))}
+      ${objectMeta("Durchschnittliche Wohnungsgröße GU", objectMetrics.averageApartmentSize === null ? "k.A." : formatArea(objectMetrics.averageApartmentSize))}
+    </section>
+
+    <section class="objectKpiGrid">
+      ${bigReportKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", "€")}
+      ${bigReportKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt je Dokument / WE", "⌂")}
+      ${bigReportKpi("GU Kosten pro QM", objectMetrics.costPerSqm === null ? "k.A." : `${formatNullableCurrency(objectMetrics.costPerSqm)} / m²`, "sanierte Fläche", "m²")}
+    </section>
+
+    <section class="reportCard objectTradeTableCard">
+      <h3>Ø GU Kosten pro Wohnung nach Gewerk</h3>
+      <p>Durchschnittliche Bruttokosten pro sanierter Wohnung</p>
+      ${reportTradeRowsTable(objectTrades)}
+    </section>
+  `)}
+</body>
+</html>`;
+}
+
+interface ReportTradeRow {
+  key: string;
+  label: string;
+  total: number;
+  average: number | null;
+  share: number | null;
+  count: number;
+}
+
+interface ReportObjectBar {
+  label: string;
+  value: number;
+  role: "Teuerstes Objekt" | "Durchschnittliches Objekt" | "Günstigstes Objekt";
+}
+
+function buildReportPortfolioMetrics(
+  objects: ObjectRecord[],
+  documents: ObjectAnalysis[],
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+) {
+  const gross = sumValues(documents.map((document) => document.totalCost.value));
+  const units = sumValues(objects.map((object) => parseGermanNumber(object.unitCount)));
+  const renovatedArea = sumValues(objects.map((object) => parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "")));
+  const renovatedApartments = countReportRenovatedApartments(documents);
+  const averageApartmentSize = safeDivide(renovatedArea, renovatedApartments);
+  const averageCostPerApartment = safeDivide(gross, renovatedApartments);
+  const averageCostPerSqm = safeDivide(gross, renovatedArea);
+  const fund = firstKnown(
+    ...objects.map((object) => object.fund),
+    ...documents.map((document) => fieldOrUnknown(document.fund)),
+    "k.A."
+  );
+
+  return { gross, units, renovatedArea, renovatedApartments, averageApartmentSize, averageCostPerApartment, averageCostPerSqm, fund };
+}
+
+function buildReportObjectMetrics(object: ObjectRecord, documents: ObjectAnalysis[]) {
+  const gross = sumValues(documents.map((document) => document.totalCost.value));
+  const renovatedArea = parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "");
+  const renovatedApartments = countReportRenovatedApartments(documents);
+  return {
+    gross,
+    renovatedArea,
+    averageApartmentSize: safeDivide(renovatedArea, documents.length),
+    averageCostPerApartment: safeDivide(gross, documents.length),
+    costPerSqm: safeDivide(gross, renovatedArea)
+  };
+}
+
+function countReportRenovatedApartments(documents: ObjectAnalysis[]): number | null {
+  const apartments = uniqueStrings(documents.flatMap((document) => documentApartmentValues(document)));
+  if (apartments.length > 0) return apartments.length;
+  const uniqueDocuments = uniqueStrings(documents.map(documentUniqueKey));
+  return uniqueDocuments.length > 0 ? uniqueDocuments.length : null;
+}
+
+function buildReportTradeRows(documents: ObjectAnalysis[]): ReportTradeRow[] {
+  const groups = groupByCluster(documents);
+  const merged = new Map<string, { label: string; total: number; ids: Set<string> }>();
+  reportTradeOrder().forEach((entry) => merged.set(entry.key, { label: entry.label, total: 0, ids: new Set() }));
+
+  groups.forEach((group) => {
+    const mapped = reportTradeDisplay(group.cluster);
+    const current = merged.get(mapped.key) ?? { label: mapped.label, total: 0, ids: new Set<string>() };
+    current.total += group.total;
+    (group.uniqueDocumentIds ?? []).forEach((id) => current.ids.add(id));
+    merged.set(mapped.key, current);
+  });
+
+  const total = Array.from(merged.values()).reduce((sum, row) => sum + row.total, 0);
+  return reportTradeOrder().map((order) => {
+    const row = merged.get(order.key) ?? { label: order.label, total: 0, ids: new Set<string>() };
+    const count = row.ids.size;
+    return {
+      key: order.key,
+      label: order.label,
+      total: row.total,
+      average: safeDivide(row.total, count),
+      share: total > 0 ? roundMoney((row.total / total) * 100) : null,
+      count
+    };
+  });
+}
+
+function buildReportObjectBars(
+  objects: ObjectRecord[],
+  documents: ObjectAnalysis[],
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+): ReportObjectBar[] {
+  const rows = objects.map((object) => ({
+    object,
+    gross: sumValues(documents.filter((document) => documentBelongsToObject(document, object, projects, assignments)).map((document) => document.totalCost.value))
+  })).filter((row): row is { object: ObjectRecord; gross: number } => row.gross !== null);
+
+  if (rows.length === 0) return [];
+  const sorted = rows.slice().sort((left, right) => right.gross - left.gross);
+  const average = rows.reduce((sum, row) => sum + row.gross, 0) / rows.length;
+  const mostExpensive = sorted[0];
+  const cheapest = sorted[sorted.length - 1];
+  const averageObject = rows.reduce((best, row) => Math.abs(row.gross - average) < Math.abs(best.gross - average) ? row : best, rows[0]);
+
+  return [
+    { label: objectLabel(mostExpensive.object), value: mostExpensive.gross, role: "Teuerstes Objekt" },
+    { label: objectLabel(averageObject.object), value: averageObject.gross, role: "Durchschnittliches Objekt" },
+    { label: objectLabel(cheapest.object), value: cheapest.gross, role: "Günstigstes Objekt" }
+  ];
+}
+
+function reportTradeOrder(): Array<{ key: string; label: string }> {
+  return [
+    { key: "asbest", label: "Asbest" },
+    { key: "elektro", label: "Elektro" },
+    { key: "heizung-sanitaer", label: "Heizung Sanitär" },
+    { key: "fliesen-estrich", label: "Fliesen und Estrich" },
+    { key: "boden", label: "Bodenbelagsarbeiten" },
+    { key: "maler", label: "Maler" },
+    { key: "tischler", label: "Tischler" },
+    { key: "reinigung", label: "Reinigung" },
+    { key: "sonstiges", label: "Sonstiges" }
+  ];
+}
+
+function reportTradeDisplay(cluster: string): { key: string; label: string } {
+  const normalized = normalizeTradeCluster(cluster, "");
+  if (normalized === "Asbestarbeiten") return { key: "asbest", label: "Asbest" };
+  if (normalized === "Elektroarbeiten") return { key: "elektro", label: "Elektro" };
+  if (normalized === "Heizung und Sanitär") return { key: "heizung-sanitaer", label: "Heizung Sanitär" };
+  if (normalized === "Fliesen und Estricharbeiten") return { key: "fliesen-estrich", label: "Fliesen und Estrich" };
+  if (normalized === "Bodenbelagsarbeiten") return { key: "boden", label: "Bodenbelagsarbeiten" };
+  if (normalized === "Malerarbeiten") return { key: "maler", label: "Maler" };
+  if (normalized === "Tischlerarbeiten") return { key: "tischler", label: "Tischler" };
+  if (normalized === "Reinigung") return { key: "reinigung", label: "Reinigung" };
+  return { key: "sonstiges", label: "Sonstiges" };
+}
+
+function formatReportDate(date: Date): string {
+  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "long", year: "numeric" }).format(date);
+}
+
+function buildTwoPageReportCss(): string {
+  return `
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f6f8; color: #13263f; font-family: Aptos, "Segoe UI", Calibri, Arial, sans-serif; }
+    .reportPage { width: 210mm; min-height: 297mm; padding: 18mm 18mm 12mm; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
+    .reportTop, .objectReportHeader { display: grid; grid-template-columns: 1fr 270px; gap: 28px; align-items: start; }
+    .reportLogoPanel { display: grid; gap: 22px; justify-items: end; }
+    .reportLogoRight { width: 150px; max-height: 48px; object-fit: contain; object-position: right center; }
+    .reportEyebrow { margin: 0 0 10px; color: #f36f21; font-size: 16px; font-weight: 800; }
+    h1 { margin: 0; color: #13263f; font-size: 36px; line-height: 1.05; letter-spacing: -0.01em; }
+    h2 { margin: 10px 0 0; color: #13263f; font-size: 22px; font-weight: 600; line-height: 1.25; }
+    h3 { margin: 0 0 8px; color: #13263f; font-size: 15px; line-height: 1.25; text-transform: uppercase; }
+    h4 { margin: 0 0 6px; color: #13263f; font-size: 15px; text-transform: uppercase; }
+    p { margin: 0; color: #475879; font-size: 11px; line-height: 1.55; }
+    .reportLead { max-width: 340px; margin-top: 24px; font-size: 14px; }
+    .infoCard, .reportCard, .bigReportKpi, .portfolioKpiStrip, .bottomInfoGrid { border: 1px solid #e3e8ef; border-radius: 12px; background: #fff; box-shadow: 0 10px 26px rgba(19, 38, 63, 0.08); }
+    .infoCard { width: 250px; display: grid; gap: 14px; padding: 18px 20px; }
+    .infoLine { display: grid; gap: 5px; border-bottom: 1px solid #e3e8ef; padding-bottom: 12px; }
+    .infoLine:last-child { border-bottom: 0; padding-bottom: 0; }
+    .infoLine span, .portfolioKpi span, .bigReportKpi span, .objectMeta span { color: #13263f; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+    .infoLine strong { color: #13263f; font-size: 14px; line-height: 1.35; }
+    .portfolioKpiStrip { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 28px; padding: 18px 10px; }
+    .portfolioKpi { min-height: 112px; display: grid; align-content: center; justify-items: center; gap: 8px; padding: 0 12px; border-right: 1px solid #dbe2ec; text-align: center; }
+    .portfolioKpi:last-child { border-right: 0; }
+    .portfolioKpi strong { color: #f36f21; font-size: 24px; line-height: 1; }
+    .portfolioKpi em, .bigReportKpi em { color: #13263f; font-size: 11px; font-style: normal; }
+    .bigKpiGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 18px; }
+    .bigReportKpi { min-height: 134px; position: relative; display: grid; align-content: center; gap: 14px; padding: 22px; }
+    .bigReportKpi b { color: #f36f21; font-size: 31px; line-height: 1; }
+    .kpiIcon { position: absolute; right: 22px; top: 22px; min-width: 34px; height: 34px; display: grid; place-items: center; border: 2px solid #f36f21; border-radius: 999px; color: #f36f21; font-weight: 900; }
+    .reportChartGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+    .reportCard { min-height: 352px; padding: 16px; }
+    .reportBarList { display: grid; gap: 10px; margin-top: 16px; }
+    .reportBarRow { display: grid; grid-template-columns: 116px minmax(0, 1fr) 82px; gap: 10px; align-items: center; min-height: 22px; color: #13263f; font-size: 11px; font-weight: 800; }
+    .objectBars .reportBarRow { grid-template-columns: 88px minmax(0, 1fr) 90px; min-height: 54px; }
+    .reportTrack { height: 10px; border-radius: 999px; background: #edf1f6; overflow: hidden; }
+    .reportFill { height: 100%; border-radius: 999px; background: #13263f; }
+    .reportBarRow.highlight .reportFill { background: #f36f21; }
+    .reportValue { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .reportAxis { display: flex; justify-content: space-between; margin: 8px 82px 0 116px; border-top: 1px solid #dbe2ec; color: #52627a; font-size: 9px; padding-top: 4px; }
+    .bottomInfoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 18px; padding: 16px 18px; }
+    .bottomInfoGrid article { display: grid; grid-template-columns: 70px 1fr; gap: 16px; align-items: center; padding: 0 18px; border-right: 1px solid #dbe2ec; }
+    .bottomInfoGrid article:last-child { border-right: 0; }
+    .roundIcon { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 999px; background: rgba(243,111,33,0.1); color: #f36f21; font-size: 26px; font-weight: 900; }
+    .objectReportHeader h1 { font-size: 42px; margin-top: 14px; }
+    .objectMetaStrip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; margin-top: 28px; }
+    .objectMeta { display: grid; justify-items: center; gap: 8px; min-height: 90px; padding: 0 10px; text-align: center; border-right: 1px solid #dbe2ec; }
+    .objectMeta:last-child { border-right: 0; }
+    .objectMeta strong { color: #13263f; font-size: 18px; line-height: 1.2; }
+    .metaIcon { color: #13263f; font-size: 30px; line-height: 1; }
+    .objectKpiGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 28px; }
+    .objectTradeTableCard { margin-top: 24px; min-height: 540px; }
+    .reportTradeTable { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 16px; font-size: 11px; }
+    .reportTradeTable th { color: #13263f; text-align: left; border-bottom: 1px solid #dbe2ec; padding: 8px 7px; text-transform: uppercase; }
+    .reportTradeTable td { padding: 10px 7px; border-bottom: 1px solid #eef2f6; color: #13263f; font-weight: 800; vertical-align: middle; }
+    .tableBar { min-width: 220px; }
+    .tableBar .reportTrack { height: 11px; }
+    .number { text-align: right; white-space: nowrap; }
+    .reportFooter { position: absolute; left: 18mm; right: 18mm; bottom: 8mm; display: flex; justify-content: space-between; border-top: 1px solid #13263f; padding-top: 8px; color: #13263f; font-size: 11px; }
+    @media print { body { background: #fff; } .reportPage { margin: 0; box-shadow: none; } }
+  `;
+}
+
+function twoPageReportPage(page: number, content: string): string {
+  return `<section class="reportPage">${content}${reportFooter(page, 2)}</section>`;
+}
+
+function reportInfoLine(label: string, value: string): string {
+  return `<div class="infoLine"><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(firstKnown(value, "k.A."))}</strong></div>`;
+}
+
+function portfolioKpi(label: string, value: string, detail: string): string {
+  return `<article class="portfolioKpi"><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(value)}</strong><em>${escapeReportHtml(detail)}</em></article>`;
+}
+
+function bigReportKpi(title: string, value: string, subtitle: string, icon: string): string {
+  return `<article class="bigReportKpi"><span>${escapeReportHtml(title)}</span><b>${escapeReportHtml(value)}</b><em>${escapeReportHtml(subtitle)}</em><i class="kpiIcon">${escapeReportHtml(icon)}</i></article>`;
+}
+
+function objectMeta(label: string, value: string): string {
+  return `<article class="objectMeta"><i class="metaIcon">▦</i><span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(firstKnown(value, "k.A."))}</strong></article>`;
+}
+
+function reportAverageTradeBars(rows: ReportTradeRow[]): string {
+  const max = Math.max(...rows.map((row) => row.average ?? 0), 1);
+  const highest = rows.reduce<ReportTradeRow | null>((best, row) => row.average !== null && (!best || row.average > (best.average ?? 0)) ? row : best, null);
+  return `<div class="reportBarList">${rows.map((row) => {
+    const value = row.average ?? 0;
+    const width = value > 0 ? Math.max((value / max) * 100, 2) : 0;
+    return `<div class="reportBarRow ${highest?.key === row.key ? "highlight" : ""}">
+      <span>${escapeReportHtml(row.label)}</span>
+      <div class="reportTrack"><div class="reportFill" style="width:${width}%"></div></div>
+      <span class="reportValue">${row.average === null ? "k.A." : escapeReportHtml(formatNullableCurrency(row.average))}</span>
+    </div>`;
+  }).join("")}</div>${reportAxis(max, 116, 82)}`;
+}
+
+function reportObjectCostBars(rows: ReportObjectBar[]): string {
+  if (!rows.length) return `<div class="empty">k.A.</div>`;
+  const max = Math.max(...rows.map((row) => row.value), 1);
+  return `<div class="reportBarList objectBars">${rows.map((row, index) => {
+    const width = Math.max((row.value / max) * 100, 2);
+    return `<div class="reportBarRow ${index === 0 ? "highlight" : ""}">
+      <span>${escapeReportHtml(row.label)}</span>
+      <div class="reportTrack"><div class="reportFill" style="width:${width}%"></div></div>
+      <span class="reportValue">${escapeReportHtml(formatNullableCurrency(row.value))}</span>
+    </div>`;
+  }).join("")}</div>${reportAxis(max, 88, 90)}`;
+}
+
+function reportTradeRowsTable(rows: ReportTradeRow[]): string {
+  const max = Math.max(...rows.map((row) => row.average ?? 0), 1);
+  const highest = rows.reduce<ReportTradeRow | null>((best, row) => row.average !== null && (!best || row.average > (best.average ?? 0)) ? row : best, null);
+  return `<table class="reportTradeTable">
+    <thead><tr><th>Gewerk</th><th>Ø Kosten / Wohnung (brutto)</th><th class="number">Betrag</th><th class="number">Anteil an Gesamtkosten</th><th class="number">Dokumente</th></tr></thead>
+    <tbody>${rows.map((row) => {
+      const value = row.average ?? 0;
+      const width = value > 0 ? Math.max((value / max) * 100, 2) : 0;
+      return `<tr>
+        <td>${escapeReportHtml(row.label)}</td>
+        <td class="tableBar"><div class="reportTrack"><div class="reportFill" style="width:${width}%; background:${highest?.key === row.key ? "#f36f21" : "#13263f"}"></div></div></td>
+        <td class="number">${row.average === null ? "k.A." : escapeReportHtml(formatNullableCurrency(row.average))}</td>
+        <td class="number">${row.share === null ? "k.A." : `${escapeReportHtml(formatNullableNumber(row.share))} %`}</td>
+        <td class="number">${row.count ? escapeReportHtml(formatNumber(row.count)) : "k.A."}</td>
+      </tr>`;
+    }).join("")}</tbody>
+  </table>${reportAxis(max, 180, 0)}`;
+}
+
+function reportAxis(max: number, left: number, right: number): string {
+  const steps = [0, max * 0.25, max * 0.5, max * 0.75, max].map((value) => formatEuroAxis(roundMoney(value)));
+  return `<div class="reportAxis" style="margin-left:${left}px;margin-right:${right}px">${steps.map((step) => `<span>${escapeReportHtml(step)}</span>`).join("")}</div>`;
+}
+
+function roundIcon(value: string): string {
+  return `<span class="roundIcon">${escapeReportHtml(value)}</span>`;
 }
 
 function buildObjectReportHtml(object: ObjectRecord, documents: ObjectAnalysis[], images: string[]): string {
