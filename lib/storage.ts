@@ -213,7 +213,6 @@ export async function loadSharedStorageSnapshot(): Promise<SharedStorageSnapshot
     if (!response.ok) return null;
     const data = await response.json() as { ok: boolean; configured?: boolean; snapshot?: SharedStorageSnapshot };
     if (!data.ok || !data.configured || !data.snapshot) return null;
-    applySharedSnapshot(data.snapshot);
     return data.snapshot;
   } catch (error) {
     console.warn("Zentrale Speicherung konnte nicht geladen werden.", error);
@@ -221,12 +220,12 @@ export async function loadSharedStorageSnapshot(): Promise<SharedStorageSnapshot
   }
 }
 
-export async function getSharedStorageStatus(): Promise<{ configured: boolean; message: string; bucketExists?: boolean; canReadTables?: boolean } | null> {
+export async function getSharedStorageStatus(): Promise<{ configured: boolean; message: string; bucketExists?: boolean; canReadTables?: boolean; canWrite?: boolean } | null> {
   if (typeof window === "undefined") return null;
   try {
     const response = await fetch("/api/shared-storage/status", { cache: "no-store" });
     if (!response.ok) return null;
-    const data = await response.json() as { configured: boolean; message: string; bucketExists?: boolean; canReadTables?: boolean };
+    const data = await response.json() as { configured: boolean; message: string; bucketExists?: boolean; canReadTables?: boolean; canWrite?: boolean };
     return data;
   } catch {
     return null;
@@ -235,27 +234,58 @@ export async function getSharedStorageStatus(): Promise<{ configured: boolean; m
 
 export async function migrateLocalStorageToSharedStorage(): Promise<{ ok: boolean; message: string }> {
   const status = await getSharedStorageStatus();
-  if (!status?.configured || !status.bucketExists || !status.canReadTables) {
+  if (!status?.configured || !status.bucketExists || !status.canReadTables || !status.canWrite) {
     return { ok: false, message: status?.message || "Supabase ist nicht verbunden. Migration wurde nicht gestartet." };
   }
+  const snapshot = await loadSharedStorageSnapshot();
+  if (snapshot && sharedSnapshotHasData(snapshot)) {
+    return { ok: false, message: "Migration gestoppt: Supabase enthaelt bereits Daten. Es wurde nichts ueberschrieben." };
+  }
+  const localObjects = getObjects();
+  const localEntrances = getEntrances();
+  const localProjects = getProjects();
+  const localDocuments = getDocuments();
+  const localAssignments = getAssignments();
+  const localObjectImages = getObjectImages();
+  if (!localObjects.length && !localEntrances.length && !localProjects.length && !localDocuments.length && !Object.keys(localAssignments).length && !Object.keys(localObjectImages).length) {
+    return { ok: false, message: "Keine lokalen Daten gefunden. Migration wurde nicht gestartet." };
+  }
   const operations: Array<Promise<void>> = [];
-  getObjects().forEach((object) => operations.push(postSharedRecord("objects", object.id, object)));
-  getEntrances().forEach((entrance) => operations.push(postSharedRecord("entrances", entrance.id, entrance)));
-  getProjects().forEach((project) => operations.push(postSharedRecord("projects", project.id, project)));
-  getDocuments().forEach((document) => operations.push(postSharedRecord("documents", document.id, document)));
-  operations.push(postSharedRecord("assignments", "default", getAssignments()));
-  Object.entries(getObjectImages()).forEach(([objectId, urls]) => operations.push(postSharedRecord("objectImages", objectId, urls)));
+  localObjects.forEach((object) => operations.push(postSharedRecord("objects", object.id, object)));
+  localEntrances.forEach((entrance) => operations.push(postSharedRecord("entrances", entrance.id, entrance)));
+  localProjects.forEach((project) => operations.push(postSharedRecord("projects", project.id, project)));
+  localDocuments.forEach((document) => operations.push(postSharedRecord("documents", document.id, document)));
+  operations.push(postSharedRecord("assignments", "default", localAssignments));
+  Object.entries(localObjectImages).forEach(([objectId, urls]) => operations.push(postSharedRecord("objectImages", objectId, urls)));
   await Promise.all(operations);
-  return { ok: true, message: "Lokale Daten wurden nach Supabase übertragen." };
+  return { ok: true, message: "Lokale Daten wurden nach Supabase uebertragen. LocalStorage wurde nicht veraendert." };
 }
 
 export function applySharedSnapshot(snapshot: SharedStorageSnapshot): void {
-  writeJson(STORAGE_KEYS.objects, snapshot.objects ?? []);
-  writeJson(STORAGE_KEYS.entrances, snapshot.entrances ?? []);
-  writeJson(STORAGE_KEYS.projects, snapshot.projects ?? []);
-  writeJson(STORAGE_KEYS.documents, snapshot.documents ?? []);
-  writeJson(STORAGE_KEYS.assignments, snapshot.assignments ?? {});
-  writeJson(STORAGE_KEYS.objectImages, snapshot.objectImages ?? {});
+  writeJson(STORAGE_KEYS.objects, mergeByIdKeepLocal(snapshot.objects ?? [], getObjects()));
+  writeJson(STORAGE_KEYS.entrances, mergeByIdKeepLocal(snapshot.entrances ?? [], getEntrances()));
+  writeJson(STORAGE_KEYS.projects, mergeByIdKeepLocal(snapshot.projects ?? [], getProjects()));
+  writeJson(STORAGE_KEYS.documents, mergeByIdKeepLocal(snapshot.documents ?? [], getDocuments()));
+  writeJson(STORAGE_KEYS.assignments, { ...(snapshot.assignments ?? {}), ...getAssignments() });
+  writeJson(STORAGE_KEYS.objectImages, { ...(snapshot.objectImages ?? {}), ...getObjectImages() });
+}
+
+function sharedSnapshotHasData(snapshot: SharedStorageSnapshot): boolean {
+  return Boolean(
+    snapshot.objects.length ||
+    snapshot.entrances.length ||
+    snapshot.projects.length ||
+    snapshot.documents.length ||
+    Object.keys(snapshot.assignments).length ||
+    Object.keys(snapshot.objectImages).length
+  );
+}
+
+function mergeByIdKeepLocal<T extends { id: string }>(remoteItems: T[], localItems: T[]): T[] {
+  const result = new Map<string, T>();
+  remoteItems.forEach((item) => result.set(item.id, item));
+  localItems.forEach((item) => result.set(item.id, item));
+  return Array.from(result.values());
 }
 
 function upsertItem<T extends { id: string }>(key: string, item: T): void {

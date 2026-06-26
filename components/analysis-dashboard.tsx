@@ -251,6 +251,21 @@ interface MapEntry {
   longitude: number | null;
 }
 
+type MigrationStatus = "checking" | "local-fallback" | "supabase-empty" | "supabase-ready" | "migrating" | "migrated" | "blocked" | "error";
+
+interface StorageSafetyState {
+  localObjects: number;
+  localProjects: number;
+  localDocuments: number;
+  supabaseObjects: number | null;
+  supabaseProjects: number | null;
+  supabaseDocuments: number | null;
+  migrationStatus: MigrationStatus;
+  message: string;
+  canMigrate: boolean;
+  isMigrating: boolean;
+}
+
 
 const emptyFilters: Filters = {
   year: "",
@@ -334,6 +349,19 @@ const standardTradeCatalog: MeasureCluster[] = [
   "Sonstige"
 ];
 
+const initialStorageSafetyState: StorageSafetyState = {
+  localObjects: 0,
+  localProjects: 0,
+  localDocuments: 0,
+  supabaseObjects: null,
+  supabaseProjects: null,
+  supabaseDocuments: null,
+  migrationStatus: "checking",
+  message: "Speicherstatus wird geprueft. LocalStorage bleibt unangetastet.",
+  canMigrate: false,
+  isMigrating: false
+};
+
 export function AnalysisDashboard() {
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("objects");
@@ -350,6 +378,7 @@ export function AnalysisDashboard() {
   const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [storageSafety, setStorageSafety] = useState<StorageSafetyState>(initialStorageSafetyState);
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [uploadDocument, setUploadDocument] = useState<ObjectAnalysis | null>(null);
@@ -367,6 +396,11 @@ export function AnalysisDashboard() {
     const storedDocuments = getDocuments();
     const storedAssignments = getAssignments();
     const storedObjectImages = getObjectImages();
+    const localCounts = {
+      localObjects: storedObjects.length,
+      localProjects: storedProjects.length,
+      localDocuments: storedDocuments.length
+    };
 
     setObjects(storedObjects);
     setEntrances(storedEntrances);
@@ -377,22 +411,95 @@ export function AnalysisDashboard() {
     setSelectedObjectId(storedObjects[0]?.id ?? null);
     setSelectedProjectId(storedProjects[0]?.id ?? null);
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
+    setStorageSafety((current) => ({
+      ...current,
+      ...localCounts,
+      migrationStatus: "checking",
+      message: "Lokale Daten wurden gelesen. Supabase wird geprueft."
+    }));
 
     let cancelled = false;
-    void getSharedStorageStatus().then((status) => {
-      if (cancelled || !status) return;
-      if (!status.configured || !status.bucketExists || !status.canReadTables) {
-        setMessage(status.message || "Supabase ist nicht verbunden. Daten werden nur lokal angezeigt.");
-      }
-    });
-    void loadSharedStorageSnapshot().then((snapshot) => {
-      if (cancelled || !snapshot) return;
-      if (!sharedSnapshotHasData(snapshot) && (storedObjects.length || storedDocuments.length || storedProjects.length)) {
-        void migrateLocalStorageToSharedStorage().then((result) => {
-          if (!cancelled) setMessage(result.message);
-        });
+    void getSharedStorageStatus().then(async (status) => {
+      if (cancelled) return;
+      if (!status) {
+        const fallbackMessage = "Supabase Status konnte nicht gelesen werden. Lokale Daten bleiben aktiv.";
+        setStorageSafety((current) => ({
+          ...current,
+          ...localCounts,
+          supabaseObjects: null,
+          supabaseProjects: null,
+          supabaseDocuments: null,
+          migrationStatus: "error",
+          message: fallbackMessage,
+          canMigrate: false,
+          isMigrating: false
+        }));
+        setMessage(fallbackMessage);
         return;
       }
+      const supabaseReady = Boolean(status.configured && status.bucketExists && status.canReadTables && status.canWrite);
+      const localHasData = Boolean(storedObjects.length || storedDocuments.length || storedProjects.length);
+      if (!supabaseReady) {
+        const fallbackMessage = status.message || "Supabase ist nicht vollstaendig verbunden. Lokale Daten bleiben aktiv.";
+        setStorageSafety((current) => ({
+          ...current,
+          ...localCounts,
+          supabaseObjects: null,
+          supabaseProjects: null,
+          supabaseDocuments: null,
+          migrationStatus: "local-fallback",
+          message: fallbackMessage,
+          canMigrate: false,
+          isMigrating: false
+        }));
+        setMessage(fallbackMessage);
+        return;
+      }
+
+      const snapshot = await loadSharedStorageSnapshot();
+      if (cancelled) return;
+      if (!snapshot) {
+        const fallbackMessage = "Supabase Snapshot konnte nicht geladen werden. Lokale Daten bleiben aktiv.";
+        setStorageSafety((current) => ({
+          ...current,
+          ...localCounts,
+          migrationStatus: "error",
+          message: fallbackMessage,
+          canMigrate: false,
+          isMigrating: false
+        }));
+        setMessage(fallbackMessage);
+        return;
+      }
+
+      const supabaseCounts = countSharedSnapshot(snapshot);
+      const supabaseHasData = sharedSnapshotHasData(snapshot);
+      if (!supabaseHasData) {
+        const fallbackMessage = localHasData
+          ? "Supabase ist leer. Lokale Daten bleiben aktiv; Migration kann manuell gestartet werden."
+          : "Supabase ist leer und lokal wurden keine Daten gefunden.";
+        setStorageSafety((current) => ({
+          ...current,
+          ...localCounts,
+          ...supabaseCounts,
+          migrationStatus: "supabase-empty",
+          message: fallbackMessage,
+          canMigrate: localHasData,
+          isMigrating: false
+        }));
+        if (localHasData) setMessage(fallbackMessage);
+        return;
+      }
+
+      setStorageSafety((current) => ({
+        ...current,
+        ...localCounts,
+        ...supabaseCounts,
+        migrationStatus: "supabase-ready",
+        message: "Supabase enthaelt Daten. Ansicht nutzt den Supabase-Snapshot; LocalStorage wurde nicht ueberschrieben.",
+        canMigrate: false,
+        isMigrating: false
+      }));
       setObjects(snapshot.objects);
       setEntrances(snapshot.entrances);
       setProjects(snapshot.projects);
@@ -407,6 +514,66 @@ export function AnalysisDashboard() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setStorageSafety((current) => ({
+      ...current,
+      localObjects: getObjects().length,
+      localProjects: getProjects().length,
+      localDocuments: getDocuments().length
+    }));
+  }, [objects.length, projects.length, analysis.objects.length]);
+
+  async function handleMigrateLocalToSharedStorage() {
+    setStorageSafety((current) => ({
+      ...current,
+      migrationStatus: "migrating",
+      message: "Migration laeuft. LocalStorage wird dabei nicht veraendert.",
+      isMigrating: true,
+      canMigrate: false
+    }));
+    try {
+      const result = await migrateLocalStorageToSharedStorage();
+      const snapshot = await loadSharedStorageSnapshot();
+      const supabaseCounts = snapshot ? countSharedSnapshot(snapshot) : {
+        supabaseObjects: null,
+        supabaseProjects: null,
+        supabaseDocuments: null
+      };
+      const supabaseHasData = Boolean(snapshot && sharedSnapshotHasData(snapshot));
+      setStorageSafety((current) => ({
+        ...current,
+        ...supabaseCounts,
+        migrationStatus: result.ok ? "migrated" : "blocked",
+        message: result.message,
+        isMigrating: false,
+        canMigrate: !result.ok && current.localObjects > 0 && !supabaseHasData
+      }));
+      if (result.ok && snapshot && supabaseHasData) {
+        setObjects(snapshot.objects);
+        setEntrances(snapshot.entrances);
+        setProjects(snapshot.projects);
+        setAssignments(snapshot.assignments);
+        setObjectImages(snapshot.objectImages);
+        setAnalysis(buildAnalysisFromDocuments(snapshot.documents));
+        setSelectedObjectId((current) => current ?? snapshot.objects[0]?.id ?? null);
+        setSelectedProjectId((current) => current ?? snapshot.projects[0]?.id ?? null);
+        setSelectedDocumentId((current) => current ?? snapshot.documents[0]?.id ?? null);
+      }
+      setMessage(result.message);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Migration fehlgeschlagen. Es wurde nichts geloescht oder ueberschrieben.";
+      setStorageSafety((current) => ({
+        ...current,
+        migrationStatus: "error",
+        message: errorMessage,
+        isMigrating: false,
+        canMigrate: current.localObjects > 0
+      }));
+      setMessage(errorMessage);
+    }
+  }
 
   useEffect(() => {
     if (typeof window === "undefined" || objects.length === 0) return;
@@ -870,6 +1037,8 @@ export function AnalysisDashboard() {
           </div>
         </header>
 
+        <StorageSafetyPanel state={storageSafety} onMigrate={handleMigrateLocalToSharedStorage} />
+
         {view === "dashboard" ? (
           <DashboardView
             kpis={kpis}
@@ -1031,6 +1200,68 @@ export function AnalysisDashboard() {
         )}
       </section>
     </main>
+  );
+}
+
+function StorageSafetyPanel({
+  state,
+  onMigrate
+}: {
+  state: StorageSafetyState;
+  onMigrate: () => void;
+}) {
+  const statusLabel: Record<MigrationStatus, string> = {
+    checking: "Pruefung laeuft",
+    "local-fallback": "LocalStorage aktiv",
+    "supabase-empty": "Supabase leer",
+    "supabase-ready": "Supabase aktiv",
+    migrating: "Migration laeuft",
+    migrated: "Migriert",
+    blocked: "Migration blockiert",
+    error: "Fehler"
+  };
+  const buttonDisabled = !state.canMigrate || state.isMigrating;
+
+  return (
+    <section className="storageSafetyPanel" aria-label="Speicher Sicherheitsanzeige">
+      <div className="storageSafetyHeader">
+        <div>
+          <p className="eyebrow">Speicher-Sicherheit</p>
+          <h2>LocalStorage und Supabase</h2>
+          <p>{state.message}</p>
+        </div>
+        <button
+          className="buttonPrimary"
+          type="button"
+          disabled={buttonDisabled}
+          onClick={onMigrate}
+          title={buttonDisabled ? "Migration ist aktuell nicht freigegeben." : "Lokale Daten sicher nach Supabase kopieren."}
+        >
+          {state.isMigrating ? "Migration laeuft..." : "Lokale Daten nach Supabase migrieren"}
+        </button>
+      </div>
+      <div className="storageSafetyGrid">
+        <div className="storageSafetyMetric">
+          <span>Lokale Objekte</span>
+          <strong>{formatNumber(state.localObjects)}</strong>
+          <small>{formatNumber(state.localProjects)} Projekt(e), {formatNumber(state.localDocuments)} Dokument(e)</small>
+        </div>
+        <div className="storageSafetyMetric">
+          <span>Supabase-Objekte</span>
+          <strong>{state.supabaseObjects === null ? "k.A." : formatNumber(state.supabaseObjects)}</strong>
+          <small>
+            {state.supabaseProjects === null || state.supabaseDocuments === null
+              ? "Noch nicht gelesen"
+              : `${formatNumber(state.supabaseProjects)} Projekt(e), ${formatNumber(state.supabaseDocuments)} Dokument(e)`}
+          </small>
+        </div>
+        <div className="storageSafetyMetric">
+          <span>Migrationsstatus</span>
+          <strong>{statusLabel[state.migrationStatus]}</strong>
+          <small>LocalStorage wird nicht geloescht oder ueberschrieben.</small>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -4257,6 +4488,18 @@ function sharedSnapshotHasData(snapshot: {
     Object.keys(snapshot.assignments).length ||
     Object.keys(snapshot.objectImages).length
   );
+}
+
+function countSharedSnapshot(snapshot: {
+  objects: ObjectRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+}) {
+  return {
+    supabaseObjects: snapshot.objects.length,
+    supabaseProjects: snapshot.projects.length,
+    supabaseDocuments: snapshot.documents.length
+  };
 }
 
 function buildUploadGroupRows(documents: ObjectAnalysis[]) {
