@@ -6049,7 +6049,7 @@ function buildTwoPageReportCss(): string {
     * { box-sizing: border-box; }
     body { margin: 0; background: #f5f6f8; color: #13263f; font-family: Aptos, "Segoe UI", Calibri, Arial, sans-serif; }
     .reportPage { width: 794px; height: 1123px; padding: 48px 56px; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
-    .reportPage2 { padding-top: 72px; }
+    .reportPage2 { padding-top: 92px; }
     .reportTop, .objectReportHeader { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 24px; align-items: start; width: 100%; }
     .reportLogoPanel { display: grid; gap: 18px; justify-items: end; padding-top: 58px; }
     .reportLogoRight { position: absolute; top: 48px; right: 56px; width: 132px; max-height: 42px; object-fit: contain; object-position: right center; }
@@ -6079,6 +6079,10 @@ function buildTwoPageReportCss(): string {
     .reportCard { height: 318px; padding: 14px; min-width: 0; overflow: hidden; }
     .reportBarList { display: grid; gap: 8px; margin-top: 14px; }
     .reportBarRow { display: grid; grid-template-columns: 108px minmax(0, 1fr) 82px; gap: 7px; align-items: center; min-height: 21px; color: #13263f; font-size: 10px; font-weight: 800; min-width: 0; }
+    .tradeAverageBars .reportBarRow { grid-template-columns: 148px minmax(62px, 1fr) 72px; gap: 6px; min-height: 23px; font-size: 9.2px; }
+    .tradeAverageBars .tradeLabel { white-space: normal; line-height: 1.12; overflow-wrap: anywhere; gap: 5px; }
+    .tradeAverageBars .reportSvg { width: 17px; height: 17px; }
+    .tradeAverageBars .reportValue { font-size: 8.8px; }
     .objectBars .reportBarRow { grid-template-columns: 82px minmax(0, 1fr) 86px; min-height: 48px; }
     .reportTrack { height: 10px; border-radius: 999px; background: #edf1f6; overflow: hidden; }
     .reportFill { height: 100%; border-radius: 999px; background: #13263f; }
@@ -6098,7 +6102,7 @@ function buildTwoPageReportCss(): string {
     .objectKpiGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; width: 100%; }
     .objectKpiGrid .bigReportKpi { min-height: 98px; padding: 15px; }
     .objectKpiGrid .bigReportKpi b { font-size: 22px; }
-    .objectTradeTableCard { margin-top: 16px; height: 530px; padding: 14px; overflow: hidden; }
+    .objectTradeTableCard { margin-top: 16px; height: 510px; padding: 14px; overflow: hidden; }
     .reportTradeTable { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; margin-top: 12px; font-size: 9px; }
     .reportTradeTable th { color: #13263f; text-align: left; border-bottom: 1px solid #dbe2ec; padding: 6px 4px; text-transform: uppercase; white-space: normal; line-height: 1.15; overflow-wrap: normal; }
     .reportTradeTable td { padding: 7px 4px; border-bottom: 1px solid #eef2f6; color: #13263f; font-weight: 800; vertical-align: middle; }
@@ -6144,7 +6148,7 @@ function objectMeta(label: string, value: string, icon: string): string {
 function reportAverageTradeBars(rows: ReportTradeRow[]): string {
   const max = Math.max(...rows.map((row) => row.average ?? 0), 1);
   const highest = rows.reduce<ReportTradeRow | null>((best, row) => row.average !== null && (!best || row.average > (best.average ?? 0)) ? row : best, null);
-  return `<div class="reportBarList">${rows.map((row) => {
+  return `<div class="reportBarList tradeAverageBars">${rows.map((row) => {
     const value = row.average ?? 0;
     const width = value > 0 ? Math.max((value / max) * 100, 2) : 0;
     return `<div class="reportBarRow ${highest?.key === row.key ? "highlight" : ""}">
@@ -6152,7 +6156,7 @@ function reportAverageTradeBars(rows: ReportTradeRow[]): string {
       <div class="reportTrack"><div class="reportFill" style="width:${width}%"></div></div>
       <span class="reportValue">${row.average === null ? "k.A." : escapeReportHtml(formatNullableCurrency(row.average))}</span>
     </div>`;
-  }).join("")}</div>${reportAxis(max, 116, 82)}`;
+  }).join("")}</div>${reportAxis(max, 154, 74)}`;
 }
 
 function reportObjectCostBars(rows: ReportObjectBar[]): string {
