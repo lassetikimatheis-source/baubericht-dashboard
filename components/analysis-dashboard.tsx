@@ -527,7 +527,12 @@ export function AnalysisDashboard() {
   async function exportFile(type: "excel" | "pdf") {
     if (type === "pdf" && selectedObject) {
       const objectDocuments = analysis.objects.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments));
-      exportObjectReport(selectedObject, objectDocuments, objects, analysis.objects, projects, assignments);
+      try {
+        await exportObjectReport(selectedObject, objectDocuments, objects, analysis.objects, projects, assignments);
+      } catch (error) {
+        console.error("PDF export failed", error);
+        setMessage("PDF-Export fehlgeschlagen.");
+      }
       return;
     }
 
@@ -543,12 +548,7 @@ export function AnalysisDashboard() {
     }
 
     const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = type === "excel" ? "paribus-baukosten-analyse.xlsx" : "paribus-baukosten-analyse.pdf";
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, type === "excel" ? "paribus-baukosten-analyse.xlsx" : "Deckblatt_Portfolio.pdf");
   }
 
   function createObject(seed?: ObjectAnalysis) {
@@ -5780,20 +5780,104 @@ function formatEuroAxis(value: number): string {
   }).format(value);
 }
 
-function exportObjectReport(
+async function exportObjectReport(
   object: ObjectRecord,
   documents: ObjectAnalysis[],
   portfolioObjects: ObjectRecord[],
   portfolioDocuments: ObjectAnalysis[],
   projects: ProjectRecord[],
   assignments: Record<string, string | null>
-): void {
-  const reportWindow = window.open("", "_blank");
-  if (!reportWindow) return;
-  reportWindow.document.write(buildTwoPageObjectReportHtml(object, documents, portfolioObjects, portfolioDocuments, projects, assignments));
-  reportWindow.document.close();
-  reportWindow.focus();
-  window.setTimeout(() => reportWindow.print(), 500);
+): Promise<void> {
+  const { jsPDF } = await import("jspdf");
+  const reportHtml = buildTwoPageObjectReportHtml(object, documents, portfolioObjects, portfolioDocuments, projects, assignments);
+  const parser = new DOMParser();
+  const reportDocument = parser.parseFromString(reportHtml, "text/html");
+  const styleText = Array.from(reportDocument.querySelectorAll("style")).map((style) => style.textContent ?? "").join("\n");
+  const pages = Array.from(reportDocument.body.querySelectorAll<HTMLElement>(".reportPage"));
+
+  if (!pages.length) {
+    throw new Error("PDF report contains no pages.");
+  }
+
+  const renderRoot = document.createElement("div");
+  renderRoot.setAttribute("aria-hidden", "true");
+  renderRoot.style.position = "fixed";
+  renderRoot.style.left = "-10000px";
+  renderRoot.style.top = "0";
+  renderRoot.style.width = "794px";
+  renderRoot.style.background = "#ffffff";
+  renderRoot.style.zIndex = "-1";
+  renderRoot.innerHTML = `<style>${styleText}</style>${pages.map((page) => page.outerHTML).join("")}`;
+  document.body.appendChild(renderRoot);
+
+  try {
+    await waitForReportAssets(renderRoot);
+    const pdf = new jsPDF({ unit: "px", format: [794, 1123], orientation: "portrait", compress: true });
+    const renderedPages = Array.from(renderRoot.querySelectorAll<HTMLElement>(".reportPage"));
+
+    for (const [index, page] of renderedPages.entries()) {
+      if (index > 0) {
+        pdf.addPage([794, 1123], "portrait");
+      }
+      await new Promise<void>((resolve) => {
+        pdf.html(page, {
+          callback: () => resolve(),
+          x: 0,
+          y: 0,
+          width: 794,
+          windowWidth: 794,
+          autoPaging: false,
+          html2canvas: {
+            backgroundColor: "#ffffff",
+            scale: 1,
+            useCORS: true
+          }
+        });
+      });
+    }
+
+    const blob = pdf.output("blob");
+    downloadBlob(blob, `Objektbericht_${sanitizeDownloadName(firstKnown(object.objectName, object.objectNumber, object.address, "Objekt"))}.pdf`);
+  } finally {
+    renderRoot.remove();
+  }
+}
+
+function downloadBlob(blob: Blob, fileName: string): void {
+  const pdfBlob = blob.type ? blob : new Blob([blob], { type: "application/pdf" });
+  const url = URL.createObjectURL(pdfBlob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function sanitizeDownloadName(value: string): string {
+  const sanitized = value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return sanitized || "Objekt";
+}
+
+async function waitForReportAssets(root: HTMLElement): Promise<void> {
+  const images = Array.from(root.querySelectorAll<HTMLImageElement>("img"));
+  await Promise.all(images.map((image) => {
+    if (image.complete) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      image.addEventListener("load", () => resolve(), { once: true });
+      image.addEventListener("error", () => resolve(), { once: true });
+    });
+  }));
+  if ("fonts" in document) {
+    await document.fonts.ready;
+  }
 }
 
 function buildTwoPageObjectReportHtml(
