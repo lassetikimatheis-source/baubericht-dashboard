@@ -29,25 +29,17 @@ import {
   getAssignments,
   getDocuments,
   getEntrances,
-  getLocalStorageDiagnostics,
-  getObjectImages,
   getObjects,
   getProjects,
-  getSharedStorageStatus,
-  loadSharedStorageSnapshot,
-  migrateLocalStorageToSharedStorage,
   saveAssignments,
   saveDocument,
   saveEntrance,
   saveObject,
-  saveObjectImages,
   saveProject,
   updateDocument as updateStoredDocument,
   updateEntrance as updateStoredEntrance,
   updateObject as updateStoredObject,
   updateProject as updateStoredProject,
-  uploadSharedFiles,
-  type LocalStorageDiagnostics,
   type StoredEntranceRecord,
   type StoredObjectRecord,
   type StoredProjectRecord
@@ -253,22 +245,6 @@ interface MapEntry {
   longitude: number | null;
 }
 
-type MigrationStatus = "checking" | "local-fallback" | "supabase-empty" | "supabase-ready" | "migrating" | "migrated" | "blocked" | "error";
-
-interface StorageSafetyState {
-  localObjects: number;
-  localProjects: number;
-  localDocuments: number;
-  supabaseObjects: number | null;
-  supabaseProjects: number | null;
-  supabaseDocuments: number | null;
-  migrationStatus: MigrationStatus;
-  message: string;
-  canMigrate: boolean;
-  isMigrating: boolean;
-  localStorageDiagnostics: LocalStorageDiagnostics | null;
-}
-
 
 const emptyFilters: Filters = {
   year: "",
@@ -352,20 +328,6 @@ const standardTradeCatalog: MeasureCluster[] = [
   "Sonstige"
 ];
 
-const initialStorageSafetyState: StorageSafetyState = {
-  localObjects: 0,
-  localProjects: 0,
-  localDocuments: 0,
-  supabaseObjects: null,
-  supabaseProjects: null,
-  supabaseDocuments: null,
-  migrationStatus: "checking",
-  message: "Speicherstatus wird geprueft. LocalStorage bleibt unangetastet.",
-  canMigrate: false,
-  isMigrating: false,
-  localStorageDiagnostics: null
-};
-
 export function AnalysisDashboard() {
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("objects");
@@ -382,7 +344,6 @@ export function AnalysisDashboard() {
   const [projectTab, setProjectTab] = useState<ProjectTab>("overview");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [storageSafety, setStorageSafety] = useState<StorageSafetyState>(initialStorageSafetyState);
   const [previews, setPreviews] = useState<ParsedPreview[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [uploadDocument, setUploadDocument] = useState<ObjectAnalysis | null>(null);
@@ -399,215 +360,16 @@ export function AnalysisDashboard() {
     const storedProjects = getProjects();
     const storedDocuments = getDocuments();
     const storedAssignments = getAssignments();
-    const storedObjectImages = getObjectImages();
-    const localStorageDiagnostics = getLocalStorageDiagnostics();
-    const localCounts = {
-      localObjects: storedObjects.length,
-      localProjects: storedProjects.length,
-      localDocuments: storedDocuments.length
-    };
 
     setObjects(storedObjects);
     setEntrances(storedEntrances);
     setProjects(storedProjects);
     setAssignments(storedAssignments);
-    setObjectImages(storedObjectImages);
     setAnalysis(buildAnalysisFromDocuments(storedDocuments));
     setSelectedObjectId(storedObjects[0]?.id ?? null);
     setSelectedProjectId(storedProjects[0]?.id ?? null);
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
-    setStorageSafety((current) => ({
-      ...current,
-      ...localCounts,
-      localStorageDiagnostics,
-      migrationStatus: "checking",
-      message: "Lokale Daten wurden gelesen. Supabase wird geprueft."
-    }));
-
-    let cancelled = false;
-    void getSharedStorageStatus().then(async (status) => {
-      if (cancelled) return;
-      if (!status) {
-        const fallbackMessage = "Supabase Status konnte nicht gelesen werden. Lokale Daten bleiben aktiv.";
-        setStorageSafety((current) => ({
-          ...current,
-          ...localCounts,
-          localStorageDiagnostics,
-          supabaseObjects: null,
-          supabaseProjects: null,
-          supabaseDocuments: null,
-          migrationStatus: "error",
-          message: fallbackMessage,
-          canMigrate: false,
-          isMigrating: false
-        }));
-        setMessage(fallbackMessage);
-        return;
-      }
-      const supabaseReady = Boolean(status.configured && status.bucketExists && status.canReadTables && status.canWrite);
-      const localHasData = Boolean(storedObjects.length || storedDocuments.length || storedProjects.length);
-      if (!supabaseReady) {
-        const fallbackMessage = status.message || "Supabase ist nicht vollstaendig verbunden. Lokale Daten bleiben aktiv.";
-        setStorageSafety((current) => ({
-          ...current,
-          ...localCounts,
-          localStorageDiagnostics,
-          supabaseObjects: null,
-          supabaseProjects: null,
-          supabaseDocuments: null,
-          migrationStatus: "local-fallback",
-          message: fallbackMessage,
-          canMigrate: false,
-          isMigrating: false
-        }));
-        setMessage(fallbackMessage);
-        return;
-      }
-
-      const snapshot = await loadSharedStorageSnapshot();
-      if (cancelled) return;
-      if (!snapshot) {
-        const fallbackMessage = "Supabase Snapshot konnte nicht geladen werden. Lokale Daten bleiben aktiv.";
-        setStorageSafety((current) => ({
-          ...current,
-          ...localCounts,
-          localStorageDiagnostics,
-          migrationStatus: "error",
-          message: fallbackMessage,
-          canMigrate: false,
-          isMigrating: false
-        }));
-        setMessage(fallbackMessage);
-        return;
-      }
-
-      const supabaseCounts = countSharedSnapshot(snapshot);
-      const supabaseHasData = sharedSnapshotHasData(snapshot);
-      if (localHasData) {
-        const fallbackMessage = supabaseHasData
-          ? "Lokale Daten sind vorhanden und haben Vorrang. Supabase wurde nur gezaehlt; LocalStorage wurde nicht ueberschrieben."
-          : "Supabase ist leer. Lokale Daten bleiben aktiv; Migration kann manuell gestartet werden.";
-        setStorageSafety((current) => ({
-          ...current,
-          ...localCounts,
-          ...supabaseCounts,
-          localStorageDiagnostics,
-          migrationStatus: supabaseHasData ? "local-fallback" : "supabase-empty",
-          message: fallbackMessage,
-          canMigrate: !supabaseHasData,
-          isMigrating: false
-        }));
-        setMessage(fallbackMessage);
-        return;
-      }
-
-      if (!supabaseHasData) {
-        const fallbackMessage = "Supabase ist leer und lokal wurden keine Daten gefunden.";
-        setStorageSafety((current) => ({
-          ...current,
-          ...localCounts,
-          ...supabaseCounts,
-          localStorageDiagnostics,
-          migrationStatus: "supabase-empty",
-          message: fallbackMessage,
-          canMigrate: localHasData,
-          isMigrating: false
-        }));
-        if (localHasData) setMessage(fallbackMessage);
-        return;
-      }
-
-      setStorageSafety((current) => ({
-        ...current,
-        ...localCounts,
-        ...supabaseCounts,
-        localStorageDiagnostics,
-        migrationStatus: "supabase-ready",
-        message: "Supabase enthaelt Daten. Ansicht nutzt den Supabase-Snapshot; LocalStorage wurde nicht ueberschrieben.",
-        canMigrate: false,
-        isMigrating: false
-      }));
-      setObjects(snapshot.objects);
-      setEntrances(snapshot.entrances);
-      setProjects(snapshot.projects);
-      setAssignments(snapshot.assignments);
-      setObjectImages(snapshot.objectImages);
-      setAnalysis(buildAnalysisFromDocuments(snapshot.documents));
-      setSelectedObjectId((current) => current ?? snapshot.objects[0]?.id ?? null);
-      setSelectedProjectId((current) => current ?? snapshot.projects[0]?.id ?? null);
-      setSelectedDocumentId((current) => current ?? snapshot.documents[0]?.id ?? null);
-    });
-    return () => {
-      cancelled = true;
-    };
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setStorageSafety((current) => ({
-      ...current,
-      localObjects: getObjects().length,
-      localProjects: getProjects().length,
-      localDocuments: getDocuments().length,
-      localStorageDiagnostics: getLocalStorageDiagnostics()
-    }));
-  }, [objects.length, projects.length, analysis.objects.length]);
-
-  async function handleMigrateLocalToSharedStorage() {
-    setStorageSafety((current) => ({
-      ...current,
-      migrationStatus: "migrating",
-      message: "Migration laeuft. LocalStorage wird dabei nicht veraendert.",
-      isMigrating: true,
-      canMigrate: false
-    }));
-    try {
-      const result = await migrateLocalStorageToSharedStorage();
-      const snapshot = await loadSharedStorageSnapshot();
-      const supabaseCounts = snapshot ? countSharedSnapshot(snapshot) : {
-        supabaseObjects: null,
-        supabaseProjects: null,
-        supabaseDocuments: null
-      };
-      const localStorageDiagnostics = getLocalStorageDiagnostics();
-      const supabaseHasData = Boolean(snapshot && sharedSnapshotHasData(snapshot));
-      setStorageSafety((current) => ({
-        ...current,
-        ...supabaseCounts,
-        localObjects: getObjects().length,
-        localProjects: getProjects().length,
-        localDocuments: getDocuments().length,
-        localStorageDiagnostics,
-        migrationStatus: result.ok ? "migrated" : "blocked",
-        message: result.message,
-        isMigrating: false,
-        canMigrate: !result.ok && current.localObjects > 0 && !supabaseHasData
-      }));
-      if (result.ok && snapshot && supabaseHasData) {
-        setObjects(snapshot.objects);
-        setEntrances(snapshot.entrances);
-        setProjects(snapshot.projects);
-        setAssignments(snapshot.assignments);
-        setObjectImages(snapshot.objectImages);
-        setAnalysis(buildAnalysisFromDocuments(snapshot.documents));
-        setSelectedObjectId((current) => current ?? snapshot.objects[0]?.id ?? null);
-        setSelectedProjectId((current) => current ?? snapshot.projects[0]?.id ?? null);
-        setSelectedDocumentId((current) => current ?? snapshot.documents[0]?.id ?? null);
-      }
-      setMessage(result.message);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Migration fehlgeschlagen. Es wurde nichts geloescht oder ueberschrieben.";
-      setStorageSafety((current) => ({
-        ...current,
-        localStorageDiagnostics: getLocalStorageDiagnostics(),
-        migrationStatus: "error",
-        message: errorMessage,
-        isMigrating: false,
-        canMigrate: current.localObjects > 0
-      }));
-      setMessage(errorMessage);
-    }
-  }
 
   useEffect(() => {
     if (typeof window === "undefined" || objects.length === 0) return;
@@ -691,10 +453,6 @@ export function AnalysisDashboard() {
     try {
       const formData = new FormData();
       files.forEach((file) => formData.append("files", file));
-      const sharedFileUrlsPromise = uploadSharedFiles(files, "documents").catch(() => {
-        setMessage("Analyse läuft. Hinweis: Dateien konnten nicht zentral gespeichert werden, bitte Supabase Storage prüfen.");
-        return [] as string[];
-      });
 
       const response = await fetch("/api/analyze", {
         method: "POST",
@@ -706,22 +464,16 @@ export function AnalysisDashboard() {
         throw new Error(data.message || "Analyse fehlgeschlagen.");
       }
 
-      const sharedFileUrls = await sharedFileUrlsPromise;
-      const sourceDocuments = (data.analysis.sourceDocuments ?? []).map((source: SourceDocument, index: number) => ({
-        ...source,
-        publicUrl: sharedFileUrls[index] ?? source.publicUrl
-      }));
-      const analyzedObjects = (data.analysis.objects ?? []).map((document: ObjectAnalysis) => attachPublicUrlToSources(document, sourceDocuments));
-      const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), analyzedObjects);
+      const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), data.analysis.objects);
       mergedDocuments.forEach(saveDocument);
-      const currentDocument = analyzedObjects[0] ?? null;
-      const currentSourceDocument = sourceDocuments[0] ?? null;
+      const currentDocument = data.analysis.objects[0] ?? null;
+      const currentSourceDocument = data.analysis.sourceDocuments?.[0] ?? null;
       const nextDraft = uploadDraftFromDocument(currentDocument ?? undefined, uploadSourceName(files));
-      setAnalysis(buildAnalysisFromDocuments(mergedDocuments, { ...data.analysis, objects: analyzedObjects, sourceDocuments }));
+      setAnalysis(buildAnalysisFromDocuments(mergedDocuments, data.analysis));
       setUploadDocument(currentDocument);
-      setUploadDocuments(analyzedObjects);
+      setUploadDocuments(data.analysis.objects ?? []);
       setUploadSourceDocument(currentSourceDocument);
-      setUploadSourceDocuments(sourceDocuments);
+      setUploadSourceDocuments(data.analysis.sourceDocuments ?? []);
       setObjectDraft(nextDraft);
       setUploadPhase("analyzed");
       setSelectedDocumentId(currentDocument?.id ?? null);
@@ -889,12 +641,6 @@ export function AnalysisDashboard() {
       if (project.objectId !== objectId) return project;
       return updateStoredProject({ ...project, objectId: "", object: "", entranceId: "", entrance: "" });
     }));
-    setObjectImages((current) => {
-      const next = { ...current };
-      delete next[objectId];
-      saveObjectImages(objectId, []);
-      return next;
-    });
     setSelectedObjectId(null);
   }
 
@@ -1071,8 +817,6 @@ export function AnalysisDashboard() {
           </div>
         </header>
 
-        <StorageSafetyPanel state={storageSafety} onMigrate={handleMigrateLocalToSharedStorage} />
-
         {view === "dashboard" ? (
           <DashboardView
             kpis={kpis}
@@ -1117,21 +861,9 @@ export function AnalysisDashboard() {
                 onUpdateObject={updateObject}
                 onUpdateEntrance={updateEntrance}
                 onUpdateDocument={updateDocument}
-                onAddObjectImages={async (objectId, files) => {
-                  const fileList = Array.from(files);
-                  let urls: string[];
-                  try {
-                    urls = await uploadSharedFiles(fileList, `objects/${objectId}/images`);
-                  } catch {
-                    urls = fileList.map((file) => URL.createObjectURL(file));
-                    setMessage("Bilder wurden nur lokal als Vorschau gespeichert. Für geteilte Links bitte zentralen Datei-Speicher konfigurieren.");
-                  }
-                  setObjectImages((current) => {
-                    const nextUrls = [...(current[objectId] ?? []), ...urls];
-                    const next = { ...current, [objectId]: nextUrls };
-                    saveObjectImages(objectId, nextUrls);
-                    return next;
-                  });
+                onAddObjectImages={(objectId, files) => {
+                  const urls = Array.from(files).map((file) => URL.createObjectURL(file));
+                  setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
                 }}
                 onSelectDocument={setSelectedDocumentId}
                 onOpenObject={openObjectDetail}
@@ -1234,89 +966,6 @@ export function AnalysisDashboard() {
         )}
       </section>
     </main>
-  );
-}
-
-function StorageSafetyPanel({
-  state,
-  onMigrate
-}: {
-  state: StorageSafetyState;
-  onMigrate: () => void;
-}) {
-  const statusLabel: Record<MigrationStatus, string> = {
-    checking: "Pruefung laeuft",
-    "local-fallback": "LocalStorage aktiv",
-    "supabase-empty": "Supabase leer",
-    "supabase-ready": "Supabase aktiv",
-    migrating: "Migration laeuft",
-    migrated: "Migriert",
-    blocked: "Migration blockiert",
-    error: "Fehler"
-  };
-  const buttonDisabled = !state.canMigrate || state.isMigrating;
-  const diagnostics = state.localStorageDiagnostics;
-
-  return (
-    <section className="storageSafetyPanel" aria-label="Speicher Sicherheitsanzeige">
-      <div className="storageSafetyHeader">
-        <div>
-          <p className="eyebrow">Speicher-Sicherheit</p>
-          <h2>LocalStorage und Supabase</h2>
-          <p>{state.message}</p>
-        </div>
-        <button
-          className="buttonPrimary"
-          type="button"
-          disabled={buttonDisabled}
-          onClick={onMigrate}
-          title={buttonDisabled ? "Migration ist aktuell nicht freigegeben." : "Lokale Daten sicher nach Supabase kopieren."}
-        >
-          {state.isMigrating ? "Migration laeuft..." : "Lokale Daten nach Supabase migrieren"}
-        </button>
-      </div>
-      <div className="storageSafetyGrid">
-        <div className="storageSafetyMetric">
-          <span>Lokale Objekte</span>
-          <strong>{formatNumber(state.localObjects)}</strong>
-          <small>{formatNumber(state.localProjects)} Projekt(e), {formatNumber(state.localDocuments)} Dokument(e)</small>
-        </div>
-        <div className="storageSafetyMetric">
-          <span>Supabase-Objekte</span>
-          <strong>{state.supabaseObjects === null ? "k.A." : formatNumber(state.supabaseObjects)}</strong>
-          <small>
-            {state.supabaseProjects === null || state.supabaseDocuments === null
-              ? "Noch nicht gelesen"
-              : `${formatNumber(state.supabaseProjects)} Projekt(e), ${formatNumber(state.supabaseDocuments)} Dokument(e)`}
-          </small>
-        </div>
-        <div className="storageSafetyMetric">
-          <span>Migrationsstatus</span>
-          <strong>{statusLabel[state.migrationStatus]}</strong>
-          <small>LocalStorage wird nicht geloescht oder ueberschrieben.</small>
-        </div>
-      </div>
-      <div className="storageKeyAudit">
-        <div className="storageKeyAuditHeader">
-          <div>
-            <strong>Browser-Speicher</strong>
-            <span>{diagnostics?.origin ?? "Origin noch nicht gelesen"}</span>
-          </div>
-          <span>{diagnostics ? `${formatNumber(diagnostics.totalKeys)} Key(s), ${formatNumber(diagnostics.totalChars)} Zeichen` : "k.A."}</span>
-        </div>
-        {diagnostics ? (
-          <div className="storageKeyGrid">
-            {diagnostics.keys.map((entry) => (
-              <div className="storageKeyItem" key={entry.key}>
-                <strong>{entry.key}</strong>
-                <span>{entry.present ? `${entry.entries ?? "k.A."} Eintrag(e)` : "fehlt"}</span>
-                <small>{entry.expected ? "erwartet" : "zusaetzlich"} - {entry.validJson === null ? "kein JSON" : entry.validJson ? entry.valueType : "ungueltiges JSON"} - {formatNumber(entry.chars)} Zeichen</small>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </section>
   );
 }
 
@@ -2221,7 +1870,7 @@ function ObjectsView({
   onUpdateObject: (id: string, field: keyof ObjectRecord, value: string) => void;
   onUpdateEntrance: (id: string, field: keyof EntranceRecord, value: string) => void;
   onUpdateDocument: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
-  onAddObjectImages: (id: string, files: FileList) => void | Promise<void>;
+  onAddObjectImages: (id: string, files: FileList) => void;
   onSelectDocument: (id: string) => void;
   onOpenObject: (id: string) => void;
 }) {
@@ -4488,73 +4137,6 @@ function uploadSourceName(files: File[]): string {
   if (files.length === 0) return "";
   if (files.length === 1) return files[0].name;
   return files.map((file) => file.name).join(", ");
-}
-
-function attachPublicUrlToSources(document: ObjectAnalysis, sourceDocuments: SourceDocument[]): ObjectAnalysis {
-  const sourceById = new Map(sourceDocuments.map((source) => [source.id, source]));
-  const sourceByName = new Map(sourceDocuments.map((source) => [source.fileName, source]));
-  const attach = <T,>(field: ExtractedField<T>): ExtractedField<T> => ({
-    ...field,
-    sources: field.sources.map((source) => {
-      const match = sourceById.get(source.documentId) ?? sourceByName.get(source.fileName);
-      return match?.publicUrl ? { ...source, publicUrl: match.publicUrl } : source;
-    })
-  });
-  return {
-    ...document,
-    documentType: attach(document.documentType),
-    provider: attach(document.provider),
-    documentNumber: attach(document.documentNumber),
-    documentDate: attach(document.documentDate),
-    fund: attach(document.fund),
-    objectNumber: attach(document.objectNumber),
-    objectAddress: attach(document.objectAddress),
-    apartmentNumber: attach(document.apartmentNumber),
-    location: attach(document.location),
-    projectType: attach(document.projectType),
-    netCost: attach(document.netCost),
-    vatCost: attach(document.vatCost),
-    totalCost: attach(document.totalCost),
-    renovatedApartmentCount: attach(document.renovatedApartmentCount),
-    livingAreaSqm: attach(document.livingAreaSqm),
-    clusters: document.clusters.map((cluster) => ({
-      ...cluster,
-      cluster: attach(cluster.cluster),
-      description: attach(cluster.description),
-      totalCost: attach(cluster.totalCost),
-      allocation: attach(cluster.allocation)
-    }))
-  };
-}
-
-function sharedSnapshotHasData(snapshot: {
-  objects: ObjectRecord[];
-  entrances: EntranceRecord[];
-  projects: ProjectRecord[];
-  documents: ObjectAnalysis[];
-  assignments: Record<string, string | null>;
-  objectImages: Record<string, string[]>;
-}): boolean {
-  return Boolean(
-    snapshot.objects.length ||
-    snapshot.entrances.length ||
-    snapshot.projects.length ||
-    snapshot.documents.length ||
-    Object.keys(snapshot.assignments).length ||
-    Object.keys(snapshot.objectImages).length
-  );
-}
-
-function countSharedSnapshot(snapshot: {
-  objects: ObjectRecord[];
-  projects: ProjectRecord[];
-  documents: ObjectAnalysis[];
-}) {
-  return {
-    supabaseObjects: snapshot.objects.length,
-    supabaseProjects: snapshot.projects.length,
-    supabaseDocuments: snapshot.documents.length
-  };
 }
 
 function buildUploadGroupRows(documents: ObjectAnalysis[]) {
