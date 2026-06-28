@@ -5790,6 +5790,7 @@ async function exportObjectReport(
 ): Promise<void> {
   const { jsPDF } = await import("jspdf");
   const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
+  const logoDataUrl = await loadImageDataUrl("/paribus-logo.png");
   const portfolio = buildReportPortfolioMetrics(portfolioObjects, portfolioDocuments, projects, assignments);
   const objectMetrics = buildReportObjectMetrics(object, documents);
   const portfolioTrades = buildReportTradeRows(portfolioDocuments);
@@ -5831,11 +5832,46 @@ async function exportObjectReport(
     pdf.setDrawColor(border[0], border[1], border[2]);
     pdf.roundedRect(x, y, w, h, 8, 8, "FD");
   };
-  const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number, icon = "□") => {
+  const drawLogo = () => {
+    if (logoDataUrl) {
+      pdf.addImage(logoDataUrl, "PNG", pageWidth - 156, 42, 104, 32, undefined, "FAST");
+      return;
+    }
+    text("PARIBUS", pageWidth - 135, 58, 20, "bold", navy);
+  };
+  const drawIcon = (name: string, cx: number, cy: number) => {
+    pdf.setDrawColor(orange[0], orange[1], orange[2]);
+    pdf.setLineWidth(1.3);
+    if (name === "euro") {
+      pdf.circle(cx, cy, 7, "S");
+      pdf.line(cx - 8, cy - 2, cx + 3, cy - 2);
+      pdf.line(cx - 8, cy + 3, cx + 3, cy + 3);
+      return;
+    }
+    if (name === "home") {
+      pdf.line(cx - 8, cy, cx, cy - 8);
+      pdf.line(cx, cy - 8, cx + 8, cy);
+      pdf.rect(cx - 6, cy, 12, 10, "S");
+      return;
+    }
+    if (name === "ruler") {
+      pdf.line(cx - 8, cy + 8, cx + 8, cy - 8);
+      pdf.line(cx - 3, cy + 3, cx, cy + 6);
+      pdf.line(cx + 2, cy - 2, cx + 5, cy + 1);
+      return;
+    }
+    pdf.rect(cx - 7, cy - 8, 14, 16, "S");
+    pdf.line(cx - 3, cy - 3, cx - 3, cy - 1);
+    pdf.line(cx + 3, cy - 3, cx + 3, cy - 1);
+    pdf.line(cx - 3, cy + 3, cx - 3, cy + 5);
+    pdf.line(cx + 3, cy + 3, cx + 3, cy + 5);
+  };
+  const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number, icon = "building") => {
     pdf.setFillColor(255, 243, 238);
     pdf.circle(x + w / 2, y + 18, 10, "F");
     pdf.setDrawColor(orange[0], orange[1], orange[2]);
     pdf.circle(x + w / 2, y + 18, 10, "S");
+    drawIcon(icon, x + w / 2, y + 18);
     text(title.toUpperCase(), x + 8, y + 47, 7.2, "bold", navy, w - 16);
     fitText(value, x + 8, y + 76, w - 16, 14.5, 9, "bold", orange, "center");
     fitText(detail, x + 8, y + 98, w - 16, 8.5, 7, "normal", navy, "center");
@@ -5849,6 +5885,7 @@ async function exportObjectReport(
     pdf.circle(x + w - 28, y + 29, 13, "F");
     pdf.setDrawColor(orange[0], orange[1], orange[2]);
     pdf.circle(x + w - 28, y + 29, 13, "S");
+    drawIcon(icon, x + w - 28, y + 29);
   };
   const footer = (page: number) => {
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
@@ -5881,7 +5918,7 @@ async function exportObjectReport(
   text("Sanierungsreport", 52, 82, 28, "bold", navy);
   text("Teil- und Vollsanierung (GU)", 52, 108, 17, "normal", navy);
   text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", 52, 140, 11, "normal", muted, 260);
-  text("PARIBUS", pageWidth - 135, 58, 20, "normal", navy);
+  drawLogo();
   card(392, 78, 152, 112);
   text("BERICHTSDATUM", 408, 104, 8.5, "bold", navy);
   text(formatReportDate(new Date()), 408, 126, 12, "bold", navy);
@@ -5893,11 +5930,11 @@ async function exportObjectReport(
   card(52, 220, 492, 108);
   const kpiW = 492 / 5;
   [
-    ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt", "€"],
-    ["Wohneinheiten gesamt", formatNullableNumber(portfolio.units), "gesamt", "▥"],
-    ["GU sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt", "m²"],
-    ["GU sanierte Wohnungen", formatNullableNumber(portfolio.renovatedApartments), "gesamt", "⌂"],
-    ["Durchschnittliche Wohnungsgröße", formatArea(portfolio.averageApartmentSize), "gesamt", "□"]
+    ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt", "euro"],
+    ["Wohneinheiten gesamt", formatNullableNumber(portfolio.units), "gesamt", "building"],
+    ["GU sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt", "home"],
+    ["GU sanierte Wohnungen", formatNullableNumber(portfolio.renovatedApartments), "gesamt", "home"],
+    ["Durchschnittliche Wohnungsgröße", formatArea(portfolio.averageApartmentSize), "gesamt", "ruler"]
   ].forEach(([title, value, detail, icon], index) => {
     if (index > 0) {
       pdf.setDrawColor(border[0], border[1], border[2]);
@@ -5906,8 +5943,8 @@ async function exportObjectReport(
     smallKpi(title, value, detail, 52 + index * kpiW, 232, kpiW, icon);
   });
 
-  bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 52, 350, 236, 92, "⌂");
-  bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", 308, 350, 236, 92, "m²");
+  bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 52, 350, 236, 92, "home");
+  bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", 308, 350, 236, 92, "ruler");
 
   card(52, 458, 236, 238);
   text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG NACH GEWERK", 64, 482, 9.5, "bold", navy, 205);
@@ -5932,7 +5969,7 @@ async function exportObjectReport(
   pdf.addPage();
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
-  text("PARIBUS", pageWidth - 135, 58, 20, "normal", navy);
+  drawLogo();
   text("Teil- und Vollsanierung (GU)", 52, 86, 22, "bold", orange);
   text(firstKnown(object.objectNumber, "k.A."), 52, 125, 34, "bold", navy);
   text(firstKnown(object.address, objectLabel(object), "k.A."), 52, 150, 13, "normal", navy, 330);
@@ -5954,9 +5991,9 @@ async function exportObjectReport(
     text(value, x, 224, 13, "bold", navy, 84);
   });
 
-  bigKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", 52, 258, 150, 104, "€");
-  bigKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", 222, 258, 150, 104, "⌂");
-  bigKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", 392, 258, 152, 104, "m²");
+  bigKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", 52, 258, 150, 104, "euro");
+  bigKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", 222, 258, 150, 104, "home");
+  bigKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", 392, 258, 152, 104, "ruler");
 
   card(52, 392, 492, 330);
   text("Ø GU Kosten pro Wohnung nach Gewerk", 68, 420, 15, "bold", navy);
@@ -5985,11 +6022,11 @@ async function exportObjectReport(
   });
   footer(2);
 
-  downloadBlob(pdf.output("blob"), `Objektbericht_${sanitizeDownloadName(firstKnown(object.objectName, object.objectNumber, object.address, "Objekt"))}.pdf`);
+  downloadBlob(pdf.output("blob"), `Objektbericht_${sanitizeDownloadName(firstKnown(object.objectName, object.objectNumber, object.address, "Objekt"))}.pdf`, "application/pdf");
 }
 
-function downloadBlob(blob: Blob, fileName: string): void {
-  const pdfBlob = blob.type ? blob : new Blob([blob], { type: "application/pdf" });
+function downloadBlob(blob: Blob, fileName: string, fallbackType?: string): void {
+  const pdfBlob = blob.type || !fallbackType ? blob : new Blob([blob], { type: fallbackType });
   const url = URL.createObjectURL(pdfBlob);
   const link = document.createElement("a");
   link.href = url;
@@ -5999,6 +6036,22 @@ function downloadBlob(blob: Blob, fileName: string): void {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function loadImageDataUrl(src: string): Promise<string | null> {
+  try {
+    const response = await fetch(src);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
 }
 
 function sanitizeDownloadName(value: string): string {
