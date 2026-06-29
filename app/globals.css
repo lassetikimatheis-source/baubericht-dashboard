@@ -2409,6 +2409,13 @@ select {
   gap: 10px;
 }
 
+.imageGalleryItem {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+
 .imageGallerySections {
   display: grid;
   gap: 18px;
@@ -2431,6 +2438,24 @@ select {
   padding: 0;
 }
 
+.imageActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.imageActions button {
+  min-height: 32px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.imageActions .dangerButton {
+  border-color: #f2b7ad;
+  color: #9f2f22;
+}
+
 .objectImageGrid img,
 .imageLightboxButton img {
   width: 100%;
@@ -2440,11 +2465,11 @@ select {
   object-fit: cover;
 }
 
-.objectImageGrid .imageLightboxButton:first-child {
+.objectImageGrid .imageGalleryItem:first-child {
   grid-column: 1 / -1;
 }
 
-.objectImageGrid .imageLightboxButton:first-child img {
+.objectImageGrid .imageGalleryItem:first-child img {
   aspect-ratio: 16 / 9;
 }
 

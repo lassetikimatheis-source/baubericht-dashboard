@@ -742,6 +742,26 @@ export function AnalysisDashboard() {
     setSelectedDocumentId(null);
   }
 
+  function removeObjectImage(objectId: string, imageIndex: number) {
+    setObjectImages((current) => {
+      const images = current[objectId] ?? [];
+      const imageToRemove = images[imageIndex];
+      if (!imageToRemove) return current;
+      if (imageToRemove.startsWith("blob:")) URL.revokeObjectURL(imageToRemove);
+      return { ...current, [objectId]: images.filter((_, index) => index !== imageIndex) };
+    });
+  }
+
+  function moveObjectImage(objectId: string, imageIndex: number, direction: -1 | 1) {
+    setObjectImages((current) => {
+      const images = [...(current[objectId] ?? [])];
+      const nextIndex = imageIndex + direction;
+      if (!images[imageIndex] || nextIndex < 0 || nextIndex >= images.length) return current;
+      [images[imageIndex], images[nextIndex]] = [images[nextIndex], images[imageIndex]];
+      return { ...current, [objectId]: images };
+    });
+  }
+
   function assignDocument(documentId: string, projectId: string | null) {
     setAssignments((current) => {
       const next = { ...current, [documentId]: projectId };
@@ -865,6 +885,8 @@ export function AnalysisDashboard() {
                   const urls = Array.from(files).map((file) => URL.createObjectURL(file));
                   setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
                 }}
+                onRemoveObjectImage={removeObjectImage}
+                onMoveObjectImage={moveObjectImage}
                 onSelectDocument={setSelectedDocumentId}
                 onOpenObject={openObjectDetail}
               />
@@ -1849,6 +1871,8 @@ function ObjectsView({
   onUpdateEntrance,
   onUpdateDocument,
   onAddObjectImages,
+  onRemoveObjectImage,
+  onMoveObjectImage,
   onSelectDocument,
   onOpenObject
 }: {
@@ -1871,6 +1895,8 @@ function ObjectsView({
   onUpdateEntrance: (id: string, field: keyof EntranceRecord, value: string) => void;
   onUpdateDocument: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
   onAddObjectImages: (id: string, files: FileList) => void;
+  onRemoveObjectImage: (id: string, imageIndex: number) => void;
+  onMoveObjectImage: (id: string, imageIndex: number, direction: -1 | 1) => void;
   onSelectDocument: (id: string) => void;
   onOpenObject: (id: string) => void;
 }) {
@@ -1983,6 +2009,8 @@ function ObjectsView({
                   images={objectImages[selectedObject.id] ?? []}
                   onUpdateObject={(field, value) => onUpdateObject(selectedObject.id, field, value)}
                   onAddImages={(files) => onAddObjectImages(selectedObject.id, files)}
+                  onRemoveImage={(imageIndex) => onRemoveObjectImage(selectedObject.id, imageIndex)}
+                  onMoveImage={(imageIndex, direction) => onMoveObjectImage(selectedObject.id, imageIndex, direction)}
                 />
               ) : null}
               {activeTab === "entrances" ? (
@@ -2019,6 +2047,8 @@ function ObjectsView({
                 <ObjectImageUpload
                   images={objectImages[selectedObject.id] ?? []}
                   onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
+                  onRemove={(imageIndex) => onRemoveObjectImage(selectedObject.id, imageIndex)}
+                  onMove={(imageIndex, direction) => onMoveObjectImage(selectedObject.id, imageIndex, direction)}
                 />
               ) : null}
               {activeTab === "apartments" ? <ObjectApartmentsTab documents={selectedCostDocuments} /> : null}
@@ -2131,7 +2161,9 @@ function ObjectOverviewTab({
   projects,
   images,
   onUpdateObject,
-  onAddImages
+  onAddImages,
+  onRemoveImage,
+  onMoveImage
 }: {
   object: ObjectRecord;
   documents: ObjectAnalysis[];
@@ -2139,6 +2171,8 @@ function ObjectOverviewTab({
   images: string[];
   onUpdateObject: (field: keyof ObjectRecord, value: string) => void;
   onAddImages: (files: FileList) => void;
+  onRemoveImage: (imageIndex: number) => void;
+  onMoveImage: (imageIndex: number, direction: -1 | 1) => void;
 }) {
   const rows = buildMeasureRows(documents);
   const totalGross = sumValues(rows.map((row) => row.grossCost));
@@ -2154,7 +2188,7 @@ function ObjectOverviewTab({
 
   return (
     <div className="objectOverviewBoard">
-      <ObjectImageUpload images={images} onAdd={onAddImages} />
+      <ObjectImageUpload images={images} onAdd={onAddImages} onRemove={onRemoveImage} onMove={onMoveImage} />
       <section className="panel objectFormPanel">
         <div className="panelHeader compactHeader">
           <div>
@@ -3012,7 +3046,17 @@ function DetectedObjectImages({ images, onAdd }: { images: string[]; onAdd: (fil
   );
 }
 
-function ObjectImageUpload({ images, onAdd }: { images: string[]; onAdd: (files: FileList) => void }) {
+function ObjectImageUpload({
+  images,
+  onAdd,
+  onRemove,
+  onMove
+}: {
+  images: string[];
+  onAdd: (files: FileList) => void;
+  onRemove: (imageIndex: number) => void;
+  onMove: (imageIndex: number, direction: -1 | 1) => void;
+}) {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   return (
     <section className="objectImagesPanel">
@@ -3041,16 +3085,31 @@ function ObjectImageUpload({ images, onAdd }: { images: string[]; onAdd: (files:
       ) : (
         <div className="imageGallerySections">
           {(["Vor Sanierung", "Waehrend Sanierung", "Nach Sanierung"] as const).map((section, sectionIndex) => {
-            const sectionImages = images.filter((_, index) => index % 3 === sectionIndex);
+            const sectionImages = images
+              .map((image, imageIndex) => ({ image, imageIndex }))
+              .filter(({ imageIndex }) => imageIndex % 3 === sectionIndex);
             return (
               <section key={section} className="imageGallerySection">
                 <h4>{section}</h4>
                 {sectionImages.length === 0 ? <p className="muted">k.A.</p> : (
                   <div className="objectImageGrid">
-                    {sectionImages.map((image, index) => (
-                      <button className="imageLightboxButton" type="button" key={`${image}-${index}`} onClick={() => setLightboxImage(image)}>
-                        <img src={image} alt={`${section} ${index + 1}`} />
-                      </button>
+                    {sectionImages.map(({ image, imageIndex }, index) => (
+                      <figure className="imageGalleryItem" key={`${image}-${imageIndex}`}>
+                        <button className="imageLightboxButton" type="button" onClick={() => setLightboxImage(image)}>
+                          <img src={image} alt={`${section} ${index + 1}`} />
+                        </button>
+                        <figcaption className="imageActions">
+                          <button type="button" onClick={() => onMove(imageIndex, -1)} disabled={imageIndex === 0} aria-label="Bild nach links verschieben">
+                            Zurueck
+                          </button>
+                          <button type="button" onClick={() => onMove(imageIndex, 1)} disabled={imageIndex === images.length - 1} aria-label="Bild nach rechts verschieben">
+                            Vor
+                          </button>
+                          <button type="button" className="dangerButton" onClick={() => onRemove(imageIndex)}>
+                            Loeschen
+                          </button>
+                        </figcaption>
+                      </figure>
                     ))}
                   </div>
                 )}
