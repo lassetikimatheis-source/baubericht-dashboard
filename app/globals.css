@@ -1522,6 +1522,22 @@ tbody tr:hover,
   background: #fff7f5;
 }
 
+.asbestosDebugPanel {
+  display: grid;
+  gap: 10px;
+}
+
+.asbestosDebugPanel p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.asbestosDebugList {
+  display: grid;
+  gap: 10px;
+}
+
 .editorPanel .editForm {
   grid-template-columns: 1fr;
 }

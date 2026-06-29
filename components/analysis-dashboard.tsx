@@ -107,6 +107,27 @@ interface DataTransferStatus {
   summary: AppDataSummary | null;
   kind: "idle" | "success" | "error";
 }
+
+interface AsbestosDebugHit {
+  storageArea: string;
+  fieldPath: string;
+  snippet: string;
+  amount: number | null;
+  documentId: string | null;
+  documentName: string;
+  objectLabel: string;
+  currentTrades: string;
+  assignedTrade: string;
+  displayReason: string;
+}
+
+interface AsbestosDebugReport {
+  status: "idle" | "success" | "warning" | "error";
+  message: string;
+  found: boolean;
+  hits: AsbestosDebugHit[];
+  fixedDocuments: number;
+}
 interface ObjectPageFilters {
   year: string;
   trade: string;
@@ -405,6 +426,13 @@ export function AnalysisDashboard() {
     summary: null,
     kind: "idle"
   });
+  const [asbestosDebugReport, setAsbestosDebugReport] = useState<AsbestosDebugReport>({
+    status: "idle",
+    message: "",
+    found: false,
+    hits: [],
+    fixedDocuments: 0
+  });
 
   function loadStoredData() {
     const storedObjects = getObjects();
@@ -658,6 +686,64 @@ export function AnalysisDashboard() {
         kind: "error",
         message: error instanceof Error ? error.message : "Import fehlgeschlagen.",
         summary: null
+      });
+    }
+  }
+
+  function runAsbestosDebug() {
+    try {
+      const storedObjects = getObjects();
+      const storedEntrances = getEntrances();
+      const storedProjects = getProjects();
+      const storedDocuments = getDocuments();
+      const storedAssignments = getAssignments();
+      const hits = findAsbestosStorageHits({
+        objects: storedObjects,
+        entrances: storedEntrances,
+        projects: storedProjects,
+        documents: storedDocuments,
+        assignments: storedAssignments
+      });
+
+      if (!hits.length) {
+        setAsbestosDebugReport({
+          status: "warning",
+          message: "Asbestsanierung wurde in den gespeicherten Daten nicht gefunden. Das Originaldokument muss erneut hochgeladen werden.",
+          found: false,
+          hits: [],
+          fixedDocuments: 0
+        });
+        return;
+      }
+
+      let fixedDocuments = 0;
+      const nextDocuments = storedDocuments.map((document) => {
+        const documentHits = hits.filter((hit) => hit.documentId === document.id);
+        if (!documentHits.length) return document;
+        const fixed = ensureAsbestosDebugMeasure(document, documentHits[0]);
+        if (getDocumentComparisonFingerprint(fixed) !== getDocumentComparisonFingerprint(document)) fixedDocuments += 1;
+        return fixed;
+      });
+
+      nextDocuments.forEach(saveDocument);
+      setAnalysis(buildAnalysisFromDocuments(nextDocuments, analysis));
+      setSelectedDocumentId(nextDocuments.find((document) => hits.some((hit) => hit.documentId === document.id))?.id ?? selectedDocumentId);
+      setAsbestosDebugReport({
+        status: "success",
+        message: fixedDocuments > 0
+          ? "Asbest-Debug abgeschlossen. Sichtbare Maßnahme wurde ergänzt."
+          : "Asbest-Debug abgeschlossen. Treffer gefunden, Maßnahme war bereits vorhanden oder lag nicht in Dokumentdaten.",
+        found: true,
+        hits: refreshAsbestosHitReasons(hits, nextDocuments),
+        fixedDocuments
+      });
+    } catch (error) {
+      setAsbestosDebugReport({
+        status: "error",
+        message: error instanceof Error ? error.message : "Asbest-Debug fehlgeschlagen.",
+        found: false,
+        hits: [],
+        fixedDocuments: 0
       });
     }
   }
@@ -1132,7 +1218,9 @@ export function AnalysisDashboard() {
               <SettingsView
                 progress={reanalysisProgress}
                 dataTransferStatus={dataTransferStatus}
+                asbestosDebugReport={asbestosDebugReport}
                 onReanalyzeAll={reanalyzeAllObjects}
+                onRunAsbestosDebug={runAsbestosDebug}
                 onExportData={exportAppData}
                 onImportData={importAppData}
               />
@@ -3831,13 +3919,17 @@ function ReportsView({
 function SettingsView({
   progress,
   dataTransferStatus,
+  asbestosDebugReport,
   onReanalyzeAll,
+  onRunAsbestosDebug,
   onExportData,
   onImportData
 }: {
   progress: ReanalysisProgress;
   dataTransferStatus: DataTransferStatus;
+  asbestosDebugReport: AsbestosDebugReport;
   onReanalyzeAll: () => Promise<void>;
+  onRunAsbestosDebug: () => void;
   onExportData: () => void;
   onImportData: (file: File) => Promise<void>;
 }) {
@@ -3873,6 +3965,7 @@ function SettingsView({
             <p>Alle lokal gespeicherten Objekte, Dokumente, Projekte und Zuordnungen als JSON sichern oder in diese Umgebung importieren.</p>
           </div>
           <div className="headerActions">
+            <button type="button" onClick={onRunAsbestosDebug}>Asbest-Debug ausführen</button>
             <button type="button" onClick={onExportData}>Daten sichern</button>
             <label className="imageUploadButton">
               Daten wiederherstellen
@@ -3893,6 +3986,7 @@ function SettingsView({
           kind={dataTransferStatus.kind}
           summary={dataTransferStatus.summary ?? currentSummary}
         />
+        <AsbestosDebugReportView report={asbestosDebugReport} />
       </div>
       <div className="settingsGrid">
         <div className="metric"><span>KI-Agent</span><strong>PARIBUS Baukosten KI</strong><small>Dokument verstehen, Stammdatenabgleich vorbereiten, Confidence bewerten, Nutzerentscheidung offen lassen.</small></div>
@@ -3941,6 +4035,46 @@ function DataTransferSummaryView({
         <span>Projekte: {formatNumber(summary.projects)}</span>
         <span>Zuordnungen: {formatNumber(summary.assignments)}</span>
       </div>
+    </div>
+  );
+}
+
+function AsbestosDebugReportView({ report }: { report: AsbestosDebugReport }) {
+  if (report.status === "idle") return null;
+  return (
+    <div className={`asbestosDebugPanel ${report.status === "error" ? "dataTransferError" : ""}`}>
+      <div className="progressHeader">
+        <strong>Asbest-Debug</strong>
+        <span>Gefunden: {report.found ? "Ja" : "Nein"}</span>
+      </div>
+      <p>{report.message}</p>
+      <div className="dataTransferSummary">
+        <div>
+          <span>Treffer: {formatNumber(report.hits.length)}</span>
+          <span>Korrigierte Dokumente: {formatNumber(report.fixedDocuments)}</span>
+        </div>
+      </div>
+      {report.hits.length ? (
+        <div className="asbestosDebugList">
+          {report.hits.map((hit, index) => (
+            <article className="previewItem" key={`${hit.storageArea}-${hit.fieldPath}-${index}`}>
+              <div className="previewHeader">
+                <strong>{hit.objectLabel}</strong>
+                <span className="status statusNeutral">{hit.storageArea}</span>
+              </div>
+              <div className="uploadExtractSummary">
+                <InfoLine label="Dokument" value={hit.documentName} />
+                <InfoLine label="Feldpfad" value={hit.fieldPath} />
+                <InfoLine label="Erkannter Betrag" value={hit.amount === null ? "Betrag unklar" : formatNullableCurrency(hit.amount)} />
+                <InfoLine label="Aktuelle Gewerke" value={hit.currentTrades} />
+                <InfoLine label="Zugeordnetes Gewerk" value={hit.assignedTrade} />
+                <InfoLine label="Grund" value={hit.displayReason} />
+              </div>
+              <pre>{hit.snippet}</pre>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -4737,6 +4871,153 @@ function ensureRequiredAsbestosMeasure(document: ObjectAnalysis): ObjectAnalysis
       }
     ]
   };
+}
+
+function ensureAsbestosDebugMeasure(document: ObjectAnalysis, hit: AsbestosDebugHit): ObjectAnalysis {
+  const hasMeasure = [
+    ...document.clusters.map((cluster) => normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description))),
+    ...(document.measureDetails ?? []).map((detail) => normalizeTradeCluster(detail.cluster, detail.beschreibung))
+  ].includes("Schadstoffsanierung / Asbest");
+  if (hasMeasure) return document;
+
+  const source = { documentId: document.id, fileName: hit.documentName, method: "Berechnung" as const, textSnippet: hit.snippet, confidence: 1 };
+  return {
+    ...document,
+    clusters: [
+      ...document.clusters,
+      {
+        id: `${document.id}-asbest-debug`,
+        cluster: { value: "Schadstoffsanierung / Asbest", sources: [source], confidence: 1 },
+        description: { value: "Asbestsanierung", sources: [source], confidence: 1 },
+        totalCost: hit.amount === null ? emptyField<number>() : { value: hit.amount, sources: [source], confidence: 1 },
+        allocation: emptyField<CostAllocation>(),
+        sourceDocumentId: document.id
+      }
+    ],
+    measureDetails: [
+      ...(document.measureDetails ?? []),
+      {
+        abschnitt: "Asbestsanierung",
+        cluster: "Schadstoffsanierung / Asbest",
+        summe: hit.amount,
+        beschreibung: "Asbestsanierung",
+        quelle: hit.snippet
+      }
+    ]
+  };
+}
+
+function findAsbestosStorageHits(data: {
+  objects: ObjectRecord[];
+  entrances: EntranceRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+  assignments: Record<string, string | null>;
+}): AsbestosDebugHit[] {
+  const hits: AsbestosDebugHit[] = [];
+  const documentByPath = new Map<string, ObjectAnalysis>();
+  data.documents.forEach((document, index) => {
+    documentByPath.set(`documents[${index}]`, document);
+  });
+
+  (Object.entries(data) as Array<[string, unknown]>).forEach(([storageArea, value]) => {
+    walkStoredValue(value, storageArea, (path, text) => {
+      const match = matchRequiredAsbestosText(text);
+      if (!match) return;
+      const document = findDocumentForPath(path, documentByPath);
+      const amount = match.amount ?? extractAmountNearAsbestos(text);
+      const object = document ? findObjectForDocument(document, data.objects) : null;
+      const currentTrades = document ? formatClusters(document) : "k.A.";
+      const hasVisibleMeasure = document
+        ? getDocumentTradeNames(document).map((name) => normalizeTradeCluster(name, name)).includes("Schadstoffsanierung / Asbest")
+        : false;
+      hits.push({
+        storageArea,
+        fieldPath: path,
+        snippet: buildTextSnippet(text, match.raw),
+        amount,
+        documentId: document?.id ?? null,
+        documentName: document ? getDocumentDisplayName(document) : "Kein Dokumentfeld",
+        objectLabel: object ? objectLabel(object) : document ? fieldOrUnknown(document.objectNumber) : "Nicht zugeordnet",
+        currentTrades,
+        assignedTrade: hasVisibleMeasure ? "Schadstoffsanierung / Asbest" : "Noch nicht als Maßnahme sichtbar",
+        displayReason: document
+          ? hasVisibleMeasure
+            ? "Maßnahme ist bereits im Dokument sichtbar."
+            : "Treffer lag in gespeicherten Dokumentdaten, aber es existierte noch kein sichtbarer Maßnahmenblock."
+          : "Treffer liegt nicht in den gespeicherten Dokumentdaten und kann keinem Dokument automatisch hinzugefügt werden."
+      });
+    });
+  });
+
+  return hits;
+}
+
+function refreshAsbestosHitReasons(hits: AsbestosDebugHit[], documents: ObjectAnalysis[]): AsbestosDebugHit[] {
+  const byId = new Map(documents.map((document) => [document.id, document]));
+  return hits.map((hit) => {
+    if (!hit.documentId) return hit;
+    const document = byId.get(hit.documentId);
+    if (!document) return hit;
+    const hasVisibleMeasure = getDocumentTradeNames(document)
+      .map((name) => normalizeTradeCluster(name, name))
+      .includes("Schadstoffsanierung / Asbest");
+    return {
+      ...hit,
+      currentTrades: formatClusters(document),
+      assignedTrade: hasVisibleMeasure ? "Schadstoffsanierung / Asbest" : hit.assignedTrade,
+      displayReason: hasVisibleMeasure
+        ? "Maßnahme ist jetzt sichtbar."
+        : hit.displayReason
+    };
+  });
+}
+
+function walkStoredValue(value: unknown, path: string, onText: (path: string, text: string) => void): void {
+  if (typeof value === "string") {
+    onText(path, value);
+    return;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => walkStoredValue(entry, `${path}[${index}]`, onText));
+    return;
+  }
+  if (typeof value === "object") {
+    Object.entries(value as Record<string, unknown>).forEach(([key, entry]) => {
+      walkStoredValue(entry, `${path}.${key}`, onText);
+    });
+  }
+}
+
+function findDocumentForPath(path: string, documents: Map<string, ObjectAnalysis>): ObjectAnalysis | null {
+  const match = path.match(/^documents\[(\d+)\]/);
+  if (!match) return null;
+  return documents.get(`documents[${match[1]}]`) ?? null;
+}
+
+function findObjectForDocument(document: ObjectAnalysis, objects: ObjectRecord[]): ObjectRecord | null {
+  const objectNumber = fieldOrUnknown(document.objectNumber);
+  const address = fieldOrUnknown(document.objectAddress);
+  return objects.find((object) =>
+    (objectNumber !== "k.A." && object.objectNumber === objectNumber) ||
+    (address !== "k.A." && object.address === address)
+  ) ?? null;
+}
+
+function buildTextSnippet(text: string, raw: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const index = normalized.toLowerCase().indexOf(raw.toLowerCase());
+  if (index < 0) return normalized.slice(0, 260);
+  const start = Math.max(index - 120, 0);
+  const end = Math.min(index + raw.length + 140, normalized.length);
+  return `${start > 0 ? "... " : ""}${normalized.slice(start, end)}${end < normalized.length ? " ..." : ""}`;
+}
+
+function extractAmountNearAsbestos(text: string): number | null {
+  const snippet = buildTextSnippet(text, "Asbest");
+  const match = snippet.match(/([\d.]+,\d{2})/);
+  return parseGermanNumber(match?.[1] ?? "") ?? null;
 }
 
 interface RequiredAsbestosBlockMatch {
