@@ -22,6 +22,7 @@ import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
 import { normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
+  createAnalysisBackup,
   deleteDocument as deleteStoredDocument,
   deleteEntrance as deleteStoredEntrance,
   deleteObject as deleteStoredObject,
@@ -31,6 +32,8 @@ import {
   getEntrances,
   getObjects,
   getProjects,
+  exportAppDataBackup,
+  importAppDataBackup,
   saveAssignments,
   saveDocument,
   saveEntrance,
@@ -40,6 +43,10 @@ import {
   updateEntrance as updateStoredEntrance,
   updateObject as updateStoredObject,
   updateProject as updateStoredProject,
+  summarizeAppDataBackup,
+  summarizeAppDataBackupForImport,
+  summarizeCurrentAppData,
+  type AppDataSummary,
   type StoredEntranceRecord,
   type StoredObjectRecord,
   type StoredProjectRecord
@@ -69,6 +76,31 @@ type CostBasisMode =
   | "finalOnly"
   | "withoutProgress"
   | "manual";
+type ReanalysisStatus = "idle" | "running" | "done" | "error";
+
+interface ReanalysisSummary {
+  backupId: string | null;
+  objectCount: number;
+  documentCount: number;
+  documentTypes: Record<string, number>;
+  totalCost: number | null;
+  unclearCount: number;
+  errors: string[];
+}
+
+interface ReanalysisProgress {
+  status: ReanalysisStatus;
+  current: number;
+  total: number;
+  message: string;
+  summary: ReanalysisSummary | null;
+}
+
+interface DataTransferStatus {
+  message: string;
+  summary: AppDataSummary | null;
+  kind: "idle" | "success" | "error";
+}
 interface ObjectPageFilters {
   year: string;
   trade: string;
@@ -353,8 +385,20 @@ export function AnalysisDashboard() {
   const [uploadSourceDocuments, setUploadSourceDocuments] = useState<SourceDocument[]>([]);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const [uploadedFileName, setUploadedFileName] = useState("");
+  const [reanalysisProgress, setReanalysisProgress] = useState<ReanalysisProgress>({
+    status: "idle",
+    current: 0,
+    total: 0,
+    message: "",
+    summary: null
+  });
+  const [dataTransferStatus, setDataTransferStatus] = useState<DataTransferStatus>({
+    message: "",
+    summary: null,
+    kind: "idle"
+  });
 
-  useEffect(() => {
+  function loadStoredData() {
     const storedObjects = getObjects();
     const storedEntrances = getEntrances();
     const storedProjects = getProjects();
@@ -369,6 +413,10 @@ export function AnalysisDashboard() {
     setSelectedObjectId(storedObjects[0]?.id ?? null);
     setSelectedProjectId(storedProjects[0]?.id ?? null);
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
+  }
+
+  useEffect(() => {
+    loadStoredData();
   }, []);
 
   useEffect(() => {
@@ -408,9 +456,10 @@ export function AnalysisDashboard() {
     : [];
 
   const kpis = useMemo<KpiShape>(() => {
-    const gross = sumValues(filteredDocuments.map((document) => document.totalCost.value));
-    const net = sumValues(filteredDocuments.map((document) => document.netCost.value));
-    const apartments = sumValues(filteredDocuments.map((document) => document.renovatedApartmentCount.value));
+    const costDocuments = selectEffectiveCostDocuments(filteredDocuments);
+    const gross = sumValues(costDocuments.map((document) => document.totalCost.value));
+    const net = sumValues(costDocuments.map((document) => document.netCost.value));
+    const apartments = sumValues(costDocuments.map((document) => document.renovatedApartmentCount.value));
     const area = sumValues(objects.map((object) => parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "")));
     const hasActiveFilters = hasFilters(filters);
     const projectCount = hasActiveFilters
@@ -549,6 +598,60 @@ export function AnalysisDashboard() {
 
     const blob = await response.blob();
     downloadBlob(blob, type === "excel" ? "paribus-baukosten-analyse.xlsx" : "Deckblatt_Portfolio.pdf");
+  }
+
+  function exportAppData() {
+    try {
+      const backup = exportAppDataBackup();
+      const summary = summarizeAppDataBackup(backup);
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      downloadBlob(blob, `paribus-baukosten-backup-${formatBackupTimestamp(new Date())}.json`, "application/json");
+      setDataTransferStatus({
+        kind: "success",
+        message: "Datensicherung wurde erstellt.",
+        summary
+      });
+    } catch (error) {
+      setDataTransferStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Datensicherung fehlgeschlagen.",
+        summary: null
+      });
+    }
+  }
+
+  async function importAppData(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const preview = summarizeAppDataBackupForImport(parsed);
+      const confirmed = window.confirm(
+        `Dieser Import ersetzt die aktuell gespeicherten Daten in dieser Umgebung.\n\n` +
+        `Import-Inhalt:\n` +
+        `Objekte: ${preview.objects}\n` +
+        `Dokumente: ${preview.documents}\n` +
+        `Projekte: ${preview.projects}\n` +
+        `Zuordnungen: ${preview.assignments}\n\n` +
+        `Vor dem Import wird automatisch ein Backup der aktuellen Daten erstellt. Fortfahren?`
+      );
+      if (!confirmed) {
+        setDataTransferStatus({ kind: "idle", message: "Import abgebrochen.", summary: null });
+        return;
+      }
+
+      const summary = importAppDataBackup(parsed);
+      loadStoredData();
+      setDataTransferStatus({
+        kind: "success",
+        message: "Daten wurden erfolgreich wiederhergestellt.",
+        summary
+      });
+    } catch (error) {
+      setDataTransferStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Import fehlgeschlagen.",
+        summary: null
+      });
+    }
   }
 
   function createObject(seed?: ObjectAnalysis) {
@@ -780,6 +883,70 @@ export function AnalysisDashboard() {
     }
   }
 
+  async function reanalyzeAllObjects() {
+    const storedDocuments = getDocuments();
+    const storedObjects = getObjects();
+    const total = storedDocuments.length;
+    setReanalysisProgress({
+      status: "running",
+      current: 0,
+      total,
+      message: "Backup wird erstellt...",
+      summary: null
+    });
+
+    try {
+      const backupId = createAnalysisBackup();
+      const nextDocuments: ObjectAnalysis[] = [];
+      const errors: string[] = [];
+
+      for (let index = 0; index < storedDocuments.length; index += 1) {
+        const document = storedDocuments[index];
+        setReanalysisProgress((current) => ({
+          ...current,
+          current: index,
+          message: `${fieldOrUnknown(document.documentType)} / ${document.sourceDocumentIds?.[0] ?? document.id} wird neu bewertet...`
+        }));
+        try {
+          nextDocuments.push(reanalyzeStoredDocument(document));
+        } catch (error) {
+          errors.push(`${document.id}: ${error instanceof Error ? error.message : "Unbekannter Fehler"}`);
+          nextDocuments.push(document);
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
+
+      nextDocuments.forEach(saveDocument);
+      const nextAssignments = autoAssignDocuments(nextDocuments, projects, assignments);
+      saveAssignments(nextAssignments);
+      const nextAnalysis = buildAnalysisFromDocuments(nextDocuments, analysis);
+      const summary = buildReanalysisSummary({
+        backupId,
+        objects: storedObjects,
+        documents: nextDocuments,
+        errors
+      });
+
+      setAssignments(nextAssignments);
+      setAnalysis(nextAnalysis);
+      setSelectedDocumentId(nextDocuments[0]?.id ?? null);
+      setReanalysisProgress({
+        status: errors.length ? "error" : "done",
+        current: total,
+        total,
+        message: errors.length ? "Neuauswertung mit Hinweisen abgeschlossen." : "Neuauswertung abgeschlossen.",
+        summary
+      });
+      setMessage(`Neuauswertung abgeschlossen: ${formatNumber(summary.documentCount)} Dokument(e), ${formatNumber(summary.objectCount)} Objekt(e).`);
+    } catch (error) {
+      setReanalysisProgress((current) => ({
+        ...current,
+        status: "error",
+        message: error instanceof Error ? error.message : "Neuauswertung fehlgeschlagen."
+      }));
+    }
+  }
+
   const pageTitle = getPageTitle(view);
   const showDocumentEditor = view === "projects" || view === "unassigned" || view === "reports" || view === "settings";
   const showUploadPanel = view === "upload";
@@ -952,7 +1119,13 @@ export function AnalysisDashboard() {
               ) : null}
 
               {view === "settings" ? (
-              <SettingsView />
+              <SettingsView
+                progress={reanalysisProgress}
+                dataTransferStatus={dataTransferStatus}
+                onReanalyzeAll={reanalyzeAllObjects}
+                onExportData={exportAppData}
+                onImportData={importAppData}
+              />
               ) : null}
             </div>
 
@@ -3645,7 +3818,21 @@ function ReportsView({
   );
 }
 
-function SettingsView() {
+function SettingsView({
+  progress,
+  dataTransferStatus,
+  onReanalyzeAll,
+  onExportData,
+  onImportData
+}: {
+  progress: ReanalysisProgress;
+  dataTransferStatus: DataTransferStatus;
+  onReanalyzeAll: () => Promise<void>;
+  onExportData: () => void;
+  onImportData: (file: File) => Promise<void>;
+}) {
+  const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const currentSummary = summarizeCurrentAppData();
   return (
     <section className="panel">
       <div className="panelHeader">
@@ -3653,6 +3840,49 @@ function SettingsView() {
           <h2>Einstellungen</h2>
           <p>OpenAI API-Key und Analyse-Regeln werden über Server-Umgebung und Backend gesteuert.</p>
         </div>
+        <button className="buttonPrimary" type="button" onClick={onReanalyzeAll} disabled={progress.status === "running"}>
+          {progress.status === "running" ? "Neuauswertung laeuft..." : "Alle Objekte neu auswerten"}
+        </button>
+      </div>
+      {progress.status !== "idle" ? (
+        <div className="reanalysisPanel">
+          <div className="progressHeader">
+            <strong>{progress.message}</strong>
+            <span>{formatNumber(progress.current)} / {formatNumber(progress.total)} Dokumente</span>
+          </div>
+          <div className="progressTrack" aria-label="Fortschritt Neuauswertung">
+            <span style={{ width: `${percent}%` }} />
+          </div>
+          {progress.summary ? <ReanalysisSummaryView summary={progress.summary} /> : null}
+        </div>
+      ) : null}
+      <div className="dataBackupPanel">
+        <div className="panelHeader compactHeader">
+          <div>
+            <h3>Datensicherung &amp; Wiederherstellung</h3>
+            <p>Alle lokal gespeicherten Objekte, Dokumente, Projekte und Zuordnungen als JSON sichern oder in diese Umgebung importieren.</p>
+          </div>
+          <div className="headerActions">
+            <button type="button" onClick={onExportData}>Daten sichern</button>
+            <label className="imageUploadButton">
+              Daten wiederherstellen
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void onImportData(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+          </div>
+        </div>
+        <DataTransferSummaryView
+          title={dataTransferStatus.message || "Aktuell gespeicherte Daten"}
+          kind={dataTransferStatus.kind}
+          summary={dataTransferStatus.summary ?? currentSummary}
+        />
       </div>
       <div className="settingsGrid">
         <div className="metric"><span>KI-Agent</span><strong>PARIBUS Baukosten KI</strong><small>Dokument verstehen, Stammdatenabgleich vorbereiten, Confidence bewerten, Nutzerentscheidung offen lassen.</small></div>
@@ -3661,6 +3891,43 @@ function SettingsView() {
         <div className="metric"><span>Summen</span><strong>Regex, Tabellenanalyse, KI-Prüfung</strong><small>Mehrere Summen werden im Debug erklärt.</small></div>
       </div>
     </section>
+  );
+}
+
+function ReanalysisSummaryView({ summary }: { summary: ReanalysisSummary }) {
+  const documentTypes = Object.entries(summary.documentTypes);
+  return (
+    <div className="reanalysisSummary">
+      <div className="metric"><span>Backup</span><strong>{summary.backupId ?? "k.A."}</strong><small>Vor der Neuauswertung im Browser-Speicher abgelegt.</small></div>
+      <div className="metric"><span>Objekte</span><strong>{formatNumber(summary.objectCount)}</strong><small>Stammdaten wurden nicht geloescht.</small></div>
+      <div className="metric"><span>Dokumente</span><strong>{formatNumber(summary.documentCount)}</strong><small>Alle gespeicherten Auswertungen neu synchronisiert.</small></div>
+      <div className="metric"><span>Gesamtkosten</span><strong>{formatNullableCurrency(summary.totalCost)}</strong><small>Abschlaege werden bei vorhandener Schlussrechnung nicht doppelt addiert.</small></div>
+      <div className="metric"><span>Unklare Gewerke</span><strong>{formatNumber(summary.unclearCount)}</strong><small>Diese Positionen bleiben manuell korrigierbar.</small></div>
+      <div className="metric"><span>Fehler</span><strong>{formatNumber(summary.errors.length)}</strong><small>{summary.errors[0] ?? "Keine Fehler gemeldet."}</small></div>
+      <div className="metric reanalysisTypes"><span>Dokumentarten</span><strong>{formatNumber(documentTypes.length)}</strong><small>{documentTypes.map(([type, count]) => `${type}: ${count}`).join(" | ") || "k.A."}</small></div>
+    </div>
+  );
+}
+
+function DataTransferSummaryView({
+  title,
+  kind,
+  summary
+}: {
+  title: string;
+  kind: DataTransferStatus["kind"];
+  summary: AppDataSummary;
+}) {
+  return (
+    <div className={`dataTransferSummary ${kind === "error" ? "dataTransferError" : ""}`}>
+      <strong>{title}</strong>
+      <div>
+        <span>Objekte: {formatNumber(summary.objects)}</span>
+        <span>Dokumente: {formatNumber(summary.documents)}</span>
+        <span>Projekte: {formatNumber(summary.projects)}</span>
+        <span>Zuordnungen: {formatNumber(summary.assignments)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -4353,7 +4620,7 @@ function buildAnalysisFromDocuments(
   base: PortfolioAnalysisState = emptyAnalysisState
 ): PortfolioAnalysisState {
   const normalizedDocuments = documents.map((document) => normalizeDocumentTrades(document).document);
-  const costDocuments = normalizedDocuments;
+  const costDocuments = selectEffectiveCostDocuments(normalizedDocuments);
   return {
     ...base,
     objects: normalizedDocuments,
@@ -4369,6 +4636,167 @@ function buildAnalysisFromDocuments(
     ),
     reviewRequiredCount: countReviewCases(normalizedDocuments),
     issues: base.issues ?? []
+  };
+}
+
+function selectEffectiveCostDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
+  const groups = new Map<string, ObjectAnalysis[]>();
+  documents.forEach((document) => {
+    const key = firstKnown(
+      fieldOrUnknown(document.objectNumber),
+      fieldOrUnknown(document.objectAddress),
+      fieldOrUnknown(document.assignmentSuggestion),
+      document.sourceDocumentIds?.[0] ?? document.id
+    );
+    groups.set(key, [...(groups.get(key) ?? []), document]);
+  });
+
+  return Array.from(groups.values()).flatMap((group) => {
+    const finalDocuments = group.filter((document) => isFinalInvoiceDocument(document) || isInvoiceDocument(document) || isCreditDocument(document));
+    if (finalDocuments.length > 0) return finalDocuments;
+    const progressDocuments = group.filter(isProgressInvoiceDocument);
+    if (progressDocuments.length > 0) return progressDocuments;
+    const offerDocuments = group.filter((document) => isOfferDocument(document) || isOrderDocument(document));
+    return offerDocuments.length > 0 ? offerDocuments : group;
+  });
+}
+
+function reanalyzeStoredDocument(document: ObjectAnalysis): ObjectAnalysis {
+  const normalized = normalizeDocumentTrades(document).document;
+  const documentType = hasManualSource(normalized.documentType)
+    ? normalized.documentType
+    : calculatedTextField(classifyStoredDocumentType(normalized), normalized.documentType);
+  const tradeUpdate = ensureUnclearTrade(normalized);
+  const withType = {
+    ...normalized,
+    documentType,
+    clusters: tradeUpdate.clusters,
+    measureDetails: tradeUpdate.measureDetails
+  };
+  const gross = withType.totalCost.value;
+  const apartments = withType.renovatedApartmentCount.value;
+  const area = withType.renovatedAreaSqm.value ?? withType.livingAreaSqm.value;
+  return {
+    ...withType,
+    costPerApartment: hasManualSource(withType.costPerApartment)
+      ? withType.costPerApartment
+      : calculatedNumberField(gross !== null && apartments ? roundMoney(gross / apartments) : null, withType.costPerApartment),
+    costPerSqm: hasManualSource(withType.costPerSqm)
+      ? withType.costPerSqm
+      : calculatedNumberField(gross !== null && area ? roundMoney(gross / area) : null, withType.costPerSqm),
+    dataQuality: addReanalysisQuality(withType)
+  };
+}
+
+function ensureUnclearTrade(document: ObjectAnalysis): Pick<ObjectAnalysis, "clusters" | "measureDetails"> {
+  const hasClearCluster = document.clusters.some((cluster) => {
+    const value = fieldOrUnknown(cluster.cluster);
+    return value !== "k.A." && value !== "Sonstige" && value !== "Sonstiges" && value !== "Unklar";
+  });
+  if (hasClearCluster || document.clusters.length > 0) {
+    const clusters = document.clusters.map((cluster) => {
+      const value = fieldOrUnknown(cluster.cluster);
+      if (hasClearCluster && value !== "k.A.") return cluster;
+      return {
+        ...cluster,
+        cluster: calculatedTextField("Unklar", cluster.cluster) as ExtractedField<MeasureCluster>,
+        description: calculatedTextField("Gewerk konnte nicht eindeutig erkannt werden.", cluster.description)
+      };
+    });
+    return { clusters, measureDetails: document.measureDetails };
+  }
+
+  return {
+    clusters: [{
+      id: `${document.id}-unclear-trade`,
+      cluster: calculatedTextField("Unklar", emptyField<MeasureCluster>()) as ExtractedField<MeasureCluster>,
+      description: calculatedTextField("Gewerk konnte nicht eindeutig erkannt werden.", emptyField<string>()),
+      totalCost: calculatedNumberField(document.totalCost.value, emptyField<number>()),
+      allocation: emptyField<CostAllocation>(),
+      sourceDocumentId: document.id
+    }],
+    measureDetails: [
+      ...(document.measureDetails ?? []),
+      {
+        abschnitt: "Unklar",
+        cluster: "Unklar",
+        summe: document.totalCost.value,
+        beschreibung: "Gewerk konnte nicht eindeutig erkannt werden.",
+        quelle: sourceLabel(document.totalCost)
+      }
+    ]
+  };
+}
+
+function classifyStoredDocumentType(document: ObjectAnalysis): string {
+  const haystack = [
+    fieldOrUnknown(document.documentType),
+    fieldOrUnknown(document.documentNumber),
+    fieldOrUnknown(document.measureDescription),
+    fieldOrUnknown(document.projectType),
+    fieldOrUnknown(document.provider),
+    ...(document.costDebug?.matches.map((match) => match.raw) ?? []),
+    ...(document.clusters.flatMap((cluster) => [fieldOrUnknown(cluster.description), cluster.totalCost.sources[0]?.textSnippet ?? ""]) ?? []),
+    ...(document.sourceDocumentIds ?? [])
+  ].join(" ").toLowerCase();
+
+  if (/angebot|kostenvoranschlag|offerte/.test(haystack)) return "Angebot";
+  if (/abschlag|abschlagsrechnung|teilrechnung|teilzahlung|akonto|vorauszahlung/.test(haystack)) return "Abschlagsrechnung";
+  if (/schlussrechnung|schluss\s*rechnung|final/.test(haystack)) return "Schlussrechnung";
+  if (/eingangsrechnung/.test(haystack)) return "Eingangsrechnung";
+  if (/rechnung|invoice|rg\.?\b/.test(haystack)) return "Rechnung";
+  return "Sonstiges Dokument";
+}
+
+function addReanalysisQuality(document: ObjectAnalysis): ExtractedField<string> {
+  if (hasManualSource(document.dataQuality)) return document.dataQuality;
+  const hasUnclearTrade = document.clusters.some((cluster) => fieldOrUnknown(cluster.cluster) === "Unklar");
+  const value = hasUnclearTrade ? "Pruefung erforderlich - Gewerk unklar" : "Neu ausgewertet";
+  return calculatedTextField(value, document.dataQuality);
+}
+
+function calculatedTextField<T extends string>(value: T, previous: ExtractedField<T>): ExtractedField<T> {
+  return {
+    value,
+    sources: previous.sources.length ? previous.sources : [{ documentId: "reanalysis", fileName: "Neuauswertung", method: "Berechnung", confidence: 1 }],
+    confidence: previous.confidence ?? 1
+  };
+}
+
+function calculatedNumberField(value: number | null, previous: ExtractedField<number>): ExtractedField<number> {
+  if (value === null) return emptyField<number>();
+  return {
+    value,
+    sources: previous.sources.length ? previous.sources : [{ documentId: "reanalysis", fileName: "Neuauswertung", method: "Berechnung", confidence: 1 }],
+    confidence: previous.confidence ?? 1
+  };
+}
+
+function buildReanalysisSummary({
+  backupId,
+  objects,
+  documents,
+  errors
+}: {
+  backupId: string | null;
+  objects: ObjectRecord[];
+  documents: ObjectAnalysis[];
+  errors: string[];
+}): ReanalysisSummary {
+  const documentTypes = documents.reduce<Record<string, number>>((accumulator, document) => {
+    const type = documentTypeValue(document);
+    accumulator[type] = (accumulator[type] ?? 0) + 1;
+    return accumulator;
+  }, {});
+  const costDocuments = selectEffectiveCostDocuments(documents);
+  return {
+    backupId,
+    objectCount: objects.length,
+    documentCount: documents.length,
+    documentTypes,
+    totalCost: sumValues(costDocuments.map((document) => document.totalCost.value)),
+    unclearCount: documents.reduce((sum, document) => sum + document.clusters.filter((cluster) => fieldOrUnknown(cluster.cluster) === "Unklar").length, 0),
+    errors
   };
 }
 
@@ -6074,6 +6502,11 @@ function downloadBlob(blob: Blob, fileName: string, fallbackType?: string): void
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function formatBackupTimestamp(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${pad(date.getHours())}-${pad(date.getMinutes())}`;
 }
 
 async function loadImageDataUrl(src: string): Promise<string | null> {

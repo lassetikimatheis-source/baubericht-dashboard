@@ -1426,6 +1426,102 @@ tbody tr:hover,
   gap: 10px;
 }
 
+.reanalysisPanel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.progressHeader span {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.progressTrack {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8edf3;
+}
+
+.progressTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.reanalysisSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reanalysisTypes {
+  grid-column: 1 / -1;
+}
+
+.dataBackupPanel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.dataBackupPanel .imageUploadButton {
+  min-height: 36px;
+}
+
+.dataTransferSummary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.dataTransferSummary strong {
+  color: var(--navy);
+  font-size: 14px;
+}
+
+.dataTransferSummary div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dataTransferSummary span {
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.dataTransferError {
+  border-color: #f2b7ad;
+  background: #fff7f5;
+}
+
 .editorPanel .editForm {
   grid-template-columns: 1fr;
 }

@@ -59,12 +59,33 @@ export interface StoredEntranceRecord {
   updatedAt?: string;
 }
 
+export interface AppDataBackup {
+  version: 1;
+  exportedAt: string;
+  keys: {
+    objects: StoredObjectRecord[];
+    entrances: StoredEntranceRecord[];
+    projects: StoredProjectRecord[];
+    documents: ObjectAnalysis[];
+    assignments: Record<string, string | null>;
+  };
+}
+
+export interface AppDataSummary {
+  objects: number;
+  entrances: number;
+  projects: number;
+  documents: number;
+  assignments: number;
+}
+
 const STORAGE_KEYS = {
   objects: "paribus-baukosten.objects.v1",
   entrances: "paribus-baukosten.entrances.v1",
   projects: "paribus-baukosten.projects.v1",
   documents: "paribus-baukosten.documents.v1",
-  assignments: "paribus-baukosten.assignments.v1"
+  assignments: "paribus-baukosten.assignments.v1",
+  reanalysisBackups: "paribus-baukosten.reanalysis-backups.v1"
 };
 
 export function saveObject(object: StoredObjectRecord): StoredObjectRecord {
@@ -167,6 +188,98 @@ export function saveAssignments(assignments: Record<string, string | null>): voi
 
 export function getAssignments(): Record<string, string | null> {
   return readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {});
+}
+
+export function createAnalysisBackup(): string | null {
+  if (typeof window === "undefined") return null;
+  const backup = {
+    id: `backup-${Date.now()}`,
+    createdAt: timestamp(),
+    objects: readCollection<StoredObjectRecord>(STORAGE_KEYS.objects),
+    entrances: readCollection<StoredEntranceRecord>(STORAGE_KEYS.entrances),
+    projects: readCollection<StoredProjectRecord>(STORAGE_KEYS.projects),
+    documents: readCollection<ObjectAnalysis>(STORAGE_KEYS.documents),
+    assignments: readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {})
+  };
+  const backups = readJson<Array<typeof backup>>(STORAGE_KEYS.reanalysisBackups, []);
+  writeJson(STORAGE_KEYS.reanalysisBackups, [backup, ...backups].slice(0, 10));
+  return backup.id;
+}
+
+export function exportAppDataBackup(): AppDataBackup {
+  return {
+    version: 1,
+    exportedAt: timestamp(),
+    keys: {
+      objects: readCollection<StoredObjectRecord>(STORAGE_KEYS.objects),
+      entrances: readCollection<StoredEntranceRecord>(STORAGE_KEYS.entrances),
+      projects: readCollection<StoredProjectRecord>(STORAGE_KEYS.projects),
+      documents: readCollection<ObjectAnalysis>(STORAGE_KEYS.documents),
+      assignments: readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {})
+    }
+  };
+}
+
+export function importAppDataBackup(backup: unknown): AppDataSummary {
+  const parsed = parseAppDataBackup(backup);
+  createAnalysisBackup();
+  writeJson(STORAGE_KEYS.objects, parsed.keys.objects);
+  writeJson(STORAGE_KEYS.entrances, parsed.keys.entrances);
+  writeJson(STORAGE_KEYS.projects, parsed.keys.projects);
+  writeJson(STORAGE_KEYS.documents, parsed.keys.documents);
+  writeJson(STORAGE_KEYS.assignments, parsed.keys.assignments);
+  return summarizeAppDataBackup(parsed);
+}
+
+export function summarizeCurrentAppData(): AppDataSummary {
+  return summarizeAppDataBackup(exportAppDataBackup());
+}
+
+export function summarizeAppDataBackupForImport(backup: unknown): AppDataSummary {
+  return summarizeAppDataBackup(parseAppDataBackup(backup));
+}
+
+export function summarizeAppDataBackup(backup: AppDataBackup): AppDataSummary {
+  return {
+    objects: backup.keys.objects.length,
+    entrances: backup.keys.entrances.length,
+    projects: backup.keys.projects.length,
+    documents: backup.keys.documents.length,
+    assignments: Object.keys(backup.keys.assignments).length
+  };
+}
+
+function parseAppDataBackup(value: unknown): AppDataBackup {
+  if (!isRecord(value)) throw new Error("Die JSON-Datei ist kein gueltiges Backup-Objekt.");
+  if (value.version !== 1) throw new Error("Die Backup-Version wird nicht unterstuetzt.");
+  if (!isRecord(value.keys)) throw new Error("Im Backup fehlt der Bereich keys.");
+
+  const keys = value.keys;
+  const requiredArrays = ["objects", "entrances", "projects", "documents"] as const;
+  requiredArrays.forEach((key) => {
+    if (!Array.isArray(keys[key])) {
+      throw new Error(`Im Backup fehlt der erwartete Array-Schluessel "${key}".`);
+    }
+  });
+  if (!isRecord(keys.assignments)) {
+    throw new Error('Im Backup fehlt der erwartete Objekt-Schluessel "assignments".');
+  }
+
+  return {
+    version: 1,
+    exportedAt: typeof value.exportedAt === "string" ? value.exportedAt : timestamp(),
+    keys: {
+      objects: keys.objects as StoredObjectRecord[],
+      entrances: keys.entrances as StoredEntranceRecord[],
+      projects: keys.projects as StoredProjectRecord[],
+      documents: keys.documents as ObjectAnalysis[],
+      assignments: keys.assignments as Record<string, string | null>
+    }
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function upsertItem<T extends { id: string }>(key: string, item: T): void {

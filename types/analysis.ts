@@ -43,6 +43,7 @@ export type MeasureCluster =
   | "Tischlerarbeiten"
   | "Trockenbau"
   | "Wärmedämmung"
+  | "Unklar"
   | "Sonstige"
   | "Sonstiges";
 
