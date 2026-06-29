@@ -6705,6 +6705,11 @@ function objectLabel(object: ObjectRecord): string {
   return firstKnown(object.objectNumber, object.objectName, object.address);
 }
 
+function formatObjectReportAddress(object: ObjectRecord): string {
+  const cityLine = [object.postalCode, object.city].filter(Boolean).join(" ").trim();
+  return [object.address, cityLine].filter(Boolean).join(", ") || objectLabel(object) || "k.A.";
+}
+
 function entranceLabel(entrance: EntranceRecord): string {
   const streetLine = `${entrance.street} ${entrance.houseNumber}${entrance.suffix}`.trim();
   const cityLine = firstKnown(entrance.city, entrance.postalCode);
@@ -6830,8 +6835,8 @@ async function exportObjectReport(
   const objectMetrics = buildReportObjectMetrics(object, documents);
   const portfolioTrades = buildReportTradeRows(portfolioDocuments);
   const objectTrades = buildReportTradeRows(documents);
-  const objectBars = buildReportObjectBars(portfolioObjects, portfolioDocuments, projects, assignments);
   const portfolioTopTrade = portfolioTrades.reduce<ReportTradeRow | null>((best, row) => !best || row.total > best.total ? row : best, null);
+  const objectAddress = formatObjectReportAddress(object);
   const pageWidth = 595.28;
   const pageHeight = 841.89;
   const navy: [number, number, number] = [19, 38, 63];
@@ -6855,11 +6860,12 @@ async function exportObjectReport(
     setColor(color);
     pdf.text(value, rightX, y, { align: "right" });
   };
-  const textCenter = (value: string, centerX: number, y: number, size = 8, style: "normal" | "bold" = "normal", color = navy) => {
+  const textCenter = (value: string, centerX: number, y: number, size = 8, style: "normal" | "bold" = "normal", color = navy, maxWidth?: number) => {
     pdf.setFont("helvetica", style);
     pdf.setFontSize(size);
     setColor(color);
-    pdf.text(value, centerX, y, { align: "center" });
+    const lines = maxWidth ? pdf.splitTextToSize(value, maxWidth) : [value];
+    pdf.text(lines, centerX, y, { align: "center", lineHeightFactor: 1.18 });
   };
   const fitText = (value: string, x: number, y: number, maxWidth: number, size = 16, minSize = 8, style: "normal" | "bold" = "bold", color = orange, align: "left" | "center" | "right" = "left") => {
     let nextSize = size;
@@ -6884,10 +6890,10 @@ async function exportObjectReport(
   };
   const drawLogo = () => {
     if (logoDataUrl) {
-      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, 40, 122, 31, undefined, "FAST");
+      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, 28, 122, 31, undefined, "FAST");
       return;
     }
-    text("PARIBUS", pageWidth - 135, 58, 20, "bold", navy);
+    text("PARIBUS", pageWidth - 135, 46, 20, "bold", navy);
   };
   const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
     text(title.toUpperCase(), x + 8, y + 18, 6.8, "bold", navy, w - 16);
@@ -6927,26 +6933,26 @@ async function exportObjectReport(
 
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
-  text("Portfolioüberblick", 52, 48, 13, "bold", orange);
-  text("Sanierungsreport", 52, 82, 28, "bold", navy);
-  text("Teil- und Vollsanierung (GU)", 52, 108, 17, "normal", navy);
-  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", 52, 140, 11, "normal", muted, 260);
+  text("Portfolioüberblick", 52, 36, 13, "bold", orange);
+  text("Sanierungsreport", 52, 68, 28, "bold", navy);
+  text("Teil- und Vollsanierung", 52, 94, 17, "normal", navy);
+  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", 52, 124, 11, "normal", muted, 260);
   drawLogo();
-  card(392, 78, 152, 112);
-  text("BERICHTSDATUM", 408, 104, 8.5, "bold", navy);
-  text(formatReportDate(new Date()), 408, 126, 12, "bold", navy);
+  card(392, 66, 152, 112);
+  text("BERICHTSDATUM", 408, 92, 8.5, "bold", navy);
+  text(formatReportDate(new Date()), 408, 114, 12, "bold", navy);
   pdf.setDrawColor(border[0], border[1], border[2]);
-  pdf.line(408, 145, 528, 145);
-  text("PORTFOLIO / FONDS", 408, 165, 8.5, "bold", navy);
-  text(firstKnown(portfolio.fund, "k.A."), 408, 186, 11, "bold", navy, 120);
+  pdf.line(408, 133, 528, 133);
+  text("PORTFOLIO / FONDS", 408, 153, 8.5, "bold", navy);
+  text(firstKnown(portfolio.fund, "k.A."), 408, 174, 11, "bold", navy, 120);
 
   card(40, 220, 516, 104);
   const kpiW = 516 / 5;
   [
     ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt"],
     ["Wohneinheiten gesamt", formatNullableNumber(portfolio.units), "gesamt"],
-    ["GU sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt"],
-    ["GU sanierte Wohnungen", formatNullableNumber(portfolio.renovatedApartments), "gesamt"],
+    ["Sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt"],
+    ["Sanierte Wohnungen", formatNullableNumber(portfolio.renovatedApartments), "gesamt"],
     ["Durchschnittliche Wohnungsgröße", formatArea(portfolio.averageApartmentSize), "gesamt"]
   ].forEach(([title, value, detail], index) => {
     if (index > 0) {
@@ -6956,8 +6962,8 @@ async function exportObjectReport(
     smallKpi(title, value, detail, 40 + index * kpiW, 234, kpiW);
   });
 
-  bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 40, 346, 250, 98);
-  bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", 306, 346, 250, 98);
+  bigKpi("Durchschnittliche Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 40, 346, 250, 98);
+  bigKpi("Durchschnittliche Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", 306, 346, 250, 98);
 
   card(40, 460, 250, 238);
   text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG NACH GEWERK", 54, 484, 9, "bold", navy, 222);
@@ -6966,9 +6972,10 @@ async function exportObjectReport(
   drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), 54, 532, 222, 18, 106, 58);
 
   card(306, 460, 250, 238);
-  text("GESAMTKOSTEN NACH OBJEKT (BRUTTO)", 320, 484, 9.5, "bold", navy, 222);
-  text("Teuerstes Objekt, durchschnittliches Objekt und günstigstes Objekt.", 320, 506, 8.5, "normal", muted, 222);
-  drawBars(objectBars.map((row, index) => ({ label: row.label, value: row.value, highlight: index === 0 })), 320, 550, 222, 42, 70, 62);
+  text("GEWERKE SANIERUNG", 320, 484, 10, "bold", navy, 222);
+  text("Bruttokosten nach erkanntem Gewerk.", 320, 506, 8.5, "normal", muted, 222);
+  const maxPortfolioTotal = Math.max(...portfolioTrades.map((row) => row.total), 0);
+  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.total, highlight: row.total === maxPortfolioTotal && maxPortfolioTotal > 0 })), 320, 532, 222, 18, 106, 58);
 
   card(40, 710, 516, 66);
   text("KOSTENVERTEILUNG", 60, 732, 9.5, "bold", navy);
@@ -6984,16 +6991,16 @@ async function exportObjectReport(
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
   drawLogo();
-  text("Teil- und Vollsanierung (GU)", 52, 86, 22, "bold", orange);
-  text(firstKnown(object.objectNumber, "k.A."), 52, 125, 34, "bold", navy);
-  text(firstKnown(object.address, objectLabel(object), "k.A."), 52, 150, 13, "normal", navy, 330);
+  textCenter("Objektübersicht", pageWidth / 2, 76, 22, "bold", orange);
+  textCenter(firstKnown(object.objectNumber, "k.A."), pageWidth / 2, 114, 34, "bold", navy);
+  textCenter(objectAddress, pageWidth / 2, 142, 13, "normal", navy, 430);
 
   const meta = [
     ["Baujahr", firstKnown(object.constructionYear, "k.A.")],
     ["Wohneinheiten", firstKnown(object.unitCount, "k.A.")],
     ["Gesamtwohnfläche", formatArea(parseGermanNumber(object.totalLivingAreaSqm))],
-    ["GU Fläche saniert", formatArea(objectMetrics.renovatedArea)],
-    ["Wohnungsgröße (GU)", formatArea(objectMetrics.averageApartmentSize)]
+    ["Fläche saniert", formatArea(objectMetrics.renovatedArea)],
+    ["Wohnungsgröße", formatArea(objectMetrics.averageApartmentSize)]
   ];
   meta.forEach(([title, value], index) => {
     const x = 42 + index * 102;
@@ -7002,15 +7009,15 @@ async function exportObjectReport(
       pdf.line(x - 10, 178, x - 10, 225);
     }
     metaLabel(title, x, 198, 94);
-    fitText(value, x, 224, 94, 13, 9, "bold", navy);
+    fitText(value, x, 224, 94, 13, 9, "bold", orange, "center");
   });
 
-  bigKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", 40, 258, 164, 104);
-  bigKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", 216, 258, 164, 104);
-  bigKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", 392, 258, 164, 104);
+  bigKpi("Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", 40, 258, 164, 104);
+  bigKpi("Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", 216, 258, 164, 104);
+  bigKpi("Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", 392, 258, 164, 104);
 
   card(40, 392, 516, 336);
-  text("Ø GU Kosten pro Wohnung nach Gewerk", 56, 420, 15, "bold", navy);
+  textCenter("Gewerke Sanierung", pageWidth / 2, 420, 15, "bold", navy);
   text("Durchschnittliche Bruttokosten pro sanierter Wohnung", 56, 440, 9, "normal", muted);
   const tableY = 466;
   text("GEWERK", 56, tableY, 8, "bold", navy);
@@ -7095,7 +7102,6 @@ function buildTwoPageObjectReportHtml(
   const objectMetrics = buildReportObjectMetrics(object, documents);
   const portfolioTrades = buildReportTradeRows(portfolioDocuments);
   const objectTrades = buildReportTradeRows(documents);
-  const objectBars = buildReportObjectBars(portfolioObjects, portfolioDocuments, projects, assignments);
   const portfolioTopTrade = portfolioTrades.reduce<ReportTradeRow | null>((best, row) => !best || row.total > best.total ? row : best, null);
 
   return `<!doctype html>
@@ -7111,7 +7117,7 @@ function buildTwoPageObjectReportHtml(
       <div>
         <p class="reportEyebrow">Portfolioüberblick</p>
         <h1>Sanierungsreport</h1>
-        <h2>Teil- und Vollsanierung (GU)</h2>
+        <h2>Teil- und Vollsanierung</h2>
         <p class="reportLead">Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.</p>
       </div>
       <div class="reportLogoPanel">
@@ -7126,14 +7132,14 @@ function buildTwoPageObjectReportHtml(
     <section class="portfolioKpiStrip">
       ${portfolioKpi("Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt", "coins")}
       ${portfolioKpi("Wohneinheiten gesamt", portfolio.units === null ? "k.A." : formatNumber(portfolio.units), "gesamt", "building")}
-      ${portfolioKpi("GU sanierte Fläche", portfolio.renovatedArea === null ? "k.A." : formatArea(portfolio.renovatedArea), "gesamt", "home")}
-      ${portfolioKpi("GU sanierte Wohnungen", portfolio.renovatedApartments === null ? "k.A." : formatNumber(portfolio.renovatedApartments), "gesamt", "house")}
+      ${portfolioKpi("Sanierte Fläche", portfolio.renovatedArea === null ? "k.A." : formatArea(portfolio.renovatedArea), "gesamt", "home")}
+      ${portfolioKpi("Sanierte Wohnungen", portfolio.renovatedApartments === null ? "k.A." : formatNumber(portfolio.renovatedApartments), "gesamt", "house")}
       ${portfolioKpi("Durchschnittliche Wohnungsgröße", portfolio.averageApartmentSize === null ? "k.A." : formatArea(portfolio.averageApartmentSize), "gesamt", "scan")}
     </section>
 
     <section class="bigKpiGrid">
-      ${bigReportKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", "home")}
-      ${bigReportKpi("Durchschnittliche GU Kosten pro m²", portfolio.averageCostPerSqm === null ? "k.A." : `${formatNullableCurrency(portfolio.averageCostPerSqm)} / m²`, "Durchschnitt über alle Objekte (sanierte Fläche)", "ruler")}
+      ${bigReportKpi("Durchschnittliche Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", "home")}
+      ${bigReportKpi("Durchschnittliche Kosten pro m²", portfolio.averageCostPerSqm === null ? "k.A." : `${formatNullableCurrency(portfolio.averageCostPerSqm)} / m²`, "Durchschnitt über alle Objekte (sanierte Fläche)", "ruler")}
     </section>
 
     <section class="reportChartGrid">
@@ -7143,9 +7149,9 @@ function buildTwoPageObjectReportHtml(
         ${reportAverageTradeBars(portfolioTrades)}
       </article>
       <article class="reportCard">
-        <h3>Gesamtkosten nach Objekt (brutto)</h3>
-        <p>Teuerstes Objekt, durchschnittliches Objekt und günstigstes Objekt.</p>
-        ${reportObjectCostBars(objectBars)}
+        <h3>Gewerke Sanierung</h3>
+        <p>Bruttokosten nach erkanntem Gewerk.</p>
+        ${reportAverageTradeBars(portfolioTrades.map((row) => ({ ...row, average: row.total })))}
       </article>
     </section>
 
@@ -7158,9 +7164,9 @@ function buildTwoPageObjectReportHtml(
   ${twoPageReportPage(2, `
     <header class="objectReportHeader">
       <div>
-        <p class="reportEyebrow">Teil- und Vollsanierung (GU)</p>
+        <p class="reportEyebrow">Objektübersicht</p>
         <h1>${escapeReportHtml(firstKnown(object.objectNumber, "k.A."))}</h1>
-        <h2>${escapeReportHtml(firstKnown(object.address, "k.A."))}</h2>
+        <h2>${escapeReportHtml(formatObjectReportAddress(object))}</h2>
       </div>
       <img class="reportLogoRight" src="/paribus-logo.png" alt="PARIBUS" />
     </header>
@@ -7169,18 +7175,18 @@ function buildTwoPageObjectReportHtml(
       ${objectMeta("Baujahr", object.constructionYear, "calendar")}
       ${objectMeta("Wohneinheiten", object.unitCount, "building")}
       ${objectMeta("Gesamtwohnfläche", object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m²` : "k.A.", "building2")}
-      ${objectMeta("GU Fläche saniert", objectMetrics.renovatedArea === null ? "k.A." : formatArea(objectMetrics.renovatedArea), "home")}
-      ${objectMeta("Durchschnittliche Wohnungsgröße GU", objectMetrics.averageApartmentSize === null ? "k.A." : formatArea(objectMetrics.averageApartmentSize), "scan")}
+      ${objectMeta("Fläche saniert", objectMetrics.renovatedArea === null ? "k.A." : formatArea(objectMetrics.renovatedArea), "home")}
+      ${objectMeta("Durchschnittliche Wohnungsgröße", objectMetrics.averageApartmentSize === null ? "k.A." : formatArea(objectMetrics.averageApartmentSize), "scan")}
     </section>
 
     <section class="objectKpiGrid">
-      ${bigReportKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", "euro")}
-      ${bigReportKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt je Dokument / WE", "home")}
-      ${bigReportKpi("GU Kosten pro QM", objectMetrics.costPerSqm === null ? "k.A." : `${formatNullableCurrency(objectMetrics.costPerSqm)} / m²`, "sanierte Fläche", "ruler")}
+      ${bigReportKpi("Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", "euro")}
+      ${bigReportKpi("Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt je Dokument / WE", "home")}
+      ${bigReportKpi("Kosten pro QM", objectMetrics.costPerSqm === null ? "k.A." : `${formatNullableCurrency(objectMetrics.costPerSqm)} / m²`, "sanierte Fläche", "ruler")}
     </section>
 
     <section class="reportCard objectTradeTableCard">
-      <h3>Ø GU Kosten pro Wohnung nach Gewerk</h3>
+      <h3>Gewerke Sanierung</h3>
       <p>Durchschnittliche Bruttokosten pro sanierter Wohnung</p>
       ${reportTradeRowsTable(objectTrades)}
     </section>
@@ -7339,11 +7345,12 @@ function buildTwoPageReportCss(): string {
     @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     body { margin: 0; background: #f5f6f8; color: #13263f; font-family: Aptos, "Segoe UI", Calibri, Arial, sans-serif; }
-    .reportPage { width: 794px; height: 1123px; padding: 48px 56px; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
-    .reportPage2 { padding-top: 92px; }
+    .reportPage { width: 794px; height: 1123px; padding: 38px 56px 48px; margin: 0 auto 10px; background: #fff; position: relative; page-break-after: always; overflow: hidden; }
+    .reportPage2 { padding-top: 76px; }
     .reportTop, .objectReportHeader { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 24px; align-items: start; width: 100%; }
-    .reportLogoPanel { display: grid; gap: 18px; justify-items: end; padding-top: 58px; }
-    .reportLogoRight { position: absolute; top: 48px; right: 56px; width: 132px; max-height: 42px; object-fit: contain; object-position: right center; }
+    .objectReportHeader { display: block; text-align: center; padding-right: 0; }
+    .reportLogoPanel { display: grid; gap: 18px; justify-items: end; padding-top: 46px; }
+    .reportLogoRight { position: absolute; top: 36px; right: 56px; width: 132px; max-height: 42px; object-fit: contain; object-position: right center; transform: none; }
     .reportEyebrow { margin: 0 0 8px; color: #f36f21; font-size: 15px; font-weight: 800; }
     h1 { margin: 0; color: #13263f; font-size: 34px; line-height: 1.04; letter-spacing: -0.01em; }
     h2 { margin: 8px 0 0; color: #13263f; font-size: 21px; font-weight: 600; line-height: 1.22; }
@@ -7388,12 +7395,13 @@ function buildTwoPageReportCss(): string {
     .objectMetaStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-top: 20px; width: 100%; }
     .objectMeta { display: grid; justify-items: center; gap: 5px; min-height: 72px; padding: 0 6px; text-align: center; border-right: 1px solid #dbe2ec; min-width: 0; }
     .objectMeta:last-child { border-right: 0; }
-    .objectMeta strong { color: #13263f; font-size: 15px; line-height: 1.15; overflow-wrap: anywhere; }
+    .objectMeta strong { color: #f36f21; font-size: 15px; line-height: 1.15; overflow-wrap: anywhere; }
     .metaIcon { color: #13263f; line-height: 1; }
     .objectKpiGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; width: 100%; }
     .objectKpiGrid .bigReportKpi { min-height: 98px; padding: 15px; }
     .objectKpiGrid .bigReportKpi b { font-size: 22px; }
     .objectTradeTableCard { margin-top: 16px; height: 510px; padding: 14px; overflow: hidden; }
+    .objectTradeTableCard h3 { text-align: center; }
     .reportTradeTable { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; margin-top: 12px; font-size: 9px; }
     .reportTradeTable th { color: #13263f; text-align: left; border-bottom: 1px solid #dbe2ec; padding: 6px 4px; text-transform: uppercase; white-space: normal; line-height: 1.15; overflow-wrap: normal; }
     .reportTradeTable td { padding: 7px 4px; border-bottom: 1px solid #eef2f6; color: #13263f; font-weight: 800; vertical-align: middle; }
@@ -7650,7 +7658,7 @@ function buildReportCss(): string {
     .reportLogo { width: 190px; max-height: 48px; object-fit: contain; object-position: left center; display: block; margin-bottom: 24px; }
     .reportFooter { position: absolute; left: 18mm; right: 18mm; bottom: 8mm; display: flex; justify-content: space-between; align-items: center; color: #52627a; font-size: 9px; border-top: 1px solid #e3e8ef; padding-top: 6px; }
     .reportHero { display: grid; grid-template-columns: 1fr 0.9fr; gap: 28px; align-items: start; min-height: 280px; }
-    .heroImage { width: 100%; height: 270px; object-fit: cover; border-radius: 12px; box-shadow: 0 14px 34px rgba(19, 38, 63, 0.15); }
+    .heroImage { width: 100%; height: 270px; object-fit: contain; object-position: center; transform: none; border-radius: 12px; background: #f5f6f8; box-shadow: 0 14px 34px rgba(19, 38, 63, 0.15); }
     .eyebrow { margin: 0 0 8px; color: #f36f21; font-size: 18px; font-weight: 800; letter-spacing: 0; }
     h1 { margin: 0; font-size: 46px; line-height: 1; color: #13263f; }
     h2 { margin: 10px 0 22px; font-size: 22px; font-weight: 500; color: #13263f; }
