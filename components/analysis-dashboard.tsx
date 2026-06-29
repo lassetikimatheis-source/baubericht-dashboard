@@ -6920,7 +6920,7 @@ async function exportObjectReport(
     pdf.text(value, x + Math.max(offset, 0), y);
   };
   const metaLabel = (value: string, x: number, y: number, width: number) => {
-    fitText(value.toUpperCase(), x, y, width, 6.8, 5.2, "bold", navy);
+    fitText(value.toUpperCase(), x, y, width, 6.8, 5.2, "bold", navy, "center");
   };
   const card = (x: number, y: number, w: number, h: number) => {
     pdf.setFillColor(239, 243, 248);
@@ -6939,9 +6939,9 @@ async function exportObjectReport(
     }
   };
   const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
-    fitText(title.toUpperCase(), x + 12, y + 18, w - 24, layout.font.label, 5.2, "bold", navy);
-    fitText(value, x + 12, y + 50, w - 24, 13.5, 8.5, "bold", orange, "center");
-    fitText(detail, x + 12, y + 72, w - 24, 8, 6.8, "normal", muted, "center");
+    fitText(title.toUpperCase(), x + 10, y + 18, w - 20, layout.font.label, 4.9, "bold", navy, "center");
+    fitText(value, x + 10, y + 52, w - 20, 13.5, 8.5, "bold", orange, "center");
+    fitText(detail, x + 10, y + 74, w - 20, 8, 6.8, "normal", muted, "center");
   };
   const bigKpi = (title: string, value: string, subtitle: string, x: number, y: number, w: number, h: number) => {
     card(x, y, w, h);
@@ -6998,7 +6998,7 @@ async function exportObjectReport(
     ["Durchschnittliche Wohnungsgröße", formatArea(portfolio.averageApartmentSize), "gesamt"]
   ].forEach(([title, value, detail], index) => {
     if (index > 0) {
-      pdf.setDrawColor(border[0], border[1], border[2]);
+      pdf.setDrawColor(229, 231, 235);
       pdf.line(contentX + index * kpiW, 198, contentX + index * kpiW, 268);
     }
     smallKpi(title, value, detail, contentX + index * kpiW, 198, kpiW);
@@ -7035,7 +7035,7 @@ async function exportObjectReport(
     const fieldW = contentW / 5;
     const x = contentX + index * fieldW;
     if (index > 0) {
-      pdf.setDrawColor(border[0], border[1], border[2]);
+      pdf.setDrawColor(229, 231, 235);
       pdf.line(x, 180, x, 226);
     }
     metaLabel(title, x + 10, 198, fieldW - 20);
@@ -7399,7 +7399,7 @@ function buildTwoPageReportCss(): string {
     .infoLine span, .portfolioKpi span, .bigReportKpi span, .objectMeta span { color: #13263f; font-size: 10px; font-weight: 900; text-transform: uppercase; }
     .infoLine strong { color: #13263f; font-size: 14px; line-height: 1.35; }
     .portfolioKpiStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 24px; padding: 14px 8px; width: 100%; }
-    .portfolioKpi { min-height: 100px; display: grid; grid-template-rows: 30px 34px 28px 14px; align-items: center; justify-items: center; gap: 4px; padding: 0 8px; border-right: 1px solid #dbe2ec; text-align: center; min-width: 0; }
+    .portfolioKpi { min-height: 100px; display: grid; grid-template-rows: 30px 34px 28px 14px; align-items: center; justify-items: center; gap: 4px; padding: 0 8px; border-right: 1px solid #e5e7eb; text-align: center; min-width: 0; }
     .portfolioKpi:last-child { border-right: 0; }
     .portfolioKpi strong { color: #f36f21; font-size: 18px; line-height: 1; white-space: nowrap; }
     .portfolioKpi em, .bigReportKpi em { color: #13263f; font-size: 11px; font-style: normal; }
@@ -7427,7 +7427,7 @@ function buildTwoPageReportCss(): string {
     .roundIcon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 999px; background: rgba(243,111,33,0.1); color: #f36f21; font-size: 22px; font-weight: 900; }
     .objectReportHeader h1 { font-size: 38px; margin-top: 10px; }
     .objectMetaStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-top: 20px; width: 100%; }
-    .objectMeta { display: grid; justify-items: center; gap: 5px; min-height: 72px; padding: 0 6px; text-align: center; border-right: 1px solid #dbe2ec; min-width: 0; }
+    .objectMeta { display: grid; justify-items: center; align-items: center; gap: 5px; min-height: 72px; padding: 0 6px; text-align: center; border-right: 1px solid #e5e7eb; min-width: 0; }
     .objectMeta:last-child { border-right: 0; }
     .objectMeta strong { color: #f36f21; font-size: 15px; line-height: 1.15; overflow-wrap: anywhere; }
     .metaIcon { color: #13263f; line-height: 1; }
