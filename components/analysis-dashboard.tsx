@@ -6836,17 +6836,53 @@ async function exportObjectReport(
   const portfolioTrades = buildReportTradeRows(portfolioDocuments);
   const objectTrades = buildReportTradeRows(documents);
   const objectAddress = formatObjectReportAddress(object);
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  const navy: [number, number, number] = [19, 38, 63];
-  const orange: [number, number, number] = [243, 111, 33];
-  const muted: [number, number, number] = [71, 88, 121];
-  const border: [number, number, number] = [227, 232, 239];
-  const light: [number, number, number] = [245, 246, 248];
-  const margin = 52;
+  const layout = {
+    page: { width: 595.28, height: 841.89 },
+    marginX: 48,
+    columns: 12,
+    gap: 12,
+    radius: 8,
+    cardPadding: 16,
+    headerBaseline: 56,
+    footerY: 799,
+    kpiHeight: 104,
+    compactKpiHeight: 100,
+    tableRowHeight: 25,
+    chartRowHeight: 21,
+    font: {
+      eyebrow: 10,
+      title: 30,
+      subtitle: 13,
+      cardTitle: 11,
+      label: 7.2,
+      body: 8.6,
+      table: 7.8,
+      kpi: 18,
+      footer: 8.2
+    },
+    color: {
+      navy: [19, 38, 63] as [number, number, number],
+      orange: [243, 111, 33] as [number, number, number],
+      muted: [71, 88, 121] as [number, number, number],
+      border: [227, 232, 239] as [number, number, number],
+      light: [245, 246, 248] as [number, number, number],
+      white: [255, 255, 255] as [number, number, number]
+    }
+  };
+  const pageWidth = layout.page.width;
+  const pageHeight = layout.page.height;
+  const navy = layout.color.navy;
+  const orange = layout.color.orange;
+  const muted = layout.color.muted;
+  const border = layout.color.border;
+  const light = layout.color.light;
+  const margin = layout.marginX;
   const contentX = margin;
   const contentW = pageWidth - margin * 2;
-  const gap = 16;
+  const gap = layout.gap;
+  const colW = (contentW - gap * (layout.columns - 1)) / layout.columns;
+  const gridX = (column: number) => contentX + (column - 1) * (colW + gap);
+  const gridW = (span: number) => colW * span + gap * (span - 1);
 
   const setColor = (color: [number, number, number]) => pdf.setTextColor(color[0], color[1], color[2]);
   const text = (value: string, x: number, y: number, size = 10, style: "normal" | "bold" = "normal", color = navy, maxWidth?: number) => {
@@ -6887,40 +6923,48 @@ async function exportObjectReport(
     fitText(value.toUpperCase(), x, y, width, 6.8, 5.2, "bold", navy);
   };
   const card = (x: number, y: number, w: number, h: number) => {
+    pdf.setFillColor(239, 243, 248);
+    pdf.roundedRect(x + 2, y + 3, w, h, layout.radius, layout.radius, "F");
     pdf.setFillColor(255, 255, 255);
     pdf.setDrawColor(border[0], border[1], border[2]);
-    pdf.roundedRect(x, y, w, h, 7, 7, "FD");
+    pdf.roundedRect(x, y, w, h, layout.radius, layout.radius, "FD");
+  };
+  const pageBackground = () => {
+    pdf.setFillColor(...layout.color.white);
+    pdf.rect(0, 0, pageWidth, pageHeight, "F");
   };
   const drawLogo = (y = 18) => {
     if (logoDataUrl) {
-      pdf.addImage(logoDataUrl, "PNG", pageWidth - margin - 122, y, 122, 31, undefined, "FAST");
-      return;
+      pdf.addImage(logoDataUrl, "PNG", pageWidth - margin - 118, y, 118, 30, undefined, "FAST");
     }
-    text("PARIBUS", pageWidth - margin - 83, y + 18, 20, "bold", navy);
   };
   const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
-    text(title.toUpperCase(), x + 10, y + 18, 6.8, "bold", navy, w - 20);
-    fitText(value, x + 10, y + 52, w - 20, 14, 8.5, "bold", orange, "center");
-    fitText(detail, x + 10, y + 82, w - 20, 8.2, 7, "normal", muted, "center");
+    fitText(title.toUpperCase(), x + 12, y + 18, w - 24, layout.font.label, 5.2, "bold", navy);
+    fitText(value, x + 12, y + 50, w - 24, 13.5, 8.5, "bold", orange, "center");
+    fitText(detail, x + 12, y + 72, w - 24, 8, 6.8, "normal", muted, "center");
   };
   const bigKpi = (title: string, value: string, subtitle: string, x: number, y: number, w: number, h: number) => {
     card(x, y, w, h);
-    text(title.toUpperCase(), x + 16, y + 24, 8, "bold", navy, w - 32);
-    fitText(value, x + 16, y + 66, w - 32, 20, 12, "bold", orange, "left");
-    text(subtitle, x + 16, y + h - 18, 8.3, "normal", muted, w - 32);
+    fitText(title.toUpperCase(), x + layout.cardPadding, y + 24, w - layout.cardPadding * 2, layout.font.label, 5.4, "bold", navy);
+    fitText(value, x + layout.cardPadding, y + 64, w - layout.cardPadding * 2, layout.font.kpi, 11, "bold", orange, "left");
+    text(subtitle, x + layout.cardPadding, y + h - 18, layout.font.body, "normal", muted, w - layout.cardPadding * 2);
+  };
+  const sectionTitle = (title: string, subtitle: string, x: number, y: number, w: number) => {
+    text(title, x, y, layout.font.cardTitle, "bold", navy, w);
+    if (subtitle) text(subtitle, x, y + 17, layout.font.body, "normal", muted, w);
   };
   const footer = (page: number) => {
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
     pdf.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
-    text("Paribus Asset Management", margin, pageHeight - 24, 8.8, "normal", navy);
-    textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, 8.8, "normal", navy);
-    textRight(`Seite ${page} von 2`, pageWidth - margin, pageHeight - 24, 8.8, "normal", navy);
+    text("Paribus Asset Management", margin, pageHeight - 24, layout.font.footer, "normal", navy);
+    textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, layout.font.footer, "normal", navy);
+    textRight(`Seite ${page} von 2`, pageWidth - margin, pageHeight - 24, layout.font.footer, "normal", navy);
   };
   const drawBars = (rows: Array<{ label: string; value: number | null; highlight?: boolean }>, x: number, y: number, w: number, rowH: number, labelW: number, valueW: number) => {
     const max = Math.max(...rows.map((row) => row.value ?? 0), 1);
     rows.forEach((row, index) => {
       const rowY = y + index * rowH;
-      text(row.label, x, rowY + 8, 7.5, "bold", navy, labelW - 6);
+      text(row.label, x, rowY + 8, layout.font.table, "bold", navy, labelW - 6);
       const barX = x + labelW;
       const barW = w - labelW - valueW - 8;
       pdf.setFillColor(237, 241, 246);
@@ -6934,18 +6978,17 @@ async function exportObjectReport(
     });
   };
 
-  pdf.setFillColor(255, 255, 255);
-  pdf.rect(0, 0, pageWidth, pageHeight, "F");
+  pageBackground();
   text("Portfolioüberblick", contentX, 42, 11, "bold", orange);
   text("Sanierungsreport", contentX, 78, 30, "bold", navy);
   text("Teil- und Vollsanierung (GU)", contentX, 105, 16, "normal", navy);
   text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", contentX, 132, 10.5, "normal", muted, 270);
-  drawLogo(38);
+  drawLogo(42);
   textRight("BERICHTSDATUM", pageWidth - margin, 84, 7.4, "bold", muted);
   textRight(formatReportDate(new Date()), pageWidth - margin, 100, 9.2, "bold", navy);
   textRight(`FONDS  ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - margin, 118, 7.4, "bold", muted);
 
-  card(contentX, 188, contentW, 104);
+  card(contentX, 184, contentW, layout.compactKpiHeight);
   const kpiW = contentW / 5;
   [
     ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt"],
@@ -6956,27 +6999,26 @@ async function exportObjectReport(
   ].forEach(([title, value, detail], index) => {
     if (index > 0) {
       pdf.setDrawColor(border[0], border[1], border[2]);
-      pdf.line(contentX + index * kpiW, 202, contentX + index * kpiW, 274);
+      pdf.line(contentX + index * kpiW, 198, contentX + index * kpiW, 268);
     }
-    smallKpi(title, value, detail, contentX + index * kpiW, 202, kpiW);
+    smallKpi(title, value, detail, contentX + index * kpiW, 198, kpiW);
   });
 
-  const halfCardW = (contentW - gap) / 2;
+  const halfCardW = gridW(6);
   bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", contentX, 320, halfCardW, 100);
   bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", contentX + halfCardW + gap, 320, halfCardW, 100);
 
-  card(contentX, 444, contentW, 284);
+  card(contentX, 428, contentW, 324);
   text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG", contentX + 16, 472, 11, "bold", navy, contentW - 32);
   text("NACH GEWERK", contentX + 16, 490, 11, "bold", navy, contentW - 32);
   text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", contentX + 16, 514, 8.5, "normal", muted, contentW - 32);
   const maxPortfolioAverage = Math.max(...portfolioTrades.map((row) => row.average ?? 0), 0);
-  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), contentX + 16, 542, contentW - 32, 18, 190, 82);
+  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), contentX + 16, 536, contentW - 32, layout.chartRowHeight, 190, 82);
   footer(1);
 
   pdf.addPage();
-  pdf.setFillColor(255, 255, 255);
-  pdf.rect(0, 0, pageWidth, pageHeight, "F");
-  drawLogo(38);
+  pageBackground();
+  drawLogo(42);
   text("Objektübersicht", contentX, 54, 12, "bold", orange);
   text(firstKnown(object.objectNumber, "k.A."), contentX, 94, 34, "bold", navy);
   text(objectAddress, contentX, 124, 12.5, "normal", navy, 430);
@@ -6994,32 +7036,32 @@ async function exportObjectReport(
     const x = contentX + index * fieldW;
     if (index > 0) {
       pdf.setDrawColor(border[0], border[1], border[2]);
-      pdf.line(x, 178, x, 225);
+      pdf.line(x, 180, x, 226);
     }
-    metaLabel(title, x + 8, 198, fieldW - 16);
-    fitText(value, x + 8, 224, fieldW - 16, 13, 9, "bold", orange, "center");
+    metaLabel(title, x + 10, 198, fieldW - 20);
+    fitText(value, x + 10, 224, fieldW - 20, 12.5, 8.8, "bold", orange, "center");
   });
 
-  const objectKpiW = (contentW - gap * 2) / 3;
-  bigKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", contentX, 258, objectKpiW, 104);
-  bigKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", contentX + objectKpiW + gap, 258, objectKpiW, 104);
-  bigKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", contentX + (objectKpiW + gap) * 2, 258, objectKpiW, 104);
+  const objectKpiW = gridW(4);
+  bigKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", gridX(1), 258, objectKpiW, layout.kpiHeight);
+  bigKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", contentX + objectKpiW + gap, 258, objectKpiW, layout.kpiHeight);
+  bigKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", contentX + (objectKpiW + gap) * 2, 258, objectKpiW, layout.kpiHeight);
 
   card(contentX, 392, contentW, 336);
   text("Ø GU Kosten pro Wohnung nach Gewerk", contentX + 16, 420, 15, "bold", navy);
   text("Durchschnittliche Bruttokosten pro sanierter Wohnung", contentX + 16, 440, 9, "normal", muted);
-  const tableY = 466;
-  text("GEWERK", contentX + 16, tableY, 8, "bold", navy);
-  text("Ø KOSTEN / WOHNUNG", contentX + 156, tableY, 8, "bold", navy);
-  text("BETRAG", contentX + 302, tableY, 8, "bold", navy);
-  text("ANTEIL", contentX + 388, tableY, 8, "bold", navy);
-  text("WE", contentX + 462, tableY, 8, "bold", navy);
+  const tableY = 468;
+  fitText("GEWERK", contentX + 16, tableY, 126, layout.font.table, 6.4, "bold", navy);
+  fitText("Ø KOSTEN / WOHNUNG", contentX + 156, tableY, 118, layout.font.table, 6.4, "bold", navy);
+  fitText("BETRAG", contentX + 302, tableY, 72, layout.font.table, 6.4, "bold", navy, "right");
+  fitText("ANTEIL", contentX + 388, tableY, 66, layout.font.table, 6.4, "bold", navy, "right");
+  fitText("WE", contentX + 462, tableY, 18, layout.font.table, 6.4, "bold", navy, "center");
   pdf.setDrawColor(border[0], border[1], border[2]);
   pdf.line(contentX + 16, tableY + 8, pageWidth - margin - 16, tableY + 8);
   const maxObjectAverage = Math.max(...objectTrades.map((row) => row.average ?? 0), 1);
   objectTrades.forEach((row, index) => {
-    const y = tableY + 28 + index * 21;
-    text(row.label, contentX + 16, y, 8, "bold", navy, 128);
+    const y = tableY + 28 + index * layout.tableRowHeight;
+    text(row.label, contentX + 16, y, layout.font.table, "bold", navy, 128);
     pdf.setFillColor(237, 241, 246);
     pdf.roundedRect(contentX + 156, y - 7, 118, 8, 4, 4, "F");
     if ((row.average ?? 0) > 0) {
