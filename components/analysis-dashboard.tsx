@@ -6938,8 +6938,10 @@ async function exportObjectReport(
       pdf.addImage(logoDataUrl, "PNG", pageWidth - margin - 118, y, 118, 30, undefined, "FAST");
     }
   };
-  const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
-    fitText(title.toUpperCase(), x + 10, y + 18, w - 20, layout.font.label, 4.9, "bold", navy, "center");
+  const smallKpi = (titleLines: string[], value: string, detail: string, x: number, y: number, w: number) => {
+    titleLines.slice(0, 2).forEach((line, lineIndex) => {
+      fitText(line.toUpperCase(), x + 10, y + 14 + lineIndex * 10, w - 20, 6.2, 4.9, "bold", navy, "center");
+    });
     fitText(value, x + 10, y + 52, w - 20, 13.5, 8.5, "bold", orange, "center");
     fitText(detail, x + 10, y + 74, w - 20, 8, 6.8, "normal", muted, "center");
   };
@@ -6990,13 +6992,14 @@ async function exportObjectReport(
 
   card(contentX, 184, contentW, layout.compactKpiHeight);
   const kpiW = contentW / 5;
-  [
-    ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt"],
-    ["Wohneinheiten gesamt", formatNullableNumber(portfolio.units), "gesamt"],
-    ["GU sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt"],
-    ["Dokumente ausgewertet", formatNumber(portfolio.documentCount), "gesamt"],
-    ["Durchschnittliche Wohnungsgröße", formatArea(portfolio.averageApartmentSize), "gesamt"]
-  ].forEach(([title, value, detail], index) => {
+  const portfolioKpis: Array<[string[], string, string]> = [
+    [["Gesamtkosten", "Objekte"], formatNullableCurrency(portfolio.gross), "gesamt"],
+    [["Wohneinheiten", "gesamt"], formatNullableNumber(portfolio.units), "gesamt"],
+    [["GU sanierte", "Fläche"], formatArea(portfolio.renovatedArea), "gesamt"],
+    [["Dokumente", "ausgewertet"], formatNumber(portfolio.documentCount), "gesamt"],
+    [["Durchschnittliche", "Wohnungsgröße"], formatArea(portfolio.averageApartmentSize), "gesamt"]
+  ];
+  portfolioKpis.forEach(([title, value, detail], index) => {
     if (index > 0) {
       pdf.setDrawColor(229, 231, 235);
       pdf.line(contentX + index * kpiW, 198, contentX + index * kpiW, 268);
@@ -7401,6 +7404,7 @@ function buildTwoPageReportCss(): string {
     .portfolioKpiStrip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 24px; padding: 14px 8px; width: 100%; }
     .portfolioKpi { min-height: 100px; display: grid; grid-template-rows: 30px 34px 28px 14px; align-items: center; justify-items: center; gap: 4px; padding: 0 8px; border-right: 1px solid #e5e7eb; text-align: center; min-width: 0; }
     .portfolioKpi:last-child { border-right: 0; }
+    .portfolioKpi span { line-height: 1.15; text-align: center; white-space: nowrap; }
     .portfolioKpi strong { color: #f36f21; font-size: 18px; line-height: 1; white-space: nowrap; }
     .portfolioKpi em, .bigReportKpi em { color: #13263f; font-size: 11px; font-style: normal; }
     .bigKpiGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 16px; width: 100%; }
@@ -7467,7 +7471,18 @@ function reportInfoLine(label: string, value: string): string {
 }
 
 function portfolioKpi(label: string, value: string, detail: string, icon: string): string {
-  return `<article class="portfolioKpi">${reportIcon(icon)}<span>${escapeReportHtml(label)}</span><strong>${escapeReportHtml(value)}</strong><em>${escapeReportHtml(detail)}</em></article>`;
+  return `<article class="portfolioKpi">${reportIcon(icon)}<span>${formatReportKpiLabel(label)}</span><strong>${escapeReportHtml(value)}</strong><em>${escapeReportHtml(detail)}</em></article>`;
+}
+
+function formatReportKpiLabel(label: string): string {
+  const lines: Record<string, string[]> = {
+    "Gesamtkosten Objekte": ["Gesamtkosten", "Objekte"],
+    "Wohneinheiten gesamt": ["Wohneinheiten", "gesamt"],
+    "Sanierte Fläche": ["GU sanierte", "Fläche"],
+    "Dokumente ausgewertet": ["Dokumente", "ausgewertet"],
+    "Durchschnittliche Wohnungsgröße": ["Durchschnittliche", "Wohnungsgröße"]
+  };
+  return (lines[label] ?? [label]).map((line) => escapeReportHtml(line.toUpperCase())).join("<br />");
 }
 
 function bigReportKpi(title: string, value: string, subtitle: string, icon: string): string {
