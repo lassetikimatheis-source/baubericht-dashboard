@@ -3164,8 +3164,8 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
                   <td>{tradeIcon(entry.cluster)} {entry.cluster}</td>
                   <td>{formatNumber(entry.count)}</td>
                   <td>{formatNullableCurrency(entry.total)}</td>
-                  <td className="averageCostColumn">{formatNullableCurrency(entry.averagePerDocument)}</td>
-                  <td>{entry.share === null ? "k.A." : `${formatNullableNumber(roundMoney(entry.share))} %`}</td>
+                  <td className="averageCostColumn">{entry.averagePerDocument === null ? "0 €" : formatNullableCurrency(entry.averagePerDocument)}</td>
+                  <td>{entry.share === null ? "0 %" : `${formatNullableNumber(roundMoney(entry.share))} %`}</td>
                   <td>{formatNullableCurrency(entry.offer)}</td>
                   <td>{formatNullableCurrency(entry.invoice)}</td>
                 </tr>
@@ -7013,7 +7013,7 @@ async function exportObjectReport(
   text("Ø KOSTEN / WOHNUNG", contentX + 156, tableY, 8, "bold", navy);
   text("BETRAG", contentX + 302, tableY, 8, "bold", navy);
   text("ANTEIL", contentX + 388, tableY, 8, "bold", navy);
-  text("DOK.", contentX + 462, tableY, 8, "bold", navy);
+  text("WE", contentX + 462, tableY, 8, "bold", navy);
   pdf.setDrawColor(border[0], border[1], border[2]);
   pdf.line(contentX + 16, tableY + 8, pageWidth - margin - 16, tableY + 8);
   const maxObjectAverage = Math.max(...objectTrades.map((row) => row.average ?? 0), 1);
