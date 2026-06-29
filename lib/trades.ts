@@ -3,6 +3,7 @@ import type { MeasureCluster, ObjectAnalysis } from "../types/analysis";
 export const HEATING_SANITARY_TRADE: MeasureCluster = "Heizung und Sanitär";
 export const TILING_SCREED_TRADE: MeasureCluster = "Fliesen und Estricharbeiten";
 export const ASBESTOS_TRADE: MeasureCluster = "Asbestarbeiten";
+export const HAZARDOUS_ASBEST_TRADE: MeasureCluster = "Schadstoffsanierung / Asbest";
 export const FACADE_TRADE: MeasureCluster = "Fassadenarbeiten";
 export const FLOORING_TRADE: MeasureCluster = "Bodenbelagsarbeiten";
 export const CARPENTRY_TRADE: MeasureCluster = "Tischlerarbeiten";
@@ -32,7 +33,7 @@ export function normalizeTradeName(value: string | null | undefined, description
   if (!text || text === "k.a.") return value ?? "";
 
   if (isHazardousMaterialTrade(text)) {
-    return ASBESTOS_TRADE;
+    return HAZARDOUS_ASBEST_TRADE;
   }
 
   if (isDisposalDemolitionTrade(text)) {
@@ -45,10 +46,6 @@ export function normalizeTradeName(value: string | null | undefined, description
 
   if (/trockenbau|brandschutz|aufz[uü]g|aufzug|treppenhaus|keller|schornstein|kamin|l[uü]ftung|photovoltaik|solar|pv\b/.test(text)) {
     return OTHER_TRADE;
-  }
-
-  if (/asbest|schadstoffsanierung|\bbt\s*(?:11|17\.45)\b|flexplatten|asbesthaltig|beprobung\s+auf\s+asbest/.test(text)) {
-    return ASBESTOS_TRADE;
   }
 
   if (text === "fassade" || /fassadenarbeiten|fassadensanierung|\bwdvs\b|außenfassade|aussenfassade/.test(text)) {
@@ -91,15 +88,16 @@ function normalizeExplicitTradeValue(value: string | null | undefined): MeasureC
   if (!key || key === "ka") return null;
 
   const explicitMap: Record<string, MeasureCluster> = {
-    asbestarbeiten: ASBESTOS_TRADE,
-    asbestsanierung: ASBESTOS_TRADE,
-    schadstoffsanierung: ASBESTOS_TRADE,
-    schadstoffentsorgung: ASBESTOS_TRADE,
-    schadstoffarbeiten: ASBESTOS_TRADE,
-    gefahrstoffarbeiten: ASBESTOS_TRADE,
-    trgs519: ASBESTOS_TRADE,
-    pcb: ASBESTOS_TRADE,
-    kmf: ASBESTOS_TRADE,
+    asbestarbeiten: HAZARDOUS_ASBEST_TRADE,
+    asbestsanierung: HAZARDOUS_ASBEST_TRADE,
+    schadstoffsanierungasbest: HAZARDOUS_ASBEST_TRADE,
+    schadstoffsanierung: HAZARDOUS_ASBEST_TRADE,
+    schadstoffentsorgung: HAZARDOUS_ASBEST_TRADE,
+    schadstoffarbeiten: HAZARDOUS_ASBEST_TRADE,
+    gefahrstoffarbeiten: HAZARDOUS_ASBEST_TRADE,
+    trgs519: HAZARDOUS_ASBEST_TRADE,
+    pcb: HAZARDOUS_ASBEST_TRADE,
+    kmf: HAZARDOUS_ASBEST_TRADE,
     entsorgung: DISPOSAL_DEMOLITION_TRADE,
     demontage: DISPOSAL_DEMOLITION_TRADE,
     demontagearbeiten: DISPOSAL_DEMOLITION_TRADE,

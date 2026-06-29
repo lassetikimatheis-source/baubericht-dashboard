@@ -350,6 +350,7 @@ const emptyObjectPageFilters: ObjectPageFilters = {
 };
 
 const standardTradeCatalog: MeasureCluster[] = [
+  "Schadstoffsanierung / Asbest",
   "Asbestarbeiten",
   "Bodenbelagsarbeiten",
   "Malerarbeiten",
@@ -4686,19 +4687,145 @@ function reanalyzeStoredDocument(document: ObjectAnalysis): ObjectAnalysis {
     clusters: tradeUpdate.clusters,
     measureDetails: tradeUpdate.measureDetails
   };
-  const gross = withType.totalCost.value;
-  const apartments = withType.renovatedApartmentCount.value;
-  const area = withType.renovatedAreaSqm.value ?? withType.livingAreaSqm.value;
+  const withRequiredMeasures = ensureRequiredAsbestosMeasure(withType);
+  const gross = withRequiredMeasures.totalCost.value;
+  const apartments = withRequiredMeasures.renovatedApartmentCount.value;
+  const area = withRequiredMeasures.renovatedAreaSqm.value ?? withRequiredMeasures.livingAreaSqm.value;
   return {
-    ...withType,
-    costPerApartment: hasManualSource(withType.costPerApartment)
-      ? withType.costPerApartment
-      : calculatedNumberField(gross !== null && apartments ? roundMoney(gross / apartments) : null, withType.costPerApartment),
-    costPerSqm: hasManualSource(withType.costPerSqm)
-      ? withType.costPerSqm
-      : calculatedNumberField(gross !== null && area ? roundMoney(gross / area) : null, withType.costPerSqm),
-    dataQuality: addReanalysisQuality(withType)
+    ...withRequiredMeasures,
+    costPerApartment: hasManualSource(withRequiredMeasures.costPerApartment)
+      ? withRequiredMeasures.costPerApartment
+      : calculatedNumberField(gross !== null && apartments ? roundMoney(gross / apartments) : null, withRequiredMeasures.costPerApartment),
+    costPerSqm: hasManualSource(withRequiredMeasures.costPerSqm)
+      ? withRequiredMeasures.costPerSqm
+      : calculatedNumberField(gross !== null && area ? roundMoney(gross / area) : null, withRequiredMeasures.costPerSqm),
+    dataQuality: addReanalysisQuality(withRequiredMeasures)
   };
+}
+
+function ensureRequiredAsbestosMeasure(document: ObjectAnalysis): ObjectAnalysis {
+  const match = findRequiredAsbestosBlock(document);
+  if (!match.found) return document;
+  const hasMeasure = [
+    ...document.clusters.map((cluster) => normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description))),
+    ...(document.measureDetails ?? []).map((detail) => normalizeTradeCluster(detail.cluster, detail.beschreibung))
+  ].includes("Schadstoffsanierung / Asbest");
+  if (hasMeasure) return document;
+
+  const source = { documentId: document.id, fileName: match.documentName, method: "Berechnung" as const, textSnippet: match.raw, confidence: 1 };
+  return {
+    ...document,
+    clusters: [
+      ...document.clusters,
+      {
+        id: `${document.id}-summe-2-asbestsanierung`,
+        cluster: { value: "Schadstoffsanierung / Asbest", sources: [source], confidence: 1 },
+        description: { value: "Summe 2. Asbestsanierung", sources: [source], confidence: 1 },
+        totalCost: match.amount === null ? emptyField<number>() : { value: match.amount, sources: [source], confidence: 1 },
+        allocation: emptyField<CostAllocation>(),
+        sourceDocumentId: document.id
+      }
+    ],
+    measureDetails: [
+      ...(document.measureDetails ?? []),
+      {
+        abschnitt: "Summe 2. Asbestsanierung",
+        cluster: "Schadstoffsanierung / Asbest",
+        summe: match.amount,
+        beschreibung: "Summe 2. Asbestsanierung",
+        quelle: match.raw
+      }
+    ]
+  };
+}
+
+interface RequiredAsbestosBlockMatch {
+  found: boolean;
+  documentName: string;
+  field: string;
+  raw: string;
+  amount: number | null;
+  reason: string;
+}
+
+function findRequiredAsbestosBlock(document: ObjectAnalysis): RequiredAsbestosBlockMatch {
+  const documentName = getDocumentDisplayName(document);
+  const candidates: Array<{ field: string; value: string }> = [
+    { field: "measureDescription", value: fieldOrUnknown(document.measureDescription) },
+    { field: "projectType", value: fieldOrUnknown(document.projectType) },
+    { field: "assignmentSuggestion", value: fieldOrUnknown(document.assignmentSuggestion) },
+    ...document.clusters.flatMap((cluster, index) => [
+      { field: `clusters[${index}].cluster`, value: fieldOrUnknown(cluster.cluster) },
+      { field: `clusters[${index}].description`, value: fieldOrUnknown(cluster.description) },
+      { field: `clusters[${index}].totalCost.source`, value: cluster.totalCost.sources[0]?.textSnippet ?? "" }
+    ]),
+    ...(document.measureDetails ?? []).flatMap((detail, index) => [
+      { field: `measureDetails[${index}].abschnitt`, value: detail.abschnitt },
+      { field: `measureDetails[${index}].beschreibung`, value: detail.beschreibung },
+      { field: `measureDetails[${index}].quelle`, value: detail.quelle }
+    ]),
+    ...(document.measureDebug?.sumLines ?? []).map((line, index) => ({ field: `measureDebug.sumLines[${index}]`, value: line.raw })),
+    ...(document.measureDebug?.headings ?? []).map((line, index) => ({ field: `measureDebug.headings[${index}]`, value: line.raw })),
+    ...(document.measureDebug?.mappings ?? []).flatMap((mapping, index) => [
+      { field: `measureDebug.mappings[${index}].heading`, value: mapping.heading },
+      { field: `measureDebug.mappings[${index}].description`, value: mapping.description }
+    ]),
+    ...(document.costDebug?.matches ?? []).map((match, index) => ({ field: `costDebug.matches[${index}]`, value: match.raw }))
+  ];
+
+  for (const candidate of candidates) {
+    const match = matchRequiredAsbestosText(candidate.value);
+    if (match) {
+      return {
+        found: true,
+        documentName,
+        field: candidate.field,
+        raw: match.raw,
+        amount: match.amount,
+        reason: "Pflichtblock erkannt und als eigene Maßnahme zugeordnet."
+      };
+    }
+  }
+
+  return {
+    found: false,
+    documentName,
+    field: "gespeicherte Analyse-/Debugfelder",
+    raw: "",
+    amount: null,
+    reason: "Der Pflichtblock wurde in den gespeicherten Dokumentdaten nicht gefunden."
+  };
+}
+
+function matchRequiredAsbestosText(value: string): { raw: string; amount: number | null } | null {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text || text === "k.A.") return null;
+  const patterns = [
+    /Summe\s*2\.?\s*Asbest\s*sanierung[^\d]*([\d.]+,\d{2})?/i,
+    /Summe\s*2\.?\s*Asbestsanierung[^\d]*([\d.]+,\d{2})?/i,
+    /\b2\.?\s*Asbest\s*sanierung\b[^\d]*([\d.]+,\d{2})?/i,
+    /\b2\.?\s*Asbestsanierung\b[^\d]*([\d.]+,\d{2})?/i,
+    /Asbest\s*sanierung[^\d]*([\d.]+,\d{2})?/i,
+    /Asbestsanierung[^\d]*([\d.]+,\d{2})?/i,
+    /Asbestarbeiten[^\d]*([\d.]+,\d{2})?/i
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    return {
+      raw: match[0],
+      amount: parseGermanNumber(match[1] ?? "") ?? null
+    };
+  }
+  return null;
+}
+
+function getDocumentDisplayName(document: ObjectAnalysis): string {
+  return document.sourceDocumentIds?.[0]
+    ?? document.documentNumber.sources[0]?.fileName
+    ?? document.totalCost.sources[0]?.fileName
+    ?? document.clusters[0]?.totalCost.sources[0]?.fileName
+    ?? document.id;
 }
 
 function ensureUnclearTrade(document: ObjectAnalysis): Pick<ObjectAnalysis, "clusters" | "measureDetails"> {
@@ -4794,7 +4921,7 @@ function inferDocumentTrade(document: ObjectAnalysis): MeasureCluster | null {
       cluster.totalCost.sources[0]?.textSnippet ?? ""
     ])
   ].join(" ");
-  if (isHazardousMaterialTrade(text)) return "Asbestarbeiten";
+  if (isHazardousMaterialTrade(text)) return "Schadstoffsanierung / Asbest";
   if (isDisposalDemolitionTrade(text)) return "Rückbau / Entsorgung";
   return null;
 }
@@ -4920,7 +5047,13 @@ function buildReanalysisFindings(previousDocuments: ObjectAnalysis[], documents:
   documents.forEach((document) => {
     const previous = previousById.get(document.id);
     const nextTrades = getDocumentTradeNames(document).map((name) => normalizeTradeCluster(name, name));
-    if (nextTrades.includes("Asbestarbeiten") && previous && !getDocumentTradeNames(previous).map((name) => normalizeTradeCluster(name, name)).includes("Asbestarbeiten")) {
+    const requiredAsbestos = findRequiredAsbestosBlock(document);
+    if (requiredAsbestos.found) {
+      findings.push(`${document.id}: Summe 2. Asbestsanierung gefunden: Ja | Dokument: ${requiredAsbestos.documentName} | Feld: ${requiredAsbestos.field} | Betrag: ${formatNullableCurrency(requiredAsbestos.amount)} | Gewerk: Schadstoffsanierung / Asbest | Grund: ${requiredAsbestos.reason}`);
+    } else if (fieldOrUnknown(document.objectNumber).includes("760006") || fieldOrUnknown(document.objectAddress).includes("760006")) {
+      findings.push(`${document.id}: Summe 2. Asbestsanierung gefunden: Nein | Dokument: ${requiredAsbestos.documentName} | Feld: ${requiredAsbestos.field} | Betrag: k.A. | Gewerk: k.A. | Grund: ${requiredAsbestos.reason}`);
+    }
+    if (nextTrades.includes("Schadstoffsanierung / Asbest") && previous && !getDocumentTradeNames(previous).map((name) => normalizeTradeCluster(name, name)).includes("Schadstoffsanierung / Asbest")) {
       findings.push(`${document.id}: Asbest-/Schadstoffarbeiten wurden aus vorhandenen Maßnahmentexten neu zugeordnet.`);
     }
     if (nextTrades.includes("Rückbau / Entsorgung") && previous && !getDocumentTradeNames(previous).map((name) => normalizeTradeCluster(name, name)).includes("Rückbau / Entsorgung")) {
@@ -5545,7 +5678,7 @@ function normalizeTradeCluster(value: string, description = ""): MeasureCluster 
   const normalizedName = normalizeTradeName(value, description);
   if (standardTradeCatalog.includes(normalizedName as MeasureCluster)) return normalizedName as MeasureCluster;
   if (standardTradeCatalog.includes(value as MeasureCluster)) return value as MeasureCluster;
-  if (isHazardousMaterialTrade(text)) return "Asbestarbeiten";
+  if (isHazardousMaterialTrade(text)) return "Schadstoffsanierung / Asbest";
   if (isDisposalDemolitionTrade(text)) return "Rückbau / Entsorgung";
   if (/dacharbeiten|dachsanierung|dachentw[aä]sser|regenrinne|fallrohr|ziegel|abdichtung|attika/.test(text)) return "Dacharbeiten";
   if (/fassadenarbeiten|fassadensanierung|\bwdvs\b|außenfassade|aussenfassade/.test(text)) return "Fassadenarbeiten";
@@ -6887,6 +7020,7 @@ function buildReportObjectBars(
 
 function reportTradeOrder(): Array<{ key: string; label: string }> {
   return [
+    { key: "schadstoff-asbest", label: "Schadstoff / Asbest" },
     { key: "asbest", label: "Asbest" },
     { key: "elektro", label: "Elektro" },
     { key: "heizung-sanitaer", label: "Heizung Sanitär" },
@@ -6902,6 +7036,7 @@ function reportTradeOrder(): Array<{ key: string; label: string }> {
 
 function reportTradeDisplay(cluster: string): { key: string; label: string } {
   const normalized = normalizeTradeCluster(cluster, "");
+  if (normalized === "Schadstoffsanierung / Asbest") return { key: "schadstoff-asbest", label: "Schadstoff / Asbest" };
   if (normalized === "Asbestarbeiten") return { key: "asbest", label: "Asbest" };
   if (normalized === "Elektroarbeiten") return { key: "elektro", label: "Elektro" };
   if (normalized === "Heizung und Sanitär") return { key: "heizung-sanitaer", label: "Heizung Sanitär" };
@@ -7077,6 +7212,7 @@ function roundIcon(value: string): string {
 
 function reportTradeIcon(key: string): string {
   const icons: Record<string, string> = {
+    "schadstoff-asbest": "alert",
     asbest: "alert",
     elektro: "zap",
     "heizung-sanitaer": "wrench",

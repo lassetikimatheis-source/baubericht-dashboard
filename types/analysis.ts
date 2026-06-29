@@ -2,6 +2,7 @@ export type ExtractedValue<T> = T | null;
 
 export type MeasureCluster =
   | "Asbestarbeiten"
+  | "Schadstoffsanierung / Asbest"
   | "Bad"
   | "Bad / Fliesen"
   | "Abwasser"
