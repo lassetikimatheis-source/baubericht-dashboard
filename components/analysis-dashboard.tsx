@@ -6930,19 +6930,20 @@ async function exportObjectReport(
         pdf.setFillColor(...(row.highlight ? orange : navy));
         pdf.roundedRect(barX, rowY, Math.max((value / max) * barW, 2), 7, 4, 4, "F");
       }
-      text(row.value === null ? "k.A." : formatNullableCurrency(row.value), x + w - valueW, rowY + 7, 7.2, "bold", navy, valueW);
+      text(row.value === null ? "0 €" : formatNullableCurrency(row.value), x + w - valueW, rowY + 7, 7.2, "bold", navy, valueW);
     });
   };
 
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
-  text("Portfolioüberblick", contentX, 42, 12, "bold", orange);
-  text("Sanierungsreport", contentX, 78, 29, "bold", navy);
+  text("Portfolioüberblick", contentX, 42, 11, "bold", orange);
+  text("Sanierungsreport", contentX, 78, 30, "bold", navy);
   text("Teil- und Vollsanierung (GU)", contentX, 105, 16, "normal", navy);
   text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", contentX, 132, 10.5, "normal", muted, 270);
   drawLogo(38);
-  textRight(`Berichtsdatum: ${formatReportDate(new Date())}`, pageWidth - margin, 88, 8.8, "bold", navy);
-  textRight(`Fonds: ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - margin, 106, 8.8, "normal", muted);
+  textRight("BERICHTSDATUM", pageWidth - margin, 84, 7.4, "bold", muted);
+  textRight(formatReportDate(new Date()), pageWidth - margin, 100, 9.2, "bold", navy);
+  textRight(`FONDS  ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - margin, 118, 7.4, "bold", muted);
 
   card(contentX, 188, contentW, 104);
   const kpiW = contentW / 5;
@@ -7025,9 +7026,9 @@ async function exportObjectReport(
       pdf.setFillColor(...((row.average ?? 0) === maxObjectAverage ? orange : navy));
       pdf.roundedRect(contentX + 156, y - 7, Math.max(((row.average ?? 0) / maxObjectAverage) * 118, 2), 8, 4, 4, "F");
     }
-    textRight(row.average === null ? "k.A." : formatNullableCurrency(row.average), contentX + 378, y, 8, "bold", navy);
-    textRight(row.share === null ? "k.A." : `${formatNullableNumber(row.share)} %`, contentX + 458, y, 8, "bold", navy);
-    textCenter(String(row.count || "k.A."), contentX + 476, y, 8, "bold", navy);
+    textRight(row.average === null ? "0 €" : formatNullableCurrency(row.average), contentX + 378, y, 8, "bold", navy);
+    textRight(row.share === null ? "0 %" : `${formatNullableNumber(row.share)} %`, contentX + 458, y, 8, "bold", navy);
+    textCenter(String(row.count || 0), contentX + 476, y, 8, "bold", navy);
   });
   footer(2);
 
@@ -7295,8 +7296,7 @@ function buildReportObjectBars(
 
 function reportTradeOrder(): Array<{ key: string; label: string }> {
   return [
-    { key: "schadstoff-asbest", label: "Schadstoff / Asbest" },
-    { key: "asbest", label: "Asbest" },
+    { key: "schadstoff-asbest", label: "Schadstoff und Asbest" },
     { key: "elektro", label: "Elektro" },
     { key: "heizung-sanitaer", label: "Heizung Sanitär" },
     { key: "fliesen-estrich", label: "Fliesen und Estrich" },
@@ -7311,8 +7311,8 @@ function reportTradeOrder(): Array<{ key: string; label: string }> {
 
 function reportTradeDisplay(cluster: string): { key: string; label: string } {
   const normalized = normalizeTradeCluster(cluster, "");
-  if (normalized === "Schadstoffsanierung / Asbest") return { key: "schadstoff-asbest", label: "Schadstoff / Asbest" };
-  if (normalized === "Asbestarbeiten") return { key: "asbest", label: "Asbest" };
+  if (normalized === "Schadstoffsanierung / Asbest") return { key: "schadstoff-asbest", label: "Schadstoff und Asbest" };
+  if (normalized === "Asbestarbeiten") return { key: "schadstoff-asbest", label: "Schadstoff und Asbest" };
   if (normalized === "Elektroarbeiten") return { key: "elektro", label: "Elektro" };
   if (normalized === "Heizung und Sanitär") return { key: "heizung-sanitaer", label: "Heizung Sanitär" };
   if (normalized === "Fliesen und Estricharbeiten") return { key: "fliesen-estrich", label: "Fliesen und Estrich" };
