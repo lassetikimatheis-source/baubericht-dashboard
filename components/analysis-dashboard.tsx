@@ -6847,8 +6847,8 @@ async function exportObjectReport(
     footerY: 799,
     kpiHeight: 104,
     compactKpiHeight: 100,
-    tableRowHeight: 25,
-    chartRowHeight: 21,
+    tableRowHeight: 23,
+    chartRowHeight: 19,
     font: {
       eyebrow: 10,
       title: 30,
@@ -6994,7 +6994,7 @@ async function exportObjectReport(
     ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt"],
     ["Wohneinheiten gesamt", formatNullableNumber(portfolio.units), "gesamt"],
     ["GU sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt"],
-    ["GU sanierte Wohnungen", formatNullableNumber(portfolio.renovatedApartments), "gesamt"],
+    ["Dokumente ausgewertet", formatNumber(portfolio.documentCount), "gesamt"],
     ["Durchschnittliche Wohnungsgröße", formatArea(portfolio.averageApartmentSize), "gesamt"]
   ].forEach(([title, value, detail], index) => {
     if (index > 0) {
@@ -7008,12 +7008,12 @@ async function exportObjectReport(
   bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", contentX, 320, halfCardW, 100);
   bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", contentX + halfCardW + gap, 320, halfCardW, 100);
 
-  card(contentX, 428, contentW, 324);
-  text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG", contentX + 16, 472, 11, "bold", navy, contentW - 32);
-  text("NACH GEWERK", contentX + 16, 490, 11, "bold", navy, contentW - 32);
-  text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", contentX + 16, 514, 8.5, "normal", muted, contentW - 32);
+  card(contentX, 428, contentW, 300);
+  text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG", contentX + 16, 456, 11, "bold", navy, contentW - 32);
+  text("NACH GEWERK", contentX + 16, 474, 11, "bold", navy, contentW - 32);
+  text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", contentX + 16, 498, 8.5, "normal", muted, contentW - 32);
   const maxPortfolioAverage = Math.max(...portfolioTrades.map((row) => row.average ?? 0), 0);
-  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), contentX + 16, 536, contentW - 32, layout.chartRowHeight, 190, 82);
+  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), contentX + 16, 520, contentW - 32, layout.chartRowHeight, 190, 82);
   footer(1);
 
   pdf.addPage();
@@ -7050,7 +7050,7 @@ async function exportObjectReport(
   card(contentX, 392, contentW, 336);
   text("Ø GU Kosten pro Wohnung nach Gewerk", contentX + 16, 420, 15, "bold", navy);
   text("Durchschnittliche Bruttokosten pro sanierter Wohnung", contentX + 16, 440, 9, "normal", muted);
-  const tableY = 468;
+  const tableY = 466;
   fitText("GEWERK", contentX + 16, tableY, 126, layout.font.table, 6.4, "bold", navy);
   fitText("Ø KOSTEN / WOHNUNG", contentX + 156, tableY, 118, layout.font.table, 6.4, "bold", navy);
   fitText("BETRAG", contentX + 302, tableY, 72, layout.font.table, 6.4, "bold", navy, "right");
@@ -7164,7 +7164,7 @@ function buildTwoPageObjectReportHtml(
       ${portfolioKpi("Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt", "coins")}
       ${portfolioKpi("Wohneinheiten gesamt", portfolio.units === null ? "k.A." : formatNumber(portfolio.units), "gesamt", "building")}
       ${portfolioKpi("Sanierte Fläche", portfolio.renovatedArea === null ? "k.A." : formatArea(portfolio.renovatedArea), "gesamt", "home")}
-      ${portfolioKpi("Sanierte Wohnungen", portfolio.renovatedApartments === null ? "k.A." : formatNumber(portfolio.renovatedApartments), "gesamt", "house")}
+      ${portfolioKpi("Dokumente ausgewertet", formatNumber(portfolio.documentCount), "gesamt", "house")}
       ${portfolioKpi("Durchschnittliche Wohnungsgröße", portfolio.averageApartmentSize === null ? "k.A." : formatArea(portfolio.averageApartmentSize), "gesamt", "scan")}
     </section>
 
@@ -7248,6 +7248,7 @@ function buildReportPortfolioMetrics(
   assignments: Record<string, string | null>
 ) {
   const gross = sumValues(documents.map((document) => document.totalCost.value));
+  const documentCount = documents.length;
   const units = sumValues(objects.map((object) => parseGermanNumber(object.unitCount)));
   const renovatedArea = sumValues(objects.map((object) => parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "")));
   const renovatedApartments = countReportRenovatedApartments(documents);
@@ -7260,7 +7261,7 @@ function buildReportPortfolioMetrics(
     "k.A."
   );
 
-  return { gross, units, renovatedArea, renovatedApartments, averageApartmentSize, averageCostPerApartment, averageCostPerSqm, fund };
+  return { gross, documentCount, units, renovatedArea, renovatedApartments, averageApartmentSize, averageCostPerApartment, averageCostPerSqm, fund };
 }
 
 function buildReportObjectMetrics(object: ObjectRecord, documents: ObjectAnalysis[]) {
