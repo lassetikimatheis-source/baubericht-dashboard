@@ -6889,10 +6889,10 @@ async function exportObjectReport(
   };
   const drawLogo = () => {
     if (logoDataUrl) {
-      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, 24, 122, 31, undefined, "FAST");
+      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, 18, 122, 31, undefined, "FAST");
       return;
     }
-    text("PARIBUS", pageWidth - 135, 42, 20, "bold", navy);
+    text("PARIBUS", pageWidth - 135, 36, 20, "bold", navy);
   };
   const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
     text(title.toUpperCase(), x + 8, y + 18, 6.8, "bold", navy, w - 16);
@@ -6904,6 +6904,12 @@ async function exportObjectReport(
     text(title.toUpperCase(), x + 16, y + 24, 8, "bold", navy, w - 32);
     fitText(value, x + 16, y + 66, w - 32, 20, 12, "bold", orange, "left");
     text(subtitle, x + 16, y + h - 18, 8.3, "normal", muted, w - 32);
+  };
+  const compactKpi = (title: string, value: string, subtitle: string, x: number, y: number, w: number, h: number) => {
+    card(x, y, w, h);
+    text(title.toUpperCase(), x + 14, y + 18, 7.2, "bold", navy, w - 28);
+    fitText(value, x + 14, y + 46, w - 28, 16, 10, "bold", orange, "left");
+    text(subtitle, x + 14, y + h - 12, 7.2, "normal", muted, w - 28);
   };
   const footer = (page: number) => {
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
@@ -6932,15 +6938,15 @@ async function exportObjectReport(
 
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
-  text("Portfolioüberblick", 52, 36, 13, "bold", orange);
-  text("Sanierungsreport", 52, 68, 28, "bold", navy);
-  text("Teil- und Vollsanierung (GU)", 52, 94, 17, "normal", navy);
-  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", 52, 124, 11, "normal", muted, 260);
+  text("Portfolioüberblick", 52, 30, 13, "bold", orange);
+  text("Sanierungsreport", 52, 60, 28, "bold", navy);
+  text("Teil- und Vollsanierung (GU)", 52, 86, 17, "normal", navy);
+  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", 52, 114, 11, "normal", muted, 260);
   drawLogo();
-  textRight(`Berichtsdatum: ${formatReportDate(new Date())}`, pageWidth - 52, 90, 8.8, "bold", navy);
-  textRight(`Fonds: ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - 52, 106, 8.8, "normal", muted);
+  textRight(`Berichtsdatum: ${formatReportDate(new Date())}`, pageWidth - 52, 82, 8.8, "bold", navy);
+  textRight(`Fonds: ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - 52, 98, 8.8, "normal", muted);
 
-  card(40, 220, 516, 104);
+  card(40, 198, 516, 104);
   const kpiW = 516 / 5;
   [
     ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt"],
@@ -6951,30 +6957,30 @@ async function exportObjectReport(
   ].forEach(([title, value, detail], index) => {
     if (index > 0) {
       pdf.setDrawColor(border[0], border[1], border[2]);
-      pdf.line(40 + index * kpiW, 234, 40 + index * kpiW, 306);
+      pdf.line(40 + index * kpiW, 212, 40 + index * kpiW, 284);
     }
-    smallKpi(title, value, detail, 40 + index * kpiW, 234, kpiW);
+    smallKpi(title, value, detail, 40 + index * kpiW, 212, kpiW);
   });
 
-  bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 40, 346, 250, 98);
-  bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", 306, 346, 250, 98);
+  bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 40, 320, 250, 98);
+  bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", 306, 320, 250, 98);
 
-  card(40, 450, 516, 268);
-  text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG", 56, 478, 11, "bold", navy, 484);
-  text("NACH GEWERK", 56, 496, 11, "bold", navy, 484);
-  text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", 56, 520, 8.5, "normal", muted, 484);
+  card(40, 438, 516, 290);
+  text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG", 56, 466, 11, "bold", navy, 484);
+  text("NACH GEWERK", 56, 484, 11, "bold", navy, 484);
+  text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", 56, 508, 8.5, "normal", muted, 484);
   const maxPortfolioAverage = Math.max(...portfolioTrades.map((row) => row.average ?? 0), 0);
-  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), 56, 548, 484, 18, 190, 82);
+  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), 56, 536, 484, 18, 190, 82);
   footer(1);
 
   pdf.addPage();
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
   drawLogo();
-  text("Objektübersicht", 52, 36, 13, "bold", orange);
-  text(firstKnown(object.objectNumber, "k.A."), 52, 76, 34, "bold", navy);
-  text(objectAddress, 52, 104, 13, "normal", navy, 430);
-  text("Teil- und Vollsanierung (GU)", 52, 132, 14, "normal", navy);
+  text("Objektübersicht", 52, 30, 13, "bold", orange);
+  text(firstKnown(object.objectNumber, "k.A."), 52, 70, 34, "bold", navy);
+  text(objectAddress, 52, 98, 13, "normal", navy, 330);
+  text("Teil- und Vollsanierung (GU)", 52, 126, 14, "normal", navy);
 
   const meta = [
     ["Baujahr", firstKnown(object.constructionYear, "k.A.")],
@@ -6984,23 +6990,19 @@ async function exportObjectReport(
     ["Wohnungsgröße (GU)", formatArea(objectMetrics.averageApartmentSize)]
   ];
   meta.forEach(([title, value], index) => {
-    const x = 40 + index * 103.2;
-    if (index > 0) {
-      pdf.setDrawColor(border[0], border[1], border[2]);
-      pdf.line(x - 10, 178, x - 10, 225);
-    }
-    metaLabel(title, x, 198, 94);
-    fitText(value, x, 224, 94, 13, 9, "bold", orange, "center");
+    const y = 178 + index * 34;
+    metaLabel(title, 52, y, 130);
+    fitText(value, 190, y, 142, 13, 9, "bold", orange, "left");
   });
 
-  bigKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", 40, 258, 164, 104);
-  bigKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", 216, 258, 164, 104);
-  bigKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", 392, 258, 164, 104);
+  compactKpi("GU Gesamtkosten", formatNullableCurrency(objectMetrics.gross), "brutto", 392, 168, 164, 76);
+  compactKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", 392, 256, 164, 76);
+  compactKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", 392, 344, 164, 76);
 
-  card(40, 368, 516, 360);
-  text("Gewerke Sanierung", 56, 396, 15, "bold", navy);
-  text("Durchschnittliche Bruttokosten pro sanierter Wohnung", 56, 416, 9, "normal", muted);
-  const tableY = 448;
+  card(40, 442, 516, 286);
+  text("Ø GU Kosten pro Wohnung nach Gewerk", 56, 470, 15, "bold", navy);
+  text("Durchschnittliche Bruttokosten pro sanierter Wohnung", 56, 490, 9, "normal", muted);
+  const tableY = 514;
   text("GEWERK", 56, tableY, 8, "bold", navy);
   text("Ø KOSTEN / WOHNUNG", 196, tableY, 8, "bold", navy);
   text("BETRAG", 342, tableY, 8, "bold", navy);
@@ -7010,7 +7012,7 @@ async function exportObjectReport(
   pdf.line(56, tableY + 8, 540, tableY + 8);
   const maxObjectAverage = Math.max(...objectTrades.map((row) => row.average ?? 0), 1);
   objectTrades.forEach((row, index) => {
-    const y = tableY + 30 + index * 22;
+    const y = tableY + 28 + index * 18;
     text(row.label, 56, y, 8, "bold", navy, 128);
     pdf.setFillColor(237, 241, 246);
     pdf.roundedRect(196, y - 7, 118, 8, 4, 4, "F");
