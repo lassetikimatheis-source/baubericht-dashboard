@@ -6889,10 +6889,10 @@ async function exportObjectReport(
   };
   const drawLogo = () => {
     if (logoDataUrl) {
-      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, 34, 122, 31, undefined, "FAST");
+      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, 24, 122, 31, undefined, "FAST");
       return;
     }
-    text("PARIBUS", pageWidth - 135, 52, 20, "bold", navy);
+    text("PARIBUS", pageWidth - 135, 42, 20, "bold", navy);
   };
   const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
     text(title.toUpperCase(), x + 8, y + 18, 6.8, "bold", navy, w - 16);
@@ -6959,12 +6959,12 @@ async function exportObjectReport(
   bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 40, 346, 250, 98);
   bigKpi("Durchschnittliche GU Kosten pro m²", formatEuroPerSqm(portfolio.averageCostPerSqm), "Durchschnitt über alle Objekte (sanierte Fläche)", 306, 346, 250, 98);
 
-  card(40, 460, 516, 250);
-  text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG", 56, 486, 11, "bold", navy, 484);
-  text("NACH GEWERK", 56, 504, 11, "bold", navy, 484);
-  text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", 56, 526, 8.5, "normal", muted, 484);
+  card(40, 450, 516, 268);
+  text("DURCHSCHNITTLICHE KOSTEN PRO WOHNUNG", 56, 478, 11, "bold", navy, 484);
+  text("NACH GEWERK", 56, 496, 11, "bold", navy, 484);
+  text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", 56, 520, 8.5, "normal", muted, 484);
   const maxPortfolioAverage = Math.max(...portfolioTrades.map((row) => row.average ?? 0), 0);
-  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), 56, 552, 484, 17, 184, 78);
+  drawBars(portfolioTrades.map((row) => ({ label: row.label, value: row.average, highlight: (row.average ?? 0) === maxPortfolioAverage && maxPortfolioAverage > 0 })), 56, 548, 484, 18, 190, 82);
   footer(1);
 
   pdf.addPage();
@@ -6997,9 +6997,9 @@ async function exportObjectReport(
   bigKpi("GU Kosten pro Wohnung", formatNullableCurrency(objectMetrics.averageCostPerApartment), "Durchschnitt über Dokumente", 216, 258, 164, 104);
   bigKpi("GU Kosten pro QM", formatEuroPerSqm(objectMetrics.costPerSqm), "Durchschnitt sanierte Fläche", 392, 258, 164, 104);
 
-  card(40, 374, 516, 354);
-  textRight("Gewerke Sanierung", 540, 402, 15, "bold", navy);
-  textRight("Durchschnittliche Bruttokosten pro sanierter Wohnung", 540, 422, 9, "normal", muted);
+  card(40, 368, 516, 360);
+  text("Gewerke Sanierung", 56, 396, 15, "bold", navy);
+  text("Durchschnittliche Bruttokosten pro sanierter Wohnung", 56, 416, 9, "normal", muted);
   const tableY = 448;
   text("GEWERK", 56, tableY, 8, "bold", navy);
   text("Ø KOSTEN / WOHNUNG", 196, tableY, 8, "bold", navy);
