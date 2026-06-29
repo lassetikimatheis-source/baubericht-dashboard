@@ -20,7 +20,7 @@ import type { ObjectMapEntry } from "./map/ObjectMap";
 import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
-import { normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
+import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
   createAnalysisBackup,
   deleteDocument as deleteStoredDocument,
@@ -82,10 +82,15 @@ interface ReanalysisSummary {
   backupId: string | null;
   objectCount: number;
   documentCount: number;
+  correctedDocumentCount: number;
+  newlyRecognizedMeasureCount: number;
+  newlyRecognizedTradeCount: number;
+  correctedCostCount: number;
   documentTypes: Record<string, number>;
   totalCost: number | null;
   unclearCount: number;
   errors: string[];
+  findings: string[];
 }
 
 interface ReanalysisProgress {
@@ -354,6 +359,7 @@ const standardTradeCatalog: MeasureCluster[] = [
   "Fassadenarbeiten",
   "Dacharbeiten",
   "Fensterarbeiten",
+  "Rückbau / Entsorgung",
   "Außenanlagen",
   "Reinigung",
   "Planung / Dokumentation",
@@ -923,6 +929,7 @@ export function AnalysisDashboard() {
       const summary = buildReanalysisSummary({
         backupId,
         objects: storedObjects,
+        previousDocuments: storedDocuments,
         documents: nextDocuments,
         errors
       });
@@ -3901,9 +3908,13 @@ function ReanalysisSummaryView({ summary }: { summary: ReanalysisSummary }) {
       <div className="metric"><span>Backup</span><strong>{summary.backupId ?? "k.A."}</strong><small>Vor der Neuauswertung im Browser-Speicher abgelegt.</small></div>
       <div className="metric"><span>Objekte</span><strong>{formatNumber(summary.objectCount)}</strong><small>Stammdaten wurden nicht geloescht.</small></div>
       <div className="metric"><span>Dokumente</span><strong>{formatNumber(summary.documentCount)}</strong><small>Alle gespeicherten Auswertungen neu synchronisiert.</small></div>
+      <div className="metric"><span>Korrigierte Dokumente</span><strong>{formatNumber(summary.correctedDocumentCount)}</strong><small>Dokumenttyp, Gewerk, Maßnahmen oder Kosten wurden angepasst.</small></div>
+      <div className="metric"><span>Neue Maßnahmen</span><strong>{formatNumber(summary.newlyRecognizedMeasureCount)}</strong><small>Zusätzlich sichtbare Maßnahmen nach der Prüfung.</small></div>
+      <div className="metric"><span>Neue Gewerke</span><strong>{formatNumber(summary.newlyRecognizedTradeCount)}</strong><small>Zusätzlich erkannte Gewerk-Zuordnungen.</small></div>
+      <div className="metric"><span>Kostenkorrekturen</span><strong>{formatNumber(summary.correctedCostCount)}</strong><small>Dokumente mit neu berechneten Kennzahlen.</small></div>
       <div className="metric"><span>Gesamtkosten</span><strong>{formatNullableCurrency(summary.totalCost)}</strong><small>Abschlaege werden bei vorhandener Schlussrechnung nicht doppelt addiert.</small></div>
       <div className="metric"><span>Unklare Gewerke</span><strong>{formatNumber(summary.unclearCount)}</strong><small>Diese Positionen bleiben manuell korrigierbar.</small></div>
-      <div className="metric"><span>Fehler</span><strong>{formatNumber(summary.errors.length)}</strong><small>{summary.errors[0] ?? "Keine Fehler gemeldet."}</small></div>
+      <div className="metric"><span>Fehler</span><strong>{formatNumber(summary.errors.length + summary.findings.length)}</strong><small>{summary.errors[0] ?? summary.findings[0] ?? "Keine Fehler gemeldet."}</small></div>
       <div className="metric reanalysisTypes"><span>Dokumentarten</span><strong>{formatNumber(documentTypes.length)}</strong><small>{documentTypes.map(([type, count]) => `${type}: ${count}`).join(" | ") || "k.A."}</small></div>
     </div>
   );
@@ -4689,6 +4700,7 @@ function reanalyzeStoredDocument(document: ObjectAnalysis): ObjectAnalysis {
 }
 
 function ensureUnclearTrade(document: ObjectAnalysis): Pick<ObjectAnalysis, "clusters" | "measureDetails"> {
+  const inferredTrade = inferDocumentTrade(document);
   const hasClearCluster = document.clusters.some((cluster) => {
     const value = fieldOrUnknown(cluster.cluster);
     return value !== "k.A." && value !== "Sonstige" && value !== "Sonstiges" && value !== "Unklar";
@@ -4697,13 +4709,51 @@ function ensureUnclearTrade(document: ObjectAnalysis): Pick<ObjectAnalysis, "clu
     const clusters = document.clusters.map((cluster) => {
       const value = fieldOrUnknown(cluster.cluster);
       if (hasClearCluster && value !== "k.A.") return cluster;
+      if (inferredTrade) {
+        return {
+          ...cluster,
+          cluster: calculatedTextField(inferredTrade, cluster.cluster) as ExtractedField<MeasureCluster>,
+          description: calculatedTextField(inferredTrade === "Asbestarbeiten" ? "Asbest- / Schadstoffarbeiten" : "Rückbau / Entsorgung", cluster.description)
+        };
+      }
       return {
         ...cluster,
         cluster: calculatedTextField("Unklar", cluster.cluster) as ExtractedField<MeasureCluster>,
         description: calculatedTextField("Gewerk konnte nicht eindeutig erkannt werden.", cluster.description)
       };
     });
-    return { clusters, measureDetails: document.measureDetails };
+    const measureDetails = inferredTrade && !hasClearCluster
+      ? (document.measureDetails ?? []).map((detail) => ({
+        ...detail,
+        cluster: inferredTrade,
+        beschreibung: inferredTrade === "Asbestarbeiten" ? "Asbest- / Schadstoffarbeiten" : "Rückbau / Entsorgung"
+      }))
+      : document.measureDetails;
+    return { clusters, measureDetails };
+  }
+
+  if (inferredTrade) {
+    const description = inferredTrade === "Asbestarbeiten" ? "Asbest- / Schadstoffarbeiten" : "Rückbau / Entsorgung";
+    return {
+      clusters: [{
+        id: `${document.id}-${inferredTrade === "Asbestarbeiten" ? "asbest" : "rueckbau"}-trade`,
+        cluster: calculatedTextField(inferredTrade, emptyField<MeasureCluster>()) as ExtractedField<MeasureCluster>,
+        description: calculatedTextField(description, emptyField<string>()),
+        totalCost: calculatedNumberField(document.totalCost.value, emptyField<number>()),
+        allocation: emptyField<CostAllocation>(),
+        sourceDocumentId: document.id
+      }],
+      measureDetails: [
+        ...(document.measureDetails ?? []),
+        {
+          abschnitt: description,
+          cluster: inferredTrade,
+          summe: document.totalCost.value,
+          beschreibung: description,
+          quelle: sourceLabel(document.totalCost)
+        }
+      ]
+    };
   }
 
   return {
@@ -4726,6 +4776,25 @@ function ensureUnclearTrade(document: ObjectAnalysis): Pick<ObjectAnalysis, "clu
       }
     ]
   };
+}
+
+function inferDocumentTrade(document: ObjectAnalysis): MeasureCluster | null {
+  const text = [
+    fieldOrUnknown(document.measureDescription),
+    fieldOrUnknown(document.projectType),
+    fieldOrUnknown(document.assignmentSuggestion),
+    fieldOrUnknown(document.remarks),
+    ...(document.measureDetails ?? []).flatMap((detail) => [detail.abschnitt, detail.beschreibung, detail.quelle]),
+    ...(document.costDebug?.matches.map((match) => match.raw) ?? []),
+    ...document.clusters.flatMap((cluster) => [
+      fieldOrUnknown(cluster.cluster),
+      fieldOrUnknown(cluster.description),
+      cluster.totalCost.sources[0]?.textSnippet ?? ""
+    ])
+  ].join(" ");
+  if (isHazardousMaterialTrade(text)) return "Asbestarbeiten";
+  if (isDisposalDemolitionTrade(text)) return "Rückbau / Entsorgung";
+  return null;
 }
 
 function classifyStoredDocumentType(document: ObjectAnalysis): string {
@@ -4775,11 +4844,13 @@ function calculatedNumberField(value: number | null, previous: ExtractedField<nu
 function buildReanalysisSummary({
   backupId,
   objects,
+  previousDocuments,
   documents,
   errors
 }: {
   backupId: string | null;
   objects: ObjectRecord[];
+  previousDocuments: ObjectAnalysis[];
   documents: ObjectAnalysis[];
   errors: string[];
 }): ReanalysisSummary {
@@ -4789,15 +4860,72 @@ function buildReanalysisSummary({
     return accumulator;
   }, {});
   const costDocuments = selectEffectiveCostDocuments(documents);
+  const previousById = new Map(previousDocuments.map((document) => [document.id, document]));
+  const correctedDocuments = documents.filter((document) => {
+    const previous = previousById.get(document.id);
+    if (!previous) return true;
+    return getDocumentComparisonFingerprint(previous) !== getDocumentComparisonFingerprint(document);
+  });
+  const previousMeasureCount = previousDocuments.reduce((sum, document) => sum + getDocumentMeasureCount(document), 0);
+  const nextMeasureCount = documents.reduce((sum, document) => sum + getDocumentMeasureCount(document), 0);
+  const previousTrades = new Set(previousDocuments.flatMap(getDocumentTradeNames).map((name) => normalizeTradeCluster(name, name)));
+  const nextTrades = new Set(documents.flatMap(getDocumentTradeNames).map((name) => normalizeTradeCluster(name, name)));
+  const correctedCostCount = documents.filter((document) => {
+    const previous = previousById.get(document.id);
+    if (!previous) return document.totalCost.value !== null || document.costPerApartment.value !== null || document.costPerSqm.value !== null;
+    return previous.totalCost.value !== document.totalCost.value
+      || previous.costPerApartment.value !== document.costPerApartment.value
+      || previous.costPerSqm.value !== document.costPerSqm.value;
+  }).length;
+  const findings = buildReanalysisFindings(previousDocuments, documents);
   return {
     backupId,
     objectCount: objects.length,
     documentCount: documents.length,
+    correctedDocumentCount: correctedDocuments.length,
+    newlyRecognizedMeasureCount: Math.max(nextMeasureCount - previousMeasureCount, 0),
+    newlyRecognizedTradeCount: Array.from(nextTrades).filter((trade) => !previousTrades.has(trade)).length,
+    correctedCostCount,
     documentTypes,
     totalCost: sumValues(costDocuments.map((document) => document.totalCost.value)),
     unclearCount: documents.reduce((sum, document) => sum + document.clusters.filter((cluster) => fieldOrUnknown(cluster.cluster) === "Unklar").length, 0),
-    errors
+    errors,
+    findings
   };
+}
+
+function getDocumentComparisonFingerprint(document: ObjectAnalysis): string {
+  return JSON.stringify({
+    documentType: document.documentType.value,
+    totalCost: document.totalCost.value,
+    costPerApartment: document.costPerApartment.value,
+    costPerSqm: document.costPerSqm.value,
+    clusters: document.clusters.map((cluster) => [cluster.cluster.value, cluster.description.value, cluster.totalCost.value]),
+    measureDetails: (document.measureDetails ?? []).map((detail) => [detail.cluster, detail.beschreibung, detail.summe])
+  });
+}
+
+function getDocumentMeasureCount(document: ObjectAnalysis): number {
+  return Math.max(document.clusters.length, document.measureDetails?.length ?? 0);
+}
+
+function buildReanalysisFindings(previousDocuments: ObjectAnalysis[], documents: ObjectAnalysis[]): string[] {
+  const previousById = new Map(previousDocuments.map((document) => [document.id, document]));
+  const findings: string[] = [];
+  documents.forEach((document) => {
+    const previous = previousById.get(document.id);
+    const nextTrades = getDocumentTradeNames(document).map((name) => normalizeTradeCluster(name, name));
+    if (nextTrades.includes("Asbestarbeiten") && previous && !getDocumentTradeNames(previous).map((name) => normalizeTradeCluster(name, name)).includes("Asbestarbeiten")) {
+      findings.push(`${document.id}: Asbest-/Schadstoffarbeiten wurden aus vorhandenen Maßnahmentexten neu zugeordnet.`);
+    }
+    if (nextTrades.includes("Rückbau / Entsorgung") && previous && !getDocumentTradeNames(previous).map((name) => normalizeTradeCluster(name, name)).includes("Rückbau / Entsorgung")) {
+      findings.push(`${document.id}: Rückbau-/Entsorgungsarbeiten wurden aus vorhandenen Maßnahmentexten neu zugeordnet.`);
+    }
+    if (document.clusters.some((cluster) => fieldOrUnknown(cluster.cluster) === "Unklar")) {
+      findings.push(`${document.id}: Gewerk bleibt unklar und muss manuell geprüft werden.`);
+    }
+  });
+  return findings.slice(0, 20);
 }
 
 function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: ObjectAnalysis[]): ObjectAnalysis[] {
@@ -5412,7 +5540,8 @@ function normalizeTradeCluster(value: string, description = ""): MeasureCluster 
   const normalizedName = normalizeTradeName(value, description);
   if (standardTradeCatalog.includes(normalizedName as MeasureCluster)) return normalizedName as MeasureCluster;
   if (standardTradeCatalog.includes(value as MeasureCluster)) return value as MeasureCluster;
-  if (/asbest|schadstoffsanierung|\bbt\s*(?:11|17\.45)\b|flexplatten|asbesthaltig|beprobung\s+auf\s+asbest/.test(text)) return "Asbestarbeiten";
+  if (isHazardousMaterialTrade(text)) return "Asbestarbeiten";
+  if (isDisposalDemolitionTrade(text)) return "Rückbau / Entsorgung";
   if (/dacharbeiten|dachsanierung|dachentw[aä]sser|regenrinne|fallrohr|ziegel|abdichtung|attika/.test(text)) return "Dacharbeiten";
   if (/fassadenarbeiten|fassadensanierung|\bwdvs\b|außenfassade|aussenfassade/.test(text)) return "Fassadenarbeiten";
   if (/w[aä]rmed[aä]mm|dämm|daemm/.test(text)) return "Fassadenarbeiten";
@@ -6760,6 +6889,7 @@ function reportTradeOrder(): Array<{ key: string; label: string }> {
     { key: "boden", label: "Bodenbelagsarbeiten" },
     { key: "maler", label: "Maler" },
     { key: "tischler", label: "Tischler" },
+    { key: "rueckbau-entsorgung", label: "Rückbau Entsorgung" },
     { key: "reinigung", label: "Reinigung" },
     { key: "sonstiges", label: "Sonstiges" }
   ];
@@ -6774,6 +6904,7 @@ function reportTradeDisplay(cluster: string): { key: string; label: string } {
   if (normalized === "Bodenbelagsarbeiten") return { key: "boden", label: "Bodenbelagsarbeiten" };
   if (normalized === "Malerarbeiten") return { key: "maler", label: "Maler" };
   if (normalized === "Tischlerarbeiten") return { key: "tischler", label: "Tischler" };
+  if (normalized === "Rückbau / Entsorgung") return { key: "rueckbau-entsorgung", label: "Rückbau Entsorgung" };
   if (normalized === "Reinigung") return { key: "reinigung", label: "Reinigung" };
   return { key: "sonstiges", label: "Sonstiges" };
 }

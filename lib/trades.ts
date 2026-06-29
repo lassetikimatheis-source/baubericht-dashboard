@@ -10,6 +10,18 @@ export const ROOF_TRADE: MeasureCluster = "Dacharbeiten";
 export const WINDOW_TRADE: MeasureCluster = "Fensterarbeiten";
 export const OTHER_TRADE: MeasureCluster = "Sonstige";
 export const ELECTRICAL_TRADE: MeasureCluster = "Elektroarbeiten";
+export const DISPOSAL_DEMOLITION_TRADE: MeasureCluster = "Rückbau / Entsorgung";
+
+const HAZARDOUS_MATERIAL_PATTERN = /asbest|schadstoff(?:sanierung|entsorgung|arbeiten)?|gefahrstoff|trgs\s*519|\bpcb\b|\bkmf\b|\bbt\s*(?:11|17\.45)\b|flexplatten|asbesthaltig|beprobung\s+auf\s+asbest/i;
+const DISPOSAL_DEMOLITION_PATTERN = /entsorgung|demontage(?:arbeiten)?|r[üu]ckbau(?:arbeiten)?|rueckbau(?:arbeiten)?|abbruch(?:arbeiten)?|ausbauarbeiten/i;
+
+export function isHazardousMaterialTrade(value: string | null | undefined): boolean {
+  return HAZARDOUS_MATERIAL_PATTERN.test(String(value ?? ""));
+}
+
+export function isDisposalDemolitionTrade(value: string | null | undefined): boolean {
+  return DISPOSAL_DEMOLITION_PATTERN.test(String(value ?? ""));
+}
 
 export function normalizeTradeName(value: string | null | undefined, description = ""): MeasureCluster | string {
   const explicitTrade = normalizeExplicitTradeValue(value);
@@ -18,6 +30,14 @@ export function normalizeTradeName(value: string | null | undefined, description
   const raw = `${value ?? ""} ${description}`.trim();
   const text = raw.toLowerCase();
   if (!text || text === "k.a.") return value ?? "";
+
+  if (isHazardousMaterialTrade(text)) {
+    return ASBESTOS_TRADE;
+  }
+
+  if (isDisposalDemolitionTrade(text)) {
+    return DISPOSAL_DEMOLITION_TRADE;
+  }
 
   if (text === "sonstiges" || text === "sonstige") {
     return OTHER_TRADE;
@@ -73,6 +93,24 @@ function normalizeExplicitTradeValue(value: string | null | undefined): MeasureC
   const explicitMap: Record<string, MeasureCluster> = {
     asbestarbeiten: ASBESTOS_TRADE,
     asbestsanierung: ASBESTOS_TRADE,
+    schadstoffsanierung: ASBESTOS_TRADE,
+    schadstoffentsorgung: ASBESTOS_TRADE,
+    schadstoffarbeiten: ASBESTOS_TRADE,
+    gefahrstoffarbeiten: ASBESTOS_TRADE,
+    trgs519: ASBESTOS_TRADE,
+    pcb: ASBESTOS_TRADE,
+    kmf: ASBESTOS_TRADE,
+    entsorgung: DISPOSAL_DEMOLITION_TRADE,
+    demontage: DISPOSAL_DEMOLITION_TRADE,
+    demontagearbeiten: DISPOSAL_DEMOLITION_TRADE,
+    rueckbau: DISPOSAL_DEMOLITION_TRADE,
+    rueckbauarbeiten: DISPOSAL_DEMOLITION_TRADE,
+    ruckbau: DISPOSAL_DEMOLITION_TRADE,
+    ruckbauarbeiten: DISPOSAL_DEMOLITION_TRADE,
+    rueckbauentsorgung: DISPOSAL_DEMOLITION_TRADE,
+    ruckbauentsorgung: DISPOSAL_DEMOLITION_TRADE,
+    abbruch: DISPOSAL_DEMOLITION_TRADE,
+    abbrucharbeiten: DISPOSAL_DEMOLITION_TRADE,
     bodenbelagsarbeiten: FLOORING_TRADE,
     bodenbelaege: FLOORING_TRADE,
     bodenbelage: FLOORING_TRADE,

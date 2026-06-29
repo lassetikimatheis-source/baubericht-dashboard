@@ -31,6 +31,7 @@ export type MeasureCluster =
   | "Photovoltaik"
   | "Planung / Dokumentation"
   | "Reinigung"
+  | "Rückbau / Entsorgung"
   | "Sanitär"
   | "Sanitär / Heizung"
   | "Fliesen und Estricharbeiten"
