@@ -6933,14 +6933,14 @@ async function exportObjectReport(
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
   text("Portfolioüberblick", 52, 30, 13, "bold", orange);
-  text("Sanierungsreport", 52, 72, 28, "bold", navy);
-  text("Teil- und Vollsanierung (GU)", 52, 100, 17, "normal", navy);
-  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", 52, 132, 11, "normal", muted, 260);
+  text("Sanierungsreport", 52, 84, 28, "bold", navy);
+  text("Teil- und Vollsanierung (GU)", 52, 112, 17, "normal", navy);
+  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", 52, 140, 11, "normal", muted, 260);
   drawLogo();
   textRight(`Berichtsdatum: ${formatReportDate(new Date())}`, pageWidth - 52, 90, 8.8, "bold", navy);
   textRight(`Fonds: ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - 52, 106, 8.8, "normal", muted);
 
-  card(40, 198, 516, 104);
+  card(40, 174, 516, 104);
   const kpiW = 516 / 5;
   [
     ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt"],
@@ -6951,9 +6951,9 @@ async function exportObjectReport(
   ].forEach(([title, value, detail], index) => {
     if (index > 0) {
       pdf.setDrawColor(border[0], border[1], border[2]);
-      pdf.line(40 + index * kpiW, 212, 40 + index * kpiW, 284);
+      pdf.line(40 + index * kpiW, 188, 40 + index * kpiW, 260);
     }
-    smallKpi(title, value, detail, 40 + index * kpiW, 212, kpiW);
+    smallKpi(title, value, detail, 40 + index * kpiW, 188, kpiW);
   });
 
   bigKpi("Durchschnittliche GU Sanierungskosten pro Wohnung", formatNullableCurrency(portfolio.averageCostPerApartment), "Durchschnitt über alle Objekte (brutto)", 40, 320, 250, 98);
@@ -6971,10 +6971,10 @@ async function exportObjectReport(
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
   drawLogo();
-  text("Objektübersicht", 52, 42, 13, "bold", orange);
+  text("Objektübersicht", 52, 54, 13, "bold", orange);
   text(firstKnown(object.objectNumber, "k.A."), 52, 82, 34, "bold", navy);
   text(objectAddress, 52, 110, 13, "normal", navy, 430);
-  text("Teil- und Vollsanierung (GU)", 52, 138, 14, "normal", navy);
+  text("Teil- und Vollsanierung (GU)", 52, 150, 14, "normal", navy);
 
   const meta = [
     ["Baujahr", firstKnown(object.constructionYear, "k.A.")],
