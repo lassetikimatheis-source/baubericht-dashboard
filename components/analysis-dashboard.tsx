@@ -6887,12 +6887,12 @@ async function exportObjectReport(
     pdf.setDrawColor(border[0], border[1], border[2]);
     pdf.roundedRect(x, y, w, h, 8, 8, "FD");
   };
-  const drawLogo = () => {
+  const drawLogo = (y = 18) => {
     if (logoDataUrl) {
-      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, 18, 122, 31, undefined, "FAST");
+      pdf.addImage(logoDataUrl, "PNG", pageWidth - 174, y, 122, 31, undefined, "FAST");
       return;
     }
-    text("PARIBUS", pageWidth - 135, 36, 20, "bold", navy);
+    text("PARIBUS", pageWidth - 135, y + 18, 20, "bold", navy);
   };
   const smallKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
     text(title.toUpperCase(), x + 8, y + 18, 6.8, "bold", navy, w - 16);
@@ -6970,11 +6970,11 @@ async function exportObjectReport(
   pdf.addPage();
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
-  drawLogo();
+  drawLogo(42);
   text("Objektübersicht", 52, 54, 13, "bold", orange);
-  text(firstKnown(object.objectNumber, "k.A."), 52, 82, 34, "bold", navy);
-  text(objectAddress, 52, 110, 13, "normal", navy, 430);
-  text("Teil- und Vollsanierung (GU)", 52, 150, 14, "normal", navy);
+  text(firstKnown(object.objectNumber, "k.A."), 52, 96, 34, "bold", navy);
+  text(objectAddress, 52, 126, 13, "normal", navy, 430);
+  text("Teil- und Vollsanierung (GU)", 52, 148, 14, "normal", navy);
 
   const meta = [
     ["Baujahr", firstKnown(object.constructionYear, "k.A.")],
