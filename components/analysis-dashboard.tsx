@@ -6940,7 +6940,7 @@ async function exportObjectReport(
   text("Sanierungsreport", contentX, 78, 30, "bold", navy);
   text("Teil- und Vollsanierung (GU)", contentX, 105, 16, "normal", navy);
   text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", contentX, 132, 10.5, "normal", muted, 270);
-  drawLogo(32);
+  drawLogo(38);
   textRight("BERICHTSDATUM", pageWidth - margin, 84, 7.4, "bold", muted);
   textRight(formatReportDate(new Date()), pageWidth - margin, 100, 9.2, "bold", navy);
   textRight(`FONDS  ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - margin, 118, 7.4, "bold", muted);
