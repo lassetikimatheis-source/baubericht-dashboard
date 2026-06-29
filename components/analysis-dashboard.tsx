@@ -80,6 +80,7 @@ type ReanalysisStatus = "idle" | "running" | "done" | "error";
 
 interface ReanalysisSummary {
   backupId: string | null;
+  backupWarning: string | null;
   objectCount: number;
   documentCount: number;
   correctedDocumentCount: number;
@@ -902,9 +903,9 @@ export function AnalysisDashboard() {
     });
 
     try {
-      const backupId = createAnalysisBackup();
+      const backupResult = createAnalysisBackup();
       const nextDocuments: ObjectAnalysis[] = [];
-      const errors: string[] = [];
+      const errors: string[] = backupResult.warning ? [backupResult.warning] : [];
 
       for (let index = 0; index < storedDocuments.length; index += 1) {
         const document = storedDocuments[index];
@@ -927,7 +928,8 @@ export function AnalysisDashboard() {
       saveAssignments(nextAssignments);
       const nextAnalysis = buildAnalysisFromDocuments(nextDocuments, analysis);
       const summary = buildReanalysisSummary({
-        backupId,
+        backupId: backupResult.id,
+        backupWarning: backupResult.warning,
         objects: storedObjects,
         previousDocuments: storedDocuments,
         documents: nextDocuments,
@@ -3905,7 +3907,7 @@ function ReanalysisSummaryView({ summary }: { summary: ReanalysisSummary }) {
   const documentTypes = Object.entries(summary.documentTypes);
   return (
     <div className="reanalysisSummary">
-      <div className="metric"><span>Backup</span><strong>{summary.backupId ?? "k.A."}</strong><small>Vor der Neuauswertung im Browser-Speicher abgelegt.</small></div>
+      <div className="metric"><span>Backup</span><strong>{summary.backupId ?? "Nicht erstellt"}</strong><small>{summary.backupWarning ?? "Vor der Neuauswertung im Browser-Speicher abgelegt."}</small></div>
       <div className="metric"><span>Objekte</span><strong>{formatNumber(summary.objectCount)}</strong><small>Stammdaten wurden nicht geloescht.</small></div>
       <div className="metric"><span>Dokumente</span><strong>{formatNumber(summary.documentCount)}</strong><small>Alle gespeicherten Auswertungen neu synchronisiert.</small></div>
       <div className="metric"><span>Korrigierte Dokumente</span><strong>{formatNumber(summary.correctedDocumentCount)}</strong><small>Dokumenttyp, Gewerk, Maßnahmen oder Kosten wurden angepasst.</small></div>
@@ -4843,12 +4845,14 @@ function calculatedNumberField(value: number | null, previous: ExtractedField<nu
 
 function buildReanalysisSummary({
   backupId,
+  backupWarning,
   objects,
   previousDocuments,
   documents,
   errors
 }: {
   backupId: string | null;
+  backupWarning: string | null;
   objects: ObjectRecord[];
   previousDocuments: ObjectAnalysis[];
   documents: ObjectAnalysis[];
@@ -4880,6 +4884,7 @@ function buildReanalysisSummary({
   const findings = buildReanalysisFindings(previousDocuments, documents);
   return {
     backupId,
+    backupWarning,
     objectCount: objects.length,
     documentCount: documents.length,
     correctedDocumentCount: correctedDocuments.length,

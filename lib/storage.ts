@@ -79,6 +79,11 @@ export interface AppDataSummary {
   assignments: number;
 }
 
+export interface AnalysisBackupResult {
+  id: string | null;
+  warning: string | null;
+}
+
 const STORAGE_KEYS = {
   objects: "paribus-baukosten.objects.v1",
   entrances: "paribus-baukosten.entrances.v1",
@@ -190,8 +195,8 @@ export function getAssignments(): Record<string, string | null> {
   return readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {});
 }
 
-export function createAnalysisBackup(): string | null {
-  if (typeof window === "undefined") return null;
+export function createAnalysisBackup(): AnalysisBackupResult {
+  if (typeof window === "undefined") return { id: null, warning: null };
   const backup = {
     id: `backup-${Date.now()}`,
     createdAt: timestamp(),
@@ -201,9 +206,26 @@ export function createAnalysisBackup(): string | null {
     documents: readCollection<ObjectAnalysis>(STORAGE_KEYS.documents),
     assignments: readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {})
   };
-  const backups = readJson<Array<typeof backup>>(STORAGE_KEYS.reanalysisBackups, []);
-  writeJson(STORAGE_KEYS.reanalysisBackups, [backup, ...backups].slice(0, 10));
-  return backup.id;
+  try {
+    writeJson(STORAGE_KEYS.reanalysisBackups, [backup]);
+    return { id: backup.id, warning: null };
+  } catch (error) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEYS.reanalysisBackups);
+    } catch {
+      // Ignore cleanup failures; backup creation must never block the caller.
+    }
+    if (isStorageQuotaError(error)) {
+      return {
+        id: null,
+        warning: "Automatisches Backup konnte wegen der Browser-Speichergrenze nicht erstellt werden."
+      };
+    }
+    return {
+      id: null,
+      warning: "Automatisches Backup konnte nicht erstellt werden."
+    };
+  }
 }
 
 export function exportAppDataBackup(): AppDataBackup {
@@ -310,6 +332,15 @@ function readJson<T>(key: string, fallback: T): T {
 function writeJson<T>(key: string, value: T): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function isStorageQuotaError(error: unknown): boolean {
+  return error instanceof DOMException && (
+    error.name === "QuotaExceededError" ||
+    error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    error.code === 22 ||
+    error.code === 1014
+  );
 }
 
 function timestamp(): string {
