@@ -7252,8 +7252,9 @@ function buildReportPortfolioMetrics(
   const units = sumValues(objects.map((object) => parseGermanNumber(object.unitCount)));
   const renovatedArea = sumValues(objects.map((object) => parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "")));
   const renovatedApartments = countReportRenovatedApartments(documents);
-  const averageApartmentSize = safeDivide(renovatedArea, renovatedApartments);
-  const averageCostPerApartment = safeDivide(gross, renovatedApartments);
+  const reportUnitCount = documentCount > 0 ? documentCount : renovatedApartments;
+  const averageApartmentSize = safeDivide(renovatedArea, reportUnitCount);
+  const averageCostPerApartment = safeDivide(gross, reportUnitCount);
   const averageCostPerSqm = safeDivide(gross, renovatedArea);
   const fund = firstKnown(
     ...objects.map((object) => object.fund),
@@ -7268,11 +7269,13 @@ function buildReportObjectMetrics(object: ObjectRecord, documents: ObjectAnalysi
   const gross = sumValues(documents.map((document) => document.totalCost.value));
   const renovatedArea = parseGermanNumber(object.wohnflaecheSanierteWohnung ?? "");
   const renovatedApartments = countReportRenovatedApartments(documents);
+  const documentCount = documents.length;
+  const reportUnitCount = documentCount > 0 ? documentCount : renovatedApartments;
   return {
     gross,
     renovatedArea,
-    averageApartmentSize: safeDivide(renovatedArea, documents.length),
-    averageCostPerApartment: safeDivide(gross, documents.length),
+    averageApartmentSize: safeDivide(renovatedArea, reportUnitCount),
+    averageCostPerApartment: safeDivide(gross, reportUnitCount),
     costPerSqm: safeDivide(gross, renovatedArea)
   };
 }
