@@ -1,7 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let browserSupabaseClient: SupabaseClient | null = null;
-let connectionTestStarted = false;
 
 export function getSupabaseClient(): SupabaseClient | null {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,28 +19,56 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 export async function runSupabaseConnectionTest(): Promise<void> {
-  if (connectionTestStarted) return;
-  connectionTestStarted = true;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  console.log("[Supabase] Verbindungstest gestartet", {
+    hasUrl: Boolean(supabaseUrl),
+    hasAnonKey: Boolean(supabaseAnonKey),
+    urlHost: supabaseUrl ? new URL(supabaseUrl).host : null
+  });
 
   const supabase = getSupabaseClient();
-  if (!supabase) return;
+  if (!supabase) {
+    console.error("[Supabase] Verbindungstest abgebrochen: Environment Variables fehlen.", {
+      NEXT_PUBLIC_SUPABASE_URL: Boolean(supabaseUrl),
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(supabaseAnonKey)
+    });
+    return;
+  }
 
   const [tradesResult, documentTypesResult] = await Promise.all([
-    supabase.from("trades").select("*"),
-    supabase.from("document_types").select("*")
+    supabase.from("trades").select("*", { count: "exact" }),
+    supabase.from("document_types").select("*", { count: "exact" })
   ]);
 
-  console.group("[Supabase] Verbindungstest");
   if (tradesResult.error) {
-    console.error("trades konnte nicht gelesen werden:", tradesResult.error);
-  } else {
-    console.info("trades:", tradesResult.data);
+    console.error("[Supabase] Fehler beim Lesen von trades", {
+      message: tradesResult.error.message,
+      details: tradesResult.error.details,
+      hint: tradesResult.error.hint,
+      code: tradesResult.error.code,
+      error: tradesResult.error
+    });
   }
 
   if (documentTypesResult.error) {
-    console.error("document_types konnte nicht gelesen werden:", documentTypesResult.error);
-  } else {
-    console.info("document_types:", documentTypesResult.data);
+    console.error("[Supabase] Fehler beim Lesen von document_types", {
+      message: documentTypesResult.error.message,
+      details: documentTypesResult.error.details,
+      hint: documentTypesResult.error.hint,
+      code: documentTypesResult.error.code,
+      error: documentTypesResult.error
+    });
   }
-  console.groupEnd();
+
+  if (!tradesResult.error && !documentTypesResult.error) {
+    console.log("[Supabase] Verbindung erfolgreich", {
+      trades: tradesResult.count ?? tradesResult.data?.length ?? 0,
+      documentTypes: documentTypesResult.count ?? documentTypesResult.data?.length ?? 0
+    });
+  }
+
+  console.log("[Supabase] trades", tradesResult.data ?? []);
+  console.log("[Supabase] document_types", documentTypesResult.data ?? []);
 }
