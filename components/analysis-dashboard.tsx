@@ -20,6 +20,7 @@ import type { ObjectMapEntry } from "./map/ObjectMap";
 import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
+import { createSupabaseObject, deleteSupabaseObject, loadSupabaseObjects, updateSupabaseObject } from "../lib/supabase";
 import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
   createAnalysisBackup,
@@ -451,8 +452,22 @@ export function AnalysisDashboard() {
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
   }
 
+  async function loadSupabaseObjectData() {
+    try {
+      const supabaseObjects = await loadSupabaseObjects();
+      if (!supabaseObjects.length) return;
+      supabaseObjects.forEach(saveObject);
+      setObjects(supabaseObjects);
+      setSelectedObjectId((current) => current ?? supabaseObjects[0]?.id ?? null);
+    } catch (error) {
+      console.error("[Supabase] Objekte konnten nicht geladen werden:", error);
+      setMessage(error instanceof Error ? error.message : "Supabase-Objekte konnten nicht geladen werden.");
+    }
+  }
+
   useEffect(() => {
     loadStoredData();
+    void loadSupabaseObjectData();
   }, []);
 
   useEffect(() => {
@@ -762,15 +777,33 @@ export function AnalysisDashboard() {
     }
   }
 
-  function createObject(seed?: ObjectAnalysis) {
-    const object = saveObject(objectFromDocument(seed));
+  async function createObject(seed?: ObjectAnalysis) {
+    const draft = objectFromDocument(seed);
+    let object: ObjectRecord;
+    try {
+      object = saveObject(await createSupabaseObject(draft));
+      setMessage("Objekt wurde in Supabase gespeichert.");
+    } catch (error) {
+      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", error);
+      object = saveObject(draft);
+      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase gespeichert werden.");
+    }
     setObjects((current) => [...current.filter((entry) => entry.id !== object.id), object]);
     setSelectedObjectId(object.id);
     setView("objects");
   }
 
-  function saveUploadObject() {
-    const object = saveObject(uploadDraftToObjectRecord(objectDraft, `object-${Date.now()}`));
+  async function saveUploadObject() {
+    const draft = uploadDraftToObjectRecord(objectDraft, `object-${Date.now()}`);
+    let object: ObjectRecord;
+    try {
+      object = saveObject(await createSupabaseObject(draft));
+      setMessage("Objekt wurde in Supabase gespeichert.");
+    } catch (error) {
+      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", error);
+      object = saveObject(draft);
+      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase gespeichert werden.");
+    }
     const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
     const createdProjects = documentsToAssign.map((document, index) => saveProject({
       ...projectFromDocument(document, objects),
@@ -837,14 +870,22 @@ export function AnalysisDashboard() {
   }
 
   function updateObject(objectId: string, field: keyof ObjectRecord, value: string) {
-    setObjects((current) => current.map((object) => {
-      if (object.id !== objectId) return object;
-      return updateStoredObject({ ...object, [field]: value });
-    }));
+    const currentObject = objects.find((object) => object.id === objectId);
+    if (!currentObject) return;
+    const updatedObject = updateStoredObject({ ...currentObject, [field]: value });
+    setObjects((current) => current.map((object) => object.id === objectId ? updatedObject : object));
+    updateSupabaseObject(updatedObject).catch((error) => {
+      console.error("[Supabase] Objekt konnte nicht aktualisiert werden:", error);
+      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase aktualisiert werden.");
+    });
   }
 
   function deleteObject(objectId: string) {
     deleteStoredObject(objectId);
+    deleteSupabaseObject(objectId).catch((error) => {
+      console.error("[Supabase] Objekt konnte nicht gelöscht werden:", error);
+      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht aus Supabase gelöscht werden.");
+    });
     entrances.filter((entrance) => entrance.objectId === objectId).forEach((entrance) => deleteStoredEntrance(entrance.id));
     setObjects((current) => current.filter((object) => object.id !== objectId));
     setEntrances((current) => current.filter((entrance) => entrance.objectId !== objectId));

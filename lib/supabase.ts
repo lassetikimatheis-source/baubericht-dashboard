@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { StoredObjectRecord } from "./storage";
 
 let browserSupabaseClient: SupabaseClient | null = null;
 
@@ -73,4 +74,137 @@ export async function runSupabaseConnectionTest(): Promise<void> {
 
   console.log("[Supabase] trades", tradesResult.data ?? []);
   console.log("[Supabase] document_types", documentTypesResult.data ?? []);
+}
+
+type SupabaseObjectRow = {
+  id?: string | number | null;
+  object_number?: string | null;
+  address?: string | null;
+  postal_code?: string | null;
+  city?: string | null;
+  construction_year?: string | number | null;
+  total_living_area_sqm?: string | number | null;
+  renovated_living_area_sqm?: string | number | null;
+  unit_count?: string | number | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+};
+
+export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
+  const supabase = getSupabaseClient();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("objects")
+    .select("*")
+    .order("object_number", { ascending: true });
+
+  if (error) {
+    throw new Error(`Supabase-Objekte konnten nicht geladen werden: ${error.message}`);
+  }
+
+  return (data ?? []).map((row) => objectRowFromSupabase(row as SupabaseObjectRow));
+}
+
+export async function createSupabaseObject(object: StoredObjectRecord): Promise<StoredObjectRecord> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error("Supabase-Objekt konnte nicht gespeichert werden: Environment Variables fehlen.");
+  }
+
+  const { data, error } = await supabase
+    .from("objects")
+    .insert(objectRowToSupabase(object))
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${error.message}`);
+  }
+
+  return objectRowFromSupabase(data as SupabaseObjectRow, object);
+}
+
+export async function updateSupabaseObject(object: StoredObjectRecord): Promise<StoredObjectRecord> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error("Supabase-Objekt konnte nicht aktualisiert werden: Environment Variables fehlen.");
+  }
+
+  const { data, error } = await supabase
+    .from("objects")
+    .update(objectRowToSupabase(object))
+    .eq("id", object.id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(`Supabase-Objekt konnte nicht aktualisiert werden: ${error.message}`);
+  }
+
+  return objectRowFromSupabase(data as SupabaseObjectRow, object);
+}
+
+export async function deleteSupabaseObject(id: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    throw new Error("Supabase-Objekt konnte nicht gelöscht werden: Environment Variables fehlen.");
+  }
+
+  const { error } = await supabase
+    .from("objects")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(`Supabase-Objekt konnte nicht gelöscht werden: ${error.message}`);
+  }
+}
+
+function objectRowToSupabase(object: StoredObjectRecord): SupabaseObjectRow {
+  return {
+    object_number: emptyToNull(object.objectNumber),
+    address: emptyToNull(object.address),
+    postal_code: emptyToNull(object.postalCode),
+    city: emptyToNull(object.city),
+    construction_year: emptyToNull(object.constructionYear),
+    total_living_area_sqm: emptyToNull(object.totalLivingAreaSqm),
+    renovated_living_area_sqm: emptyToNull(object.wohnflaecheSanierteWohnung),
+    unit_count: emptyToNull(object.unitCount),
+    latitude: emptyToNull(object.latitude),
+    longitude: emptyToNull(object.longitude)
+  };
+}
+
+function objectRowFromSupabase(row: SupabaseObjectRow, fallback?: StoredObjectRecord): StoredObjectRecord {
+  return {
+    id: String(row.id ?? fallback?.id ?? `object-${Date.now()}`),
+    fund: fallback?.fund ?? "",
+    objectNumber: stringValue(row.object_number ?? fallback?.objectNumber),
+    objectName: fallback?.objectName ?? "",
+    address: stringValue(row.address ?? fallback?.address),
+    postalCode: stringValue(row.postal_code ?? fallback?.postalCode),
+    city: stringValue(row.city ?? fallback?.city),
+    federalState: fallback?.federalState ?? "",
+    constructionYear: stringValue(row.construction_year ?? fallback?.constructionYear),
+    unitCount: stringValue(row.unit_count ?? fallback?.unitCount),
+    totalLivingAreaSqm: stringValue(row.total_living_area_sqm ?? fallback?.totalLivingAreaSqm),
+    wohnflaecheSanierteWohnung: stringValue(row.renovated_living_area_sqm ?? fallback?.wohnflaecheSanierteWohnung),
+    assetManager: fallback?.assetManager ?? "",
+    portfolioManager: fallback?.portfolioManager ?? "",
+    latitude: stringValue(row.latitude ?? fallback?.latitude),
+    longitude: stringValue(row.longitude ?? fallback?.longitude),
+    createdAt: fallback?.createdAt,
+    updatedAt: fallback?.updatedAt
+  };
+}
+
+function emptyToNull(value: string | undefined): string | null {
+  const next = value?.trim() ?? "";
+  return next ? next : null;
+}
+
+function stringValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value);
 }
