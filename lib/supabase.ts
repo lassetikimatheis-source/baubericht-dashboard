@@ -19,6 +19,8 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 export async function runSupabaseConnectionTest(): Promise<void> {
+  console.log("[Supabase] Test wird ausgeführt");
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 

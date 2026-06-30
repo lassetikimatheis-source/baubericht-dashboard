@@ -20,7 +20,6 @@ import type { ObjectMapEntry } from "./map/ObjectMap";
 import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
-import { runSupabaseConnectionTest } from "../lib/supabase";
 import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
   createAnalysisBackup,
@@ -454,12 +453,6 @@ export function AnalysisDashboard() {
 
   useEffect(() => {
     loadStoredData();
-  }, []);
-
-  useEffect(() => {
-    runSupabaseConnectionTest().catch((error) => {
-      console.error("[Supabase] Verbindungstest fehlgeschlagen:", error);
-    });
   }, []);
 
   useEffect(() => {
