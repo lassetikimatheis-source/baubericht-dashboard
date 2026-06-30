@@ -90,6 +90,12 @@ type SupabaseObjectRow = {
   longitude?: string | number | null;
 };
 
+export interface SupabaseObjectImportSummary {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
 export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
   const supabase = getSupabaseClient();
   if (!supabase) return [];
@@ -123,6 +129,42 @@ export async function createSupabaseObject(object: StoredObjectRecord): Promise<
   }
 
   return objectRowFromSupabase(data as SupabaseObjectRow, object);
+}
+
+export async function importMissingObjectsToSupabase(objects: StoredObjectRecord[]): Promise<SupabaseObjectImportSummary> {
+  const existingObjects = await loadSupabaseObjects();
+  const existingObjectNumbers = new Set(existingObjects.map((object) => normalizeObjectNumber(object.objectNumber)).filter(Boolean));
+  const processedObjectNumbers = new Set<string>();
+  const summary: SupabaseObjectImportSummary = {
+    imported: 0,
+    skipped: 0,
+    errors: []
+  };
+
+  for (const object of objects) {
+    const objectNumber = normalizeObjectNumber(object.objectNumber);
+    if (!objectNumber) {
+      summary.skipped += 1;
+      summary.errors.push(`${object.address || object.id}: keine Objektnummer vorhanden.`);
+      continue;
+    }
+
+    if (existingObjectNumbers.has(objectNumber) || processedObjectNumbers.has(objectNumber)) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    try {
+      await createSupabaseObject(object);
+      existingObjectNumbers.add(objectNumber);
+      processedObjectNumbers.add(objectNumber);
+      summary.imported += 1;
+    } catch (error) {
+      summary.errors.push(`${object.objectNumber}: ${error instanceof Error ? error.message : "Import fehlgeschlagen."}`);
+    }
+  }
+
+  return summary;
 }
 
 export async function updateSupabaseObject(object: StoredObjectRecord): Promise<StoredObjectRecord> {
@@ -207,4 +249,8 @@ function emptyToNull(value: string | undefined): string | null {
 function stringValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   return String(value);
+}
+
+function normalizeObjectNumber(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }

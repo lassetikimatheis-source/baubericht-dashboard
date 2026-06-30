@@ -20,7 +20,14 @@ import type { ObjectMapEntry } from "./map/ObjectMap";
 import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
 import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, unwrap } from "../lib/format";
-import { createSupabaseObject, deleteSupabaseObject, loadSupabaseObjects, updateSupabaseObject } from "../lib/supabase";
+import {
+  createSupabaseObject,
+  deleteSupabaseObject,
+  importMissingObjectsToSupabase,
+  loadSupabaseObjects,
+  updateSupabaseObject,
+  type SupabaseObjectImportSummary
+} from "../lib/supabase";
 import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
   createAnalysisBackup,
@@ -106,6 +113,12 @@ interface ReanalysisProgress {
 interface DataTransferStatus {
   message: string;
   summary: AppDataSummary | null;
+  kind: "idle" | "success" | "error";
+}
+
+interface SupabaseObjectImportStatus {
+  message: string;
+  summary: SupabaseObjectImportSummary | null;
   kind: "idle" | "success" | "error";
 }
 
@@ -427,6 +440,11 @@ export function AnalysisDashboard() {
     summary: null,
     kind: "idle"
   });
+  const [supabaseObjectImportStatus, setSupabaseObjectImportStatus] = useState<SupabaseObjectImportStatus>({
+    message: "",
+    summary: null,
+    kind: "idle"
+  });
   const [asbestosDebugReport, setAsbestosDebugReport] = useState<AsbestosDebugReport>({
     status: "idle",
     message: "",
@@ -715,6 +733,51 @@ export function AnalysisDashboard() {
         kind: "error",
         message: error instanceof Error ? error.message : "Import fehlgeschlagen.",
         summary: null
+      });
+    }
+  }
+
+  async function importLocalObjectsToSupabase() {
+    const storedObjects = getObjects();
+    if (!storedObjects.length) {
+      setSupabaseObjectImportStatus({
+        kind: "error",
+        message: "Keine lokalen Objekte im Browser-Speicher gefunden.",
+        summary: { imported: 0, skipped: 0, errors: ["localStorage-Key paribus-baukosten.objects.v1 ist leer."] }
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Lokale Objekte werden einmalig nach Supabase importiert.\n\n` +
+      `Quelle: localStorage paribus-baukosten.objects.v1\n` +
+      `Objekte lokal: ${storedObjects.length}\n\n` +
+      `Bestehende Supabase-Objekte werden anhand der Objektnummer uebersprungen. Fortfahren?`
+    );
+    if (!confirmed) {
+      setSupabaseObjectImportStatus({ kind: "idle", message: "Supabase-Import abgebrochen.", summary: null });
+      return;
+    }
+
+    setSupabaseObjectImportStatus({
+      kind: "idle",
+      message: "Supabase-Import laeuft...",
+      summary: null
+    });
+
+    try {
+      const summary = await importMissingObjectsToSupabase(storedObjects);
+      await loadSupabaseObjectData();
+      setSupabaseObjectImportStatus({
+        kind: summary.errors.length ? "error" : "success",
+        message: "Supabase-Import abgeschlossen.",
+        summary
+      });
+    } catch (error) {
+      setSupabaseObjectImportStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Supabase-Import fehlgeschlagen.",
+        summary: { imported: 0, skipped: 0, errors: [error instanceof Error ? error.message : "Unbekannter Fehler"] }
       });
     }
   }
@@ -1274,11 +1337,13 @@ export function AnalysisDashboard() {
               <SettingsView
                 progress={reanalysisProgress}
                 dataTransferStatus={dataTransferStatus}
+                supabaseObjectImportStatus={supabaseObjectImportStatus}
                 asbestosDebugReport={asbestosDebugReport}
                 onReanalyzeAll={reanalyzeAllObjects}
                 onRunAsbestosDebug={runAsbestosDebug}
                 onExportData={exportAppData}
                 onImportData={importAppData}
+                onImportLocalObjectsToSupabase={importLocalObjectsToSupabase}
               />
               ) : null}
             </div>
@@ -3975,19 +4040,23 @@ function ReportsView({
 function SettingsView({
   progress,
   dataTransferStatus,
+  supabaseObjectImportStatus,
   asbestosDebugReport,
   onReanalyzeAll,
   onRunAsbestosDebug,
   onExportData,
-  onImportData
+  onImportData,
+  onImportLocalObjectsToSupabase
 }: {
   progress: ReanalysisProgress;
   dataTransferStatus: DataTransferStatus;
+  supabaseObjectImportStatus: SupabaseObjectImportStatus;
   asbestosDebugReport: AsbestosDebugReport;
   onReanalyzeAll: () => Promise<void>;
   onRunAsbestosDebug: () => void;
   onExportData: () => void;
   onImportData: (file: File) => Promise<void>;
+  onImportLocalObjectsToSupabase: () => Promise<void>;
 }) {
   const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const currentSummary = summarizeCurrentAppData();
@@ -4022,6 +4091,7 @@ function SettingsView({
           </div>
           <div className="headerActions">
             <button type="button" onClick={onRunAsbestosDebug}>Asbest-Debug ausführen</button>
+            <button type="button" onClick={onImportLocalObjectsToSupabase}>Objekte nach Supabase importieren</button>
             <button type="button" onClick={onExportData}>Daten sichern</button>
             <label className="imageUploadButton">
               Daten wiederherstellen
@@ -4042,6 +4112,7 @@ function SettingsView({
           kind={dataTransferStatus.kind}
           summary={dataTransferStatus.summary ?? currentSummary}
         />
+        <SupabaseObjectImportSummaryView status={supabaseObjectImportStatus} />
         <AsbestosDebugReportView report={asbestosDebugReport} />
       </div>
       <div className="settingsGrid">
@@ -4091,6 +4162,22 @@ function DataTransferSummaryView({
         <span>Projekte: {formatNumber(summary.projects)}</span>
         <span>Zuordnungen: {formatNumber(summary.assignments)}</span>
       </div>
+    </div>
+  );
+}
+
+function SupabaseObjectImportSummaryView({ status }: { status: SupabaseObjectImportStatus }) {
+  if (status.kind === "idle" && !status.message) return null;
+  const summary = status.summary ?? { imported: 0, skipped: 0, errors: [] };
+  return (
+    <div className={`dataTransferSummary ${status.kind === "error" ? "dataTransferError" : ""}`}>
+      <strong>{status.message}</strong>
+      <div>
+        <span>Importiert: {formatNumber(summary.imported)}</span>
+        <span>Uebersprungen: {formatNumber(summary.skipped)}</span>
+        <span>Fehler: {formatNumber(summary.errors.length)}</span>
+      </div>
+      {summary.errors.length ? <small>{summary.errors.slice(0, 3).join(" | ")}</small> : null}
     </div>
   );
 }
