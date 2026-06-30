@@ -82,10 +82,10 @@ type SupabaseObjectRow = {
   address?: string | null;
   postal_code?: string | null;
   city?: string | null;
-  construction_year?: string | number | null;
-  total_living_area_sqm?: string | number | null;
-  renovated_living_area_sqm?: string | number | null;
-  unit_count?: string | number | null;
+  year_of_construction?: string | number | null;
+  total_area?: string | number | null;
+  renovated_area?: string | number | null;
+  residential_units?: string | number | null;
   latitude?: string | number | null;
   longitude?: string | number | null;
 };
@@ -106,7 +106,7 @@ export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
     .order("object_number", { ascending: true });
 
   if (error) {
-    throw new Error(`Supabase-Objekte konnten nicht geladen werden: ${error.message}`);
+    throw new Error(`Supabase-Objekte konnten nicht geladen werden: ${formatSupabaseError(error)}`);
   }
 
   return (data ?? []).map((row) => objectRowFromSupabase(row as SupabaseObjectRow));
@@ -125,7 +125,7 @@ export async function createSupabaseObject(object: StoredObjectRecord): Promise<
     .single();
 
   if (error) {
-    throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${error.message}`);
+    throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
   }
 
   return objectRowFromSupabase(data as SupabaseObjectRow, object);
@@ -181,7 +181,7 @@ export async function updateSupabaseObject(object: StoredObjectRecord): Promise<
     .single();
 
   if (error) {
-    throw new Error(`Supabase-Objekt konnte nicht aktualisiert werden: ${error.message}`);
+    throw new Error(`Supabase-Objekt konnte nicht aktualisiert werden: ${formatSupabaseError(error)}`);
   }
 
   return objectRowFromSupabase(data as SupabaseObjectRow, object);
@@ -199,7 +199,7 @@ export async function deleteSupabaseObject(id: string): Promise<void> {
     .eq("id", id);
 
   if (error) {
-    throw new Error(`Supabase-Objekt konnte nicht gelöscht werden: ${error.message}`);
+    throw new Error(`Supabase-Objekt konnte nicht gelöscht werden: ${formatSupabaseError(error)}`);
   }
 }
 
@@ -209,10 +209,10 @@ function objectRowToSupabase(object: StoredObjectRecord): SupabaseObjectRow {
     address: emptyToNull(object.address),
     postal_code: emptyToNull(object.postalCode),
     city: emptyToNull(object.city),
-    construction_year: emptyToNull(object.constructionYear),
-    total_living_area_sqm: emptyToNull(object.totalLivingAreaSqm),
-    renovated_living_area_sqm: emptyToNull(object.wohnflaecheSanierteWohnung),
-    unit_count: emptyToNull(object.unitCount),
+    year_of_construction: emptyToNull(object.constructionYear),
+    total_area: emptyToNull(object.totalLivingAreaSqm),
+    renovated_area: emptyToNull(object.wohnflaecheSanierteWohnung),
+    residential_units: emptyToNull(object.unitCount),
     latitude: emptyToNull(object.latitude),
     longitude: emptyToNull(object.longitude)
   };
@@ -228,10 +228,10 @@ function objectRowFromSupabase(row: SupabaseObjectRow, fallback?: StoredObjectRe
     postalCode: stringValue(row.postal_code ?? fallback?.postalCode),
     city: stringValue(row.city ?? fallback?.city),
     federalState: fallback?.federalState ?? "",
-    constructionYear: stringValue(row.construction_year ?? fallback?.constructionYear),
-    unitCount: stringValue(row.unit_count ?? fallback?.unitCount),
-    totalLivingAreaSqm: stringValue(row.total_living_area_sqm ?? fallback?.totalLivingAreaSqm),
-    wohnflaecheSanierteWohnung: stringValue(row.renovated_living_area_sqm ?? fallback?.wohnflaecheSanierteWohnung),
+    constructionYear: stringValue(row.year_of_construction ?? fallback?.constructionYear),
+    unitCount: stringValue(row.residential_units ?? fallback?.unitCount),
+    totalLivingAreaSqm: stringValue(row.total_area ?? fallback?.totalLivingAreaSqm),
+    wohnflaecheSanierteWohnung: stringValue(row.renovated_area ?? fallback?.wohnflaecheSanierteWohnung),
     assetManager: fallback?.assetManager ?? "",
     portfolioManager: fallback?.portfolioManager ?? "",
     latitude: stringValue(row.latitude ?? fallback?.latitude),
@@ -253,4 +253,13 @@ function stringValue(value: unknown): string {
 
 function normalizeObjectNumber(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function formatSupabaseError(error: { message?: string; details?: string | null; hint?: string | null; code?: string | null }): string {
+  return [
+    error.message,
+    error.code ? `Code: ${error.code}` : "",
+    error.details ? `Details: ${error.details}` : "",
+    error.hint ? `Hint: ${error.hint}` : ""
+  ].filter(Boolean).join(" | ");
 }

@@ -857,9 +857,12 @@ export function AnalysisDashboard() {
       object = saveObject(await createSupabaseObject(draft));
       setMessage("Objekt wurde in Supabase gespeichert.");
     } catch (error) {
-      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", error);
-      object = saveObject(draft);
+      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", {
+        error,
+        object: draft
+      });
       setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase gespeichert werden.");
+      return;
     }
     setObjects((current) => [...current.filter((entry) => entry.id !== object.id), object]);
     setSelectedObjectId(object.id);
@@ -873,9 +876,12 @@ export function AnalysisDashboard() {
       object = saveObject(await createSupabaseObject(draft));
       setMessage("Objekt wurde in Supabase gespeichert.");
     } catch (error) {
-      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", error);
-      object = saveObject(draft);
+      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", {
+        error,
+        object: draft
+      });
       setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase gespeichert werden.");
+      return;
     }
     const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
     const createdProjects = documentsToAssign.map((document, index) => saveProject({
