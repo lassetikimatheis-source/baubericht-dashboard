@@ -120,7 +120,7 @@ export async function createSupabaseObject(object: StoredObjectRecord): Promise<
 
   const { data, error } = await supabase
     .from("objects")
-    .insert(objectRowToSupabase(object))
+    .insert(objectRowToSupabase(object, { includeId: true }))
     .select("*")
     .single();
 
@@ -172,6 +172,9 @@ export async function updateSupabaseObject(object: StoredObjectRecord): Promise<
   if (!supabase) {
     throw new Error("Supabase-Objekt konnte nicht aktualisiert werden: Environment Variables fehlen.");
   }
+  if (!isUuid(object.id)) {
+    return createSupabaseObject(object);
+  }
 
   const { data, error } = await supabase
     .from("objects")
@@ -188,6 +191,7 @@ export async function updateSupabaseObject(object: StoredObjectRecord): Promise<
 }
 
 export async function deleteSupabaseObject(id: string): Promise<void> {
+  if (!isUuid(id)) return;
   const supabase = getSupabaseClient();
   if (!supabase) {
     throw new Error("Supabase-Objekt konnte nicht gelöscht werden: Environment Variables fehlen.");
@@ -203,8 +207,8 @@ export async function deleteSupabaseObject(id: string): Promise<void> {
   }
 }
 
-function objectRowToSupabase(object: StoredObjectRecord): SupabaseObjectRow {
-  return {
+function objectRowToSupabase(object: StoredObjectRecord, options: { includeId?: boolean } = {}): SupabaseObjectRow {
+  const row: SupabaseObjectRow = {
     object_number: emptyToNull(object.objectNumber),
     address: emptyToNull(object.address),
     postal_code: emptyToNull(object.postalCode),
@@ -216,6 +220,10 @@ function objectRowToSupabase(object: StoredObjectRecord): SupabaseObjectRow {
     latitude: emptyToNull(object.latitude),
     longitude: emptyToNull(object.longitude)
   };
+  if (options.includeId) {
+    row.id = isUuid(object.id) ? object.id : createBrowserUuid();
+  }
+  return row;
 }
 
 function objectRowFromSupabase(row: SupabaseObjectRow, fallback?: StoredObjectRecord): StoredObjectRecord {
@@ -253,6 +261,19 @@ function stringValue(value: unknown): string {
 
 function normalizeObjectNumber(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function createBrowserUuid(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (character) =>
+    (Number(character) ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> Number(character) / 4).toString(16)
+  );
 }
 
 function formatSupabaseError(error: { message?: string; details?: string | null; hint?: string | null; code?: string | null }): string {
