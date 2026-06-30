@@ -7082,7 +7082,7 @@ async function exportObjectReport(
   const tableY = 466;
   fitText("GEWERK", contentX + 16, tableY, 126, layout.font.table, 6.4, "bold", navy);
   fitText("Ø KOSTEN / WOHNUNG", contentX + 156, tableY, 118, layout.font.table, 6.4, "bold", navy);
-  fitText("BETRAG", contentX + 302, tableY, 72, layout.font.table, 6.4, "bold", navy, "right");
+  fitText("Ø BETRAG", contentX + 302, tableY, 72, layout.font.table, 6.4, "bold", navy, "right");
   fitText("ANTEIL", contentX + 388, tableY, 66, layout.font.table, 6.4, "bold", navy, "right");
   fitText("WE", contentX + 462, tableY, 18, layout.font.table, 6.4, "bold", navy, "center");
   pdf.setDrawColor(border[0], border[1], border[2]);
@@ -7302,7 +7302,7 @@ async function exportOverallReport(
     const tableY = 466;
     text("GEWERK", margin + 16, tableY, 7.5, "bold", navy);
     text("Ø KOSTEN / WOHNUNG", margin + 156, tableY, 7.5, "bold", navy);
-    textRight("BETRAG", margin + 374, tableY, 7.5, "bold", navy);
+    textRight("Ø BETRAG", margin + 374, tableY, 7.5, "bold", navy);
     textRight("ANTEIL", margin + 458, tableY, 7.5, "bold", navy);
     textCenter("WE", margin + 476, tableY, 7.5, "bold", navy);
     pdf.setDrawColor(border[0], border[1], border[2]);
@@ -7317,7 +7317,7 @@ async function exportOverallReport(
         pdf.setFillColor(...((trade.average ?? 0) === maxAverage ? orange : navy));
         pdf.roundedRect(margin + 156, y - 7, Math.max(((trade.average ?? 0) / maxAverage) * 118, 2), 8, 4, 4, "F");
       }
-      textRight(trade.total === 0 ? "0 €" : formatNullableCurrency(trade.total), margin + 374, y, 8, "bold", navy);
+      textRight(trade.average === null ? "0 €" : formatNullableCurrency(trade.average), margin + 374, y, 8, "bold", navy);
       textRight(trade.share === null ? "0 %" : `${formatNullableNumber(trade.share)} %`, margin + 458, y, 8, "bold", navy);
       textCenter(String(trade.count || 0), margin + 476, y, 8, "bold", navy);
     });
@@ -7430,9 +7430,9 @@ function buildTwoPageObjectReportHtml(
         ${reportAverageTradeBars(portfolioTrades)}
       </article>
       <article class="reportCard">
-        <h3>Gewerke Sanierung</h3>
-        <p>Bruttokosten nach erkanntem Gewerk.</p>
-        ${reportAverageTradeBars(portfolioTrades.map((row) => ({ ...row, average: row.total })))}
+        <h3>Ø Kosten pro Wohnung je Gewerk</h3>
+        <p>Durchschnittliche Bruttokosten pro sanierter Wohnung.</p>
+        ${reportAverageTradeBars(portfolioTrades)}
       </article>
     </section>
 
