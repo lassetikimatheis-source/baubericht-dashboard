@@ -6975,8 +6975,8 @@ async function exportObjectReport(
     const disclaimerLine2 = "von Nachträgen, Preisänderungen oder abweichenden Leistungen von den ausgewiesenen Werten abweichen.";
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
     pdf.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
-    text(disclaimerLine1, margin, pageHeight - 57, 5.6, "normal", muted, pageWidth - margin * 2);
-    text(disclaimerLine2, margin, pageHeight - 50, 5.6, "normal", muted, pageWidth - margin * 2);
+    text(disclaimerLine1, margin, pageHeight - 58, 6.4, "normal", muted, pageWidth - margin * 2);
+    text(disclaimerLine2, margin, pageHeight - 50, 6.4, "normal", muted, pageWidth - margin * 2);
     text("Paribus Asset Management", margin, pageHeight - 24, layout.font.footer, "normal", navy);
     textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, layout.font.footer, "normal", navy);
     textRight(`Seite ${page} von 2`, pageWidth - margin, pageHeight - 24, layout.font.footer, "normal", navy);
@@ -7173,8 +7173,8 @@ async function exportOverallReport(
     const disclaimerLine2 = "von Nachträgen, Preisänderungen oder abweichenden Leistungen von den ausgewiesenen Werten abweichen.";
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
     pdf.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
-    text(disclaimerLine1, margin, pageHeight - 57, 5.6, "normal", muted, pageWidth - margin * 2);
-    text(disclaimerLine2, margin, pageHeight - 50, 5.6, "normal", muted, pageWidth - margin * 2);
+    text(disclaimerLine1, margin, pageHeight - 58, 6.4, "normal", muted, pageWidth - margin * 2);
+    text(disclaimerLine2, margin, pageHeight - 50, 6.4, "normal", muted, pageWidth - margin * 2);
     text("Paribus Asset Management", margin, pageHeight - 24, 8.2, "normal", navy);
     textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, 8.2, "normal", navy);
     textRight(`Seite ${page} von ${totalPages}`, pageWidth - margin, pageHeight - 24, 8.2, "normal", navy);
@@ -7698,6 +7698,7 @@ function buildTwoPageReportCss(): string {
     .portfolioKpi > .reportSvg { width: 30px; height: 30px; color: #13263f; }
     .metaIcon .reportSvg { width: 28px; height: 28px; color: #13263f; }
     .kpiIcon .reportSvg { width: 18px; height: 18px; color: #f36f21; }
+    .reportDisclaimer { position: absolute; left: 56px; right: 56px; bottom: 56px; color: #475879; font-size: 8px; line-height: 1.2; }
     .reportFooter { position: absolute; left: 56px; right: 56px; bottom: 32px; display: flex; justify-content: space-between; border-top: 1px solid #13263f; padding-top: 8px; color: #13263f; font-size: 11px; }
     @media print { body { background: #fff; } .reportPage { margin: 0; box-shadow: none; } }
   `;
@@ -7946,6 +7947,7 @@ function buildReportCss(): string {
     body { margin: 0; background: #f5f6f8; color: #13263f; font-family: Aptos, "Segoe UI", Calibri, Arial, sans-serif; }
     .reportPage { width: 297mm; min-height: 210mm; padding: 16mm 18mm 12mm; margin: 0 auto 12px; background: #fff; position: relative; page-break-after: always; box-shadow: 0 12px 36px rgba(19, 38, 63, 0.12); }
     .reportLogo { width: 190px; max-height: 48px; object-fit: contain; object-position: left center; display: block; margin-bottom: 24px; }
+    .reportDisclaimer { position: absolute; left: 18mm; right: 18mm; bottom: 16mm; color: #475879; font-size: 7px; line-height: 1.2; }
     .reportFooter { position: absolute; left: 18mm; right: 18mm; bottom: 8mm; display: flex; justify-content: space-between; align-items: center; color: #52627a; font-size: 9px; border-top: 1px solid #e3e8ef; padding-top: 6px; }
     .reportHero { display: grid; grid-template-columns: 1fr 0.9fr; gap: 28px; align-items: start; min-height: 280px; }
     .heroImage { width: 100%; height: 270px; object-fit: contain; object-position: center; transform: none; border-radius: 12px; background: #f5f6f8; box-shadow: 0 14px 34px rgba(19, 38, 63, 0.15); }
@@ -8013,7 +8015,11 @@ function reportHeader(title: string, object: ObjectRecord): string {
 }
 
 function reportFooter(page: number, total: number): string {
-  return `<footer class="reportFooter"><span>Paribus Asset Management</span><span>www.paribus.de</span><span>Seite ${page} von ${total}</span></footer>`;
+  return `<p class="reportDisclaimer">${escapeReportHtml(reportDisclaimerText())}</p><footer class="reportFooter"><span>Paribus Asset Management</span><span>www.paribus.de</span><span>Seite ${page} von ${total}</span></footer>`;
+}
+
+function reportDisclaimerText(): string {
+  return "*Die dargestellten Kosten basieren auf den aktuell vorliegenden Angeboten. Tatsächliche Ausführungskosten können aufgrund von Nachträgen, Preisänderungen oder abweichenden Leistungen von den ausgewiesenen Werten abweichen.";
 }
 
 function reportMeta(label: string, value: string): string {
