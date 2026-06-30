@@ -23,6 +23,7 @@ import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, u
 import {
   createSupabaseObject,
   deleteSupabaseObject,
+  getSupabaseEnvironmentStatus,
   importMissingObjectsToSupabase,
   loadSupabaseObjects,
   updateSupabaseObject,
@@ -742,6 +743,13 @@ export function AnalysisDashboard() {
   }
 
   async function importLocalObjectsToSupabase() {
+    const supabaseEnvironment = getSupabaseEnvironmentStatus();
+    console.log("[Supabase] Objektimport startet", {
+      [supabaseEnvironment.urlVariableName]: supabaseEnvironment.hasUrl ? "Ja" : "Nein",
+      [supabaseEnvironment.anonKeyVariableName]: supabaseEnvironment.hasAnonKey ? "Ja" : "Nein",
+      runtime: supabaseEnvironment.runtime,
+      urlHost: supabaseEnvironment.urlHost
+    });
     const storedObjects = getObjects();
     const storedDocuments = getDocuments();
     const storedProjects = getProjects();
@@ -770,7 +778,7 @@ export function AnalysisDashboard() {
 
     setSupabaseObjectImportStatus({
       kind: "idle",
-      message: "Supabase-Import laeuft...",
+      message: `Supabase-Import laeuft... URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}.`,
       summary: null
     });
 

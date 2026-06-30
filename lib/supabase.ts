@@ -3,12 +3,38 @@ import type { StoredObjectRecord } from "./storage";
 
 let browserSupabaseClient: SupabaseClient | null = null;
 
+const SUPABASE_URL_ENV_NAME = "NEXT_PUBLIC_SUPABASE_URL";
+const SUPABASE_ANON_KEY_ENV_NAME = "NEXT_PUBLIC_SUPABASE_ANON_KEY";
+
+export interface SupabaseEnvironmentStatus {
+  urlVariableName: typeof SUPABASE_URL_ENV_NAME;
+  anonKeyVariableName: typeof SUPABASE_ANON_KEY_ENV_NAME;
+  hasUrl: boolean;
+  hasAnonKey: boolean;
+  runtime: "client" | "server";
+  urlHost: string | null;
+}
+
+export function getSupabaseEnvironmentStatus(): SupabaseEnvironmentStatus {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return {
+    urlVariableName: SUPABASE_URL_ENV_NAME,
+    anonKeyVariableName: SUPABASE_ANON_KEY_ENV_NAME,
+    hasUrl: Boolean(supabaseUrl),
+    hasAnonKey: Boolean(supabaseAnonKey),
+    runtime: typeof window === "undefined" ? "server" : "client",
+    urlHost: safeUrlHost(supabaseUrl)
+  };
+}
+
 export function getSupabaseClient(): SupabaseClient | null {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const environment = getSupabaseEnvironmentStatus();
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn("[Supabase] NEXT_PUBLIC_SUPABASE_URL oder NEXT_PUBLIC_SUPABASE_ANON_KEY fehlt.");
+    console.warn("[Supabase] Environment Variables fehlen.", environment);
     return null;
   }
 
@@ -24,18 +50,21 @@ export async function runSupabaseConnectionTest(): Promise<void> {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const environment = getSupabaseEnvironmentStatus();
 
   console.log("[Supabase] Verbindungstest gestartet", {
-    hasUrl: Boolean(supabaseUrl),
-    hasAnonKey: Boolean(supabaseAnonKey),
-    urlHost: supabaseUrl ? new URL(supabaseUrl).host : null
+    [environment.urlVariableName]: environment.hasUrl ? "vorhanden" : "fehlt",
+    [environment.anonKeyVariableName]: environment.hasAnonKey ? "vorhanden" : "fehlt",
+    runtime: environment.runtime,
+    urlHost: environment.urlHost
   });
 
   const supabase = getSupabaseClient();
   if (!supabase) {
     console.error("[Supabase] Verbindungstest abgebrochen: Environment Variables fehlen.", {
       NEXT_PUBLIC_SUPABASE_URL: Boolean(supabaseUrl),
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(supabaseAnonKey)
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(supabaseAnonKey),
+      environment
     });
     return;
   }
@@ -115,7 +144,7 @@ export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
 export async function createSupabaseObject(object: StoredObjectRecord): Promise<StoredObjectRecord> {
   const supabase = getSupabaseClient();
   if (!supabase) {
-    throw new Error("Supabase-Objekt konnte nicht gespeichert werden: Environment Variables fehlen.");
+    throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
   }
   const insertRow = objectRowToSupabase(object, { includeId: true });
 
@@ -176,7 +205,7 @@ export async function importMissingObjectsToSupabase(objects: StoredObjectRecord
 export async function updateSupabaseObject(object: StoredObjectRecord): Promise<StoredObjectRecord> {
   const supabase = getSupabaseClient();
   if (!supabase) {
-    throw new Error("Supabase-Objekt konnte nicht aktualisiert werden: Environment Variables fehlen.");
+    throw new Error(`Supabase-Objekt konnte nicht aktualisiert werden: ${formatMissingSupabaseEnvironment()}`);
   }
   if (!isUuid(object.id)) {
     return createSupabaseObject(object);
@@ -200,7 +229,7 @@ export async function deleteSupabaseObject(id: string): Promise<void> {
   if (!isUuid(id)) return;
   const supabase = getSupabaseClient();
   if (!supabase) {
-    throw new Error("Supabase-Objekt konnte nicht gelöscht werden: Environment Variables fehlen.");
+    throw new Error(`Supabase-Objekt konnte nicht geloescht werden: ${formatMissingSupabaseEnvironment()}`);
   }
 
   const { error } = await supabase
@@ -267,6 +296,20 @@ function stringValue(value: unknown): string {
 
 function normalizeObjectNumber(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function safeUrlHost(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+function formatMissingSupabaseEnvironment(): string {
+  const environment = getSupabaseEnvironmentStatus();
+  return `Environment Variables fehlen (${environment.urlVariableName}: ${environment.hasUrl ? "vorhanden" : "fehlt"}, ${environment.anonKeyVariableName}: ${environment.hasAnonKey ? "vorhanden" : "fehlt"}, Laufzeit: ${environment.runtime}).`;
 }
 
 function isUuid(value: string): boolean {
