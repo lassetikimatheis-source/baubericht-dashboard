@@ -12,6 +12,7 @@
     "lint": "next lint || true"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
     "exceljs": "^4.4.0",
     "jspdf": "^2.5.2",
     "leaflet": "^1.9.4",
