@@ -7169,8 +7169,12 @@ async function exportOverallReport(
     pdf.roundedRect(x, y, w, h, 8, 8, "FD");
   };
   const footer = (page: number, totalPages: number) => {
+    const disclaimerLine1 = "*Die dargestellten Kosten basieren auf den aktuell vorliegenden Angeboten. Tatsächliche Ausführungskosten können aufgrund";
+    const disclaimerLine2 = "von Nachträgen, Preisänderungen oder abweichenden Leistungen von den ausgewiesenen Werten abweichen.";
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
     pdf.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
+    text(disclaimerLine1, margin, pageHeight - 57, 5.6, "normal", muted, pageWidth - margin * 2);
+    text(disclaimerLine2, margin, pageHeight - 50, 5.6, "normal", muted, pageWidth - margin * 2);
     text("Paribus Asset Management", margin, pageHeight - 24, 8.2, "normal", navy);
     textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, 8.2, "normal", navy);
     textRight(`Seite ${page} von ${totalPages}`, pageWidth - margin, pageHeight - 24, 8.2, "normal", navy);
@@ -7235,11 +7239,11 @@ async function exportOverallReport(
 
   const halfW = (contentW - 12) / 2;
   card(margin, 320, halfW, 100);
-  fitText("DURCHSCHNITTLICHE SANIERUNGSKOSTEN PRO WOHNUNG", margin + 16, 344, halfW - 32, 7, 5.4, "bold", navy);
+  fitText("DURCHSCHNITTLICHE GU SANIERUNGSKOSTEN PRO WOHNUNG", margin + 16, 344, halfW - 32, 7, 5.4, "bold", navy);
   fitText(formatNullableCurrency(portfolio.averageCostPerApartment), margin + 16, 384, halfW - 32, 18, 10, "bold", orange);
   text("Durchschnitt über alle Objekte (brutto)", margin + 16, 402, 8.5, "normal", muted, halfW - 32);
   card(margin + halfW + 12, 320, halfW, 100);
-  fitText("DURCHSCHNITTLICHE KOSTEN PRO M²", margin + halfW + 28, 344, halfW - 32, 7, 5.4, "bold", navy);
+  fitText("DURCHSCHNITTLICHE GU KOSTEN PRO M²", margin + halfW + 28, 344, halfW - 32, 7, 5.4, "bold", navy);
   fitText(formatEuroPerSqm(portfolio.averageCostPerSqm), margin + halfW + 28, 384, halfW - 32, 18, 10, "bold", orange);
   text("Durchschnitt über alle Objekte (sanierte Fläche)", margin + halfW + 28, 402, 8.5, "normal", muted, halfW - 32);
 
