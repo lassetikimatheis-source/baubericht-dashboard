@@ -459,13 +459,17 @@ export function AnalysisDashboard() {
     const storedProjects = getProjects();
     const storedDocuments = getDocuments();
     const storedAssignments = getAssignments();
+    const effectiveObjects = buildObjectsFromStoredData(storedObjects, storedDocuments, storedProjects);
+    if (!storedObjects.length && effectiveObjects.length) {
+      effectiveObjects.forEach(saveObject);
+    }
 
-    setObjects(storedObjects);
+    setObjects(effectiveObjects);
     setEntrances(storedEntrances);
     setProjects(storedProjects);
     setAssignments(storedAssignments);
     setAnalysis(buildAnalysisFromDocuments(storedDocuments));
-    setSelectedObjectId(storedObjects[0]?.id ?? null);
+    setSelectedObjectId(effectiveObjects[0]?.id ?? null);
     setSelectedProjectId(storedProjects[0]?.id ?? null);
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
   }
@@ -739,19 +743,24 @@ export function AnalysisDashboard() {
 
   async function importLocalObjectsToSupabase() {
     const storedObjects = getObjects();
-    if (!storedObjects.length) {
+    const storedDocuments = getDocuments();
+    const storedProjects = getProjects();
+    const importObjects = buildObjectsFromStoredData(storedObjects, storedDocuments, storedProjects);
+    if (!importObjects.length) {
       setSupabaseObjectImportStatus({
         kind: "error",
-        message: "Keine lokalen Objekte im Browser-Speicher gefunden.",
-        summary: { imported: 0, skipped: 0, errors: ["localStorage-Key paribus-baukosten.objects.v1 ist leer."] }
+        message: "Keine lokalen Objekte oder Dokument-Objektdaten im Browser-Speicher gefunden.",
+        summary: { imported: 0, skipped: 0, errors: ["localStorage-Keys objects, documents und projects enthalten keine importierbaren Objektnummern."] }
       });
       return;
     }
 
     const confirmed = window.confirm(
       `Lokale Objekte werden einmalig nach Supabase importiert.\n\n` +
-      `Quelle: localStorage paribus-baukosten.objects.v1\n` +
-      `Objekte lokal: ${storedObjects.length}\n\n` +
+      `Quelle: localStorage objects/documents/projects\n` +
+      `Objekte fuer Import: ${importObjects.length}\n` +
+      `Direkte Objekt-Stammdaten: ${storedObjects.length}\n` +
+      `Dokumente als Fallback: ${storedDocuments.length}\n\n` +
       `Bestehende Supabase-Objekte werden anhand der Objektnummer uebersprungen. Fortfahren?`
     );
     if (!confirmed) {
@@ -766,8 +775,9 @@ export function AnalysisDashboard() {
     });
 
     try {
-      const summary = await importMissingObjectsToSupabase(storedObjects);
+      const summary = await importMissingObjectsToSupabase(importObjects);
       await loadSupabaseObjectData();
+      setObjects(buildObjectsFromStoredData(getObjects(), storedDocuments, storedProjects));
       setSupabaseObjectImportStatus({
         kind: summary.errors.length ? "error" : "success",
         message: "Supabase-Import abgeschlossen.",
@@ -4731,6 +4741,85 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
     latitude: "",
     longitude: ""
   };
+}
+
+function buildObjectsFromStoredData(
+  storedObjects: ObjectRecord[],
+  documents: ObjectAnalysis[],
+  projects: ProjectRecord[]
+): ObjectRecord[] {
+  const byKey = new Map<string, ObjectRecord>();
+  const addObject = (object: ObjectRecord) => {
+    const key = objectStorageKey(object);
+    if (!key) return;
+    const existing = byKey.get(key);
+    byKey.set(key, existing ? mergeObjectRecord(existing, object) : object);
+  };
+
+  storedObjects.forEach(addObject);
+  documents.forEach((document, index) => {
+    const object = objectFromDocument(document);
+    object.id = object.objectNumber ? `object-${object.objectNumber}` : `object-document-${index}`;
+    addObject(object);
+  });
+  projects.forEach((project, index) => {
+    const objectNumber = extractObjectNumber(project.object);
+    if (!objectNumber && !project.object.trim()) return;
+    addObject({
+      id: project.objectId || `object-project-${index}`,
+      fund: project.fund,
+      objectNumber,
+      objectName: "",
+      address: objectNumber ? project.object.replace(objectNumber, "").trim() : project.object,
+      postalCode: "",
+      city: "",
+      federalState: "",
+      constructionYear: "",
+      unitCount: "",
+      totalLivingAreaSqm: "",
+      wohnflaecheSanierteWohnung: "",
+      assetManager: "",
+      portfolioManager: "",
+      latitude: "",
+      longitude: ""
+    });
+  });
+
+  return Array.from(byKey.values()).sort((left, right) =>
+    firstKnown(left.objectNumber, left.address, left.id).localeCompare(firstKnown(right.objectNumber, right.address, right.id), "de")
+  );
+}
+
+function objectStorageKey(object: ObjectRecord): string {
+  const number = object.objectNumber.trim().toLowerCase();
+  if (number) return `number:${number}`;
+  const address = object.address.trim().toLowerCase();
+  return address ? `address:${address}` : "";
+}
+
+function mergeObjectRecord(existing: ObjectRecord, incoming: ObjectRecord): ObjectRecord {
+  return {
+    ...existing,
+    fund: firstKnown(existing.fund, incoming.fund),
+    objectNumber: firstKnown(existing.objectNumber, incoming.objectNumber),
+    objectName: firstKnown(existing.objectName, incoming.objectName),
+    address: firstKnown(existing.address, incoming.address),
+    postalCode: firstKnown(existing.postalCode, incoming.postalCode),
+    city: firstKnown(existing.city, incoming.city),
+    federalState: firstKnown(existing.federalState, incoming.federalState),
+    constructionYear: firstKnown(existing.constructionYear, incoming.constructionYear),
+    unitCount: firstKnown(existing.unitCount, incoming.unitCount),
+    totalLivingAreaSqm: firstKnown(existing.totalLivingAreaSqm, incoming.totalLivingAreaSqm),
+    wohnflaecheSanierteWohnung: firstKnown(existing.wohnflaecheSanierteWohnung, incoming.wohnflaecheSanierteWohnung),
+    assetManager: firstKnown(existing.assetManager, incoming.assetManager),
+    portfolioManager: firstKnown(existing.portfolioManager, incoming.portfolioManager),
+    latitude: firstKnown(existing.latitude ?? "", incoming.latitude ?? ""),
+    longitude: firstKnown(existing.longitude ?? "", incoming.longitude ?? "")
+  };
+}
+
+function extractObjectNumber(value: string): string {
+  return value.match(/\b\d{5,8}\b/)?.[0] ?? "";
 }
 
 function uploadDraftFromDocument(document?: ObjectAnalysis, sourceFile = ""): UploadObjectDraft {
