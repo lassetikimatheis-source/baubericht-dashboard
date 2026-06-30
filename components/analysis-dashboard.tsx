@@ -6960,11 +6960,11 @@ async function exportObjectReport(
     const disclaimerLine2 = "von Nachträgen, Preisänderungen oder abweichenden Leistungen von den ausgewiesenen Werten abweichen.";
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
     pdf.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
+    text(disclaimerLine1, margin, pageHeight - 57, 5.6, "normal", muted, pageWidth - margin * 2);
+    text(disclaimerLine2, margin, pageHeight - 50, 5.6, "normal", muted, pageWidth - margin * 2);
     text("Paribus Asset Management", margin, pageHeight - 24, layout.font.footer, "normal", navy);
     textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, layout.font.footer, "normal", navy);
     textRight(`Seite ${page} von 2`, pageWidth - margin, pageHeight - 24, layout.font.footer, "normal", navy);
-    text(disclaimerLine1, margin, pageHeight - 13, 5.6, "normal", muted, pageWidth - margin * 2);
-    text(disclaimerLine2, margin, pageHeight - 6, 5.6, "normal", muted, pageWidth - margin * 2);
   };
   const drawBars = (rows: Array<{ label: string; value: number | null; highlight?: boolean }>, x: number, y: number, w: number, rowH: number, labelW: number, valueW: number) => {
     const max = Math.max(...rows.map((row) => row.value ?? 0), 1);
@@ -6985,10 +6985,10 @@ async function exportObjectReport(
   };
 
   pageBackground();
-  text("Portfolioüberblick", contentX, 88, 11, "bold", orange);
-  text("Sanierungsreport", contentX, 124, 30, "bold", navy);
-  text("Teil- und Vollsanierung (GU)", contentX, 151, 16, "normal", navy);
-  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", contentX, 176, 10.5, "normal", muted, 270);
+  text("Portfolioüberblick", contentX, 45, 11, "bold", orange);
+  text("Sanierungsreport", contentX, 81, 30, "bold", navy);
+  text("Teil- und Vollsanierung (GU)", contentX, 108, 16, "normal", navy);
+  text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", contentX, 133, 10.5, "normal", muted, 270);
   drawLogo(42);
   textRight("BERICHTSDATUM", pageWidth - margin, 84, 7.4, "bold", muted);
   textRight(formatReportDate(new Date()), pageWidth - margin, 100, 9.2, "bold", navy);
