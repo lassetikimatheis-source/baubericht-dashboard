@@ -7297,18 +7297,20 @@ function countReportRenovatedApartments(documents: ObjectAnalysis[]): number | n
 function buildReportTradeRows(documents: ObjectAnalysis[]): ReportTradeRow[] {
   const groups = groupByCluster(documents);
   const merged = new Map<string, { label: string; total: number; ids: Set<string> }>();
-  reportTradeOrder().forEach((entry) => merged.set(entry.key, { label: entry.label, total: 0, ids: new Set() }));
+  const tradeOrder = reportTradeOrder();
+  tradeOrder.forEach((entry) => merged.set(entry.key, { label: entry.label, total: 0, ids: new Set() }));
 
   groups.forEach((group) => {
     const mapped = reportTradeDisplay(group.cluster);
-    const current = merged.get(mapped.key) ?? { label: mapped.label, total: 0, ids: new Set<string>() };
+    const current = merged.get(mapped.key);
+    if (!current) return;
     current.total += group.total;
     (group.uniqueDocumentIds ?? []).forEach((id) => current.ids.add(id));
     merged.set(mapped.key, current);
   });
 
   const total = Array.from(merged.values()).reduce((sum, row) => sum + row.total, 0);
-  return reportTradeOrder().map((order) => {
+  return tradeOrder.map((order) => {
     const row = merged.get(order.key) ?? { label: order.label, total: 0, ids: new Set<string>() };
     const count = row.ids.size;
     return {
@@ -7349,14 +7351,13 @@ function buildReportObjectBars(
 
 function reportTradeOrder(): Array<{ key: string; label: string }> {
   return [
-    { key: "schadstoff-asbest", label: "Schadstoff und Asbest" },
+    { key: "schadstoff-asbest", label: "Asbest" },
     { key: "elektro", label: "Elektro" },
     { key: "heizung-sanitaer", label: "Heizung Sanitär" },
     { key: "fliesen-estrich", label: "Fliesen und Estrich" },
     { key: "boden", label: "Bodenbelagsarbeiten" },
     { key: "maler", label: "Maler" },
     { key: "tischler", label: "Tischler" },
-    { key: "rueckbau-entsorgung", label: "Rückbau Entsorgung" },
     { key: "reinigung", label: "Reinigung" },
     { key: "sonstiges", label: "Sonstiges" }
   ];
@@ -7364,8 +7365,8 @@ function reportTradeOrder(): Array<{ key: string; label: string }> {
 
 function reportTradeDisplay(cluster: string): { key: string; label: string } {
   const normalized = normalizeTradeCluster(cluster, "");
-  if (normalized === "Schadstoffsanierung / Asbest") return { key: "schadstoff-asbest", label: "Schadstoff und Asbest" };
-  if (normalized === "Asbestarbeiten") return { key: "schadstoff-asbest", label: "Schadstoff und Asbest" };
+  if (normalized === "Schadstoffsanierung / Asbest") return { key: "schadstoff-asbest", label: "Asbest" };
+  if (normalized === "Asbestarbeiten") return { key: "schadstoff-asbest", label: "Asbest" };
   if (normalized === "Elektroarbeiten") return { key: "elektro", label: "Elektro" };
   if (normalized === "Heizung und Sanitär") return { key: "heizung-sanitaer", label: "Heizung Sanitär" };
   if (normalized === "Fliesen und Estricharbeiten") return { key: "fliesen-estrich", label: "Fliesen und Estrich" };
