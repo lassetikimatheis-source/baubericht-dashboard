@@ -636,6 +636,16 @@ export function AnalysisDashboard() {
     downloadBlob(blob, type === "excel" ? "paribus-baukosten-analyse.xlsx" : "Deckblatt_Portfolio.pdf");
   }
 
+  async function exportOverallPdf() {
+    try {
+      await exportOverallReport(objects, analysis.objects, projects, assignments);
+      setMessage("Gesamtbericht wurde erstellt.");
+    } catch (error) {
+      console.error("Gesamtbericht export failed", error);
+      setMessage("Gesamtbericht-Export fehlgeschlagen.");
+    }
+  }
+
   function exportAppData() {
     try {
       const backup = exportAppDataBackup();
@@ -1096,6 +1106,7 @@ export function AnalysisDashboard() {
           <div className="headerActions">
             <button type="button" onClick={() => exportFile("excel")}>Export Excel</button>
             <button type="button" onClick={() => exportFile("pdf")}>Export PDF</button>
+            <button type="button" onClick={exportOverallPdf}>Gesamtbericht PDF</button>
             <button className="buttonPrimary" type="button" onClick={() => setView("upload")}>+ Dokument hochladen</button>
           </div>
         </header>
@@ -7082,6 +7093,161 @@ async function exportObjectReport(
   footer(2);
 
   downloadBlob(pdf.output("blob"), `Objektbericht_${sanitizeDownloadName(firstKnown(object.objectName, object.objectNumber, object.address, "Objekt"))}.pdf`, "application/pdf");
+}
+
+async function exportOverallReport(
+  objects: ObjectRecord[],
+  documents: ObjectAnalysis[],
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>
+): Promise<void> {
+  const { jsPDF } = await import("jspdf");
+  const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
+  const logoDataUrl = await loadImageDataUrl("/paribus-logo.png");
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 48;
+  const contentW = pageWidth - margin * 2;
+  const navy: [number, number, number] = [19, 38, 63];
+  const orange: [number, number, number] = [243, 111, 33];
+  const muted: [number, number, number] = [71, 88, 121];
+  const border: [number, number, number] = [227, 232, 239];
+  const light: [number, number, number] = [245, 246, 248];
+
+  const objectRows = objects
+    .map((object) => {
+      const objectDocuments = documents.filter((document) => documentBelongsToObject(document, object, projects, assignments));
+      const metrics = buildReportObjectMetrics(object, objectDocuments);
+      return { object, documents: objectDocuments, metrics };
+    })
+    .filter((row) => row.documents.length > 0 || row.metrics.gross !== null);
+  const includedDocuments = uniqueStrings(objectRows.flatMap((row) => row.documents.map((document) => document.id)));
+  const includedAnalyses = documents.filter((document) => includedDocuments.includes(document.id));
+  const portfolio = buildReportPortfolioMetrics(objectRows.map((row) => row.object), includedAnalyses, projects, assignments);
+  const tradeRows = buildReportTradeRows(includedAnalyses);
+
+  const setColor = (color: [number, number, number]) => pdf.setTextColor(color[0], color[1], color[2]);
+  const text = (value: string, x: number, y: number, size = 9, style: "normal" | "bold" = "normal", color = navy, maxWidth?: number) => {
+    pdf.setFont("helvetica", style);
+    pdf.setFontSize(size);
+    setColor(color);
+    const lines = maxWidth ? pdf.splitTextToSize(value, maxWidth) : [value];
+    pdf.text(lines, x, y, { lineHeightFactor: 1.15 });
+  };
+  const textRight = (value: string, rightX: number, y: number, size = 8, style: "normal" | "bold" = "normal", color = navy) => {
+    pdf.setFont("helvetica", style);
+    pdf.setFontSize(size);
+    setColor(color);
+    pdf.text(value, rightX, y, { align: "right" });
+  };
+  const textCenter = (value: string, centerX: number, y: number, size = 8, style: "normal" | "bold" = "normal", color = navy) => {
+    pdf.setFont("helvetica", style);
+    pdf.setFontSize(size);
+    setColor(color);
+    pdf.text(value, centerX, y, { align: "center" });
+  };
+  const fitText = (value: string, x: number, y: number, maxWidth: number, size = 12, minSize = 6, style: "normal" | "bold" = "bold", color = orange, align: "left" | "center" | "right" = "left") => {
+    let nextSize = size;
+    pdf.setFont("helvetica", style);
+    while (nextSize > minSize) {
+      pdf.setFontSize(nextSize);
+      if (pdf.getTextWidth(value) <= maxWidth) break;
+      nextSize -= 0.5;
+    }
+    setColor(color);
+    const width = pdf.getTextWidth(value);
+    const offset = align === "center" ? (maxWidth - width) / 2 : align === "right" ? maxWidth - width : 0;
+    pdf.text(value, x + Math.max(offset, 0), y);
+  };
+  const card = (x: number, y: number, w: number, h: number) => {
+    pdf.setFillColor(239, 243, 248);
+    pdf.roundedRect(x + 2, y + 3, w, h, 8, 8, "F");
+    pdf.setFillColor(255, 255, 255);
+    pdf.setDrawColor(border[0], border[1], border[2]);
+    pdf.roundedRect(x, y, w, h, 8, 8, "FD");
+  };
+  const footer = (page: number) => {
+    pdf.setDrawColor(navy[0], navy[1], navy[2]);
+    pdf.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
+    text("Paribus Asset Management", margin, pageHeight - 24, 8.2, "normal", navy);
+    textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, 8.2, "normal", navy);
+    textRight(`Seite ${page}`, pageWidth - margin, pageHeight - 24, 8.2, "normal", navy);
+  };
+  const addHeader = (title = "Gesamtbericht") => {
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, 0, pageWidth, pageHeight, "F");
+    text("Portfolioüberblick", margin, 52, 11, "bold", orange);
+    text(title, margin, 86, 30, "bold", navy);
+    text("Alle Objekte mit vorhandenen Dokumenten oder Kosten", margin, 112, 12, "normal", navy);
+    if (logoDataUrl) pdf.addImage(logoDataUrl, "PNG", pageWidth - margin - 118, 28, 118, 30, undefined, "FAST");
+  };
+  const drawKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
+    card(x, y, w, 86);
+    fitText(title.toUpperCase(), x + 14, y + 22, w - 28, 7, 5.4, "bold", navy, "center");
+    fitText(value, x + 14, y + 52, w - 28, 15, 8, "bold", orange, "center");
+    fitText(detail, x + 14, y + 72, w - 28, 7.5, 6, "normal", muted, "center");
+  };
+
+  addHeader();
+  const kpiGap = 10;
+  const kpiW = (contentW - kpiGap * 3) / 4;
+  drawKpi("Objekte", formatNumber(objectRows.length), "mit Daten", margin, 160, kpiW);
+  drawKpi("Dokumente", formatNumber(includedAnalyses.length), "ausgewertet", margin + (kpiW + kpiGap), 160, kpiW);
+  drawKpi("Gesamtkosten", formatNullableCurrency(portfolio.gross), "brutto", margin + (kpiW + kpiGap) * 2, 160, kpiW);
+  drawKpi("Sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt", margin + (kpiW + kpiGap) * 3, 160, kpiW);
+
+  card(margin, 276, contentW, 170);
+  text("Kosten nach Gewerk", margin + 16, 306, 13, "bold", navy);
+  const visibleTrades = tradeRows.filter((row) => row.total > 0).slice(0, 7);
+  const maxTrade = Math.max(...visibleTrades.map((row) => row.total), 1);
+  visibleTrades.forEach((row, index) => {
+    const y = 334 + index * 17;
+    text(row.label, margin + 16, y, 7.8, "bold", navy, 130);
+    pdf.setFillColor(237, 241, 246);
+    pdf.roundedRect(margin + 154, y - 7, 210, 7, 4, 4, "F");
+    pdf.setFillColor(...(index === 0 ? orange : navy));
+    pdf.roundedRect(margin + 154, y - 7, Math.max((row.total / maxTrade) * 210, 2), 7, 4, 4, "F");
+    textRight(formatNullableCurrency(row.total), pageWidth - margin - 16, y, 7.8, "bold", navy);
+  });
+
+  text("Objektübersicht", margin, 492, 14, "bold", navy);
+  let y = 524;
+  let page = 1;
+  const drawTableHeader = () => {
+    text("Objekt", margin, y, 7.5, "bold", navy);
+    text("Adresse", margin + 74, y, 7.5, "bold", navy);
+    textRight("Dok.", margin + 330, y, 7.5, "bold", navy);
+    textRight("Gesamt", margin + 420, y, 7.5, "bold", navy);
+    textRight("€/m²", pageWidth - margin, y, 7.5, "bold", navy);
+    pdf.setDrawColor(border[0], border[1], border[2]);
+    pdf.line(margin, y + 9, pageWidth - margin, y + 9);
+    y += 28;
+  };
+  drawTableHeader();
+  objectRows.forEach((row) => {
+    if (y > pageHeight - 74) {
+      footer(page);
+      pdf.addPage();
+      page += 1;
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(0, 0, pageWidth, pageHeight, "F");
+      if (logoDataUrl) pdf.addImage(logoDataUrl, "PNG", pageWidth - margin - 118, 28, 118, 30, undefined, "FAST");
+      text("Gesamtbericht", margin, 58, 18, "bold", navy);
+      text("Objektübersicht", margin, 90, 13, "bold", orange);
+      y = 122;
+      drawTableHeader();
+    }
+    const address = formatObjectReportAddress(row.object);
+    text(firstKnown(row.object.objectNumber, row.object.objectName, "k.A."), margin, y, 8.3, "bold", navy, 66);
+    text(address, margin + 74, y, 8, "normal", navy, 210);
+    textRight(formatNumber(row.documents.length), margin + 330, y, 8, "bold", navy);
+    textRight(formatNullableCurrency(row.metrics.gross), margin + 420, y, 8, "bold", navy);
+    textRight(formatEuroPerSqm(row.metrics.costPerSqm), pageWidth - margin, y, 8, "bold", navy);
+    y += 24;
+  });
+  footer(page);
+
+  downloadBlob(pdf.output("blob"), `Gesamtbericht_Portfolio_${formatBackupTimestamp(new Date())}.pdf`, "application/pdf");
 }
 
 function downloadBlob(blob: Blob, fileName: string, fallbackType?: string): void {
