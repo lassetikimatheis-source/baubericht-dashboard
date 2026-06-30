@@ -117,15 +117,21 @@ export async function createSupabaseObject(object: StoredObjectRecord): Promise<
   if (!supabase) {
     throw new Error("Supabase-Objekt konnte nicht gespeichert werden: Environment Variables fehlen.");
   }
+  const insertRow = objectRowToSupabase(object, { includeId: true });
 
   const { data, error } = await supabase
     .from("objects")
-    .insert(objectRowToSupabase(object, { includeId: true }))
+    .insert(insertRow)
     .select("*")
     .single();
 
   if (error) {
+    console.error("[Supabase] Insert public.objects fehlgeschlagen", { row: insertRow, error });
     throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
+  }
+  if (!data) {
+    console.error("[Supabase] Insert public.objects ohne Rueckgabedaten", { row: insertRow });
+    throw new Error("Supabase-Objekt konnte nicht gespeichert werden: Insert lieferte keinen Datensatz zurueck.");
   }
 
   return objectRowFromSupabase(data as SupabaseObjectRow, object);

@@ -16,7 +16,7 @@ create policy "objects_insert_anon"
   on public.objects
   for insert
   to anon
-  with check (object_number is not null and length(trim(object_number)) > 0);
+  with check (true);
 
 drop policy if exists "objects_update_anon" on public.objects;
 create policy "objects_update_anon"
@@ -24,7 +24,7 @@ create policy "objects_update_anon"
   for update
   to anon
   using (true)
-  with check (object_number is not null and length(trim(object_number)) > 0);
+  with check (true);
 
 drop policy if exists "objects_delete_anon" on public.objects;
 create policy "objects_delete_anon"
