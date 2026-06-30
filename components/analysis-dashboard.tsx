@@ -620,6 +620,10 @@ export function AnalysisDashboard() {
       }
       return;
     }
+    if (type === "pdf") {
+      await exportOverallPdf();
+      return;
+    }
 
     const response = await fetch(`/api/export/${type}`, {
       method: "POST",
@@ -7164,20 +7168,24 @@ async function exportOverallReport(
     pdf.setDrawColor(border[0], border[1], border[2]);
     pdf.roundedRect(x, y, w, h, 8, 8, "FD");
   };
-  const footer = (page: number) => {
+  const footer = (page: number, totalPages: number) => {
     pdf.setDrawColor(navy[0], navy[1], navy[2]);
     pdf.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
     text("Paribus Asset Management", margin, pageHeight - 24, 8.2, "normal", navy);
     textCenter("www.paribus.de", pageWidth / 2, pageHeight - 24, 8.2, "normal", navy);
-    textRight(`Seite ${page}`, pageWidth - margin, pageHeight - 24, 8.2, "normal", navy);
+    textRight(`Seite ${page} von ${totalPages}`, pageWidth - margin, pageHeight - 24, 8.2, "normal", navy);
   };
-  const addHeader = (title = "Gesamtbericht") => {
+  const addHeader = () => {
     pdf.setFillColor(255, 255, 255);
     pdf.rect(0, 0, pageWidth, pageHeight, "F");
-    text("Portfolioüberblick", margin, 52, 11, "bold", orange);
-    text(title, margin, 86, 30, "bold", navy);
-    text("Alle Objekte mit vorhandenen Dokumenten oder Kosten", margin, 112, 12, "normal", navy);
+    text("Portfolioüberblick", margin, 45, 11, "bold", orange);
+    text("Sanierungsreport", margin, 81, 30, "bold", navy);
+    text("Teil- und Vollsanierung (GU)", margin, 108, 16, "normal", navy);
+    text("Überblick über alle Objekte und Sanierungsmaßnahmen im Portfolio.", margin, 133, 10.5, "normal", muted, 270);
     if (logoDataUrl) pdf.addImage(logoDataUrl, "PNG", pageWidth - margin - 118, 28, 118, 30, undefined, "FAST");
+    textRight("BERICHTSDATUM", pageWidth - margin, 84, 7.4, "bold", muted);
+    textRight(formatReportDate(new Date()), pageWidth - margin, 100, 9.2, "bold", navy);
+    textRight(`FONDS  ${firstKnown(portfolio.fund, "k.A.")}`, pageWidth - margin, 118, 7.4, "bold", muted);
   };
   const drawKpi = (title: string, value: string, detail: string, x: number, y: number, w: number) => {
     card(x, y, w, 86);
@@ -7203,20 +7211,24 @@ async function exportOverallReport(
 
   addHeader();
   let page = 1;
+  const totalPages = objectRows.length + 1;
   const kpiW = contentW / 5;
   card(margin, 184, contentW, 100);
-  [
-    ["Gesamtkosten Objekte", formatNullableCurrency(portfolio.gross), "gesamt"],
-    ["Wohneinheiten gesamt", formatNullableNumber(portfolio.units), "gesamt"],
-    ["GU sanierte Fläche", formatArea(portfolio.renovatedArea), "gesamt"],
-    ["Dokumente ausgewertet", formatNumber(includedAnalyses.length), "gesamt"],
-    ["Durchschnittliche Wohnungsgröße", formatArea(portfolio.averageApartmentSize), "gesamt"]
-  ].forEach(([title, value, detail], index) => {
+  const overallKpis: Array<[string[], string, string]> = [
+    [["Gesamtkosten", "Objekte"], formatNullableCurrency(portfolio.gross), "gesamt"],
+    [["Wohneinheiten", "gesamt"], formatNullableNumber(portfolio.units), "gesamt"],
+    [["GU sanierte", "Fläche"], formatArea(portfolio.renovatedArea), "gesamt"],
+    [["Dokumente", "ausgewertet"], formatNumber(includedAnalyses.length), "gesamt"],
+    [["Durchschnittliche", "Wohnungsgröße"], formatArea(portfolio.averageApartmentSize), "gesamt"]
+  ];
+  overallKpis.forEach(([title, value, detail], index) => {
     if (index > 0) {
       pdf.setDrawColor(229, 231, 235);
       pdf.line(margin + index * kpiW, 198, margin + index * kpiW, 268);
     }
-    fitText(title.toUpperCase(), margin + index * kpiW + 10, 212, kpiW - 20, 6.2, 4.8, "bold", navy, "center");
+    title.slice(0, 2).forEach((line, lineIndex) => {
+      fitText(line.toUpperCase(), margin + index * kpiW + 10, 212 + lineIndex * 10, kpiW - 20, 6.2, 4.8, "bold", navy, "center");
+    });
     fitText(value, margin + index * kpiW + 10, 250, kpiW - 20, 13.5, 8.5, "bold", orange, "center");
     fitText(detail, margin + index * kpiW + 10, 272, kpiW - 20, 8, 6.8, "normal", muted, "center");
   });
@@ -7236,7 +7248,7 @@ async function exportOverallReport(
   text("NACH GEWERK", margin + 16, 474, 11, "bold", navy, contentW - 32);
   text("Durchschnittliche Bruttokosten pro sanierter Wohnung.", margin + 16, 498, 8.5, "normal", muted, contentW - 32);
   drawBars(tradeRows, margin + 16, 520, contentW - 32, 19, 190, 82, true);
-  footer(page);
+  footer(page, totalPages);
 
   objectRows.forEach((row) => {
     pdf.addPage();
@@ -7298,7 +7310,7 @@ async function exportOverallReport(
       textRight(trade.share === null ? "0 %" : `${formatNullableNumber(trade.share)} %`, margin + 458, y, 8, "bold", navy);
       textCenter(String(trade.count || 0), margin + 476, y, 8, "bold", navy);
     });
-    footer(page);
+    footer(page, totalPages);
   });
 
   downloadBlob(pdf.output("blob"), `Gesamtbericht_Portfolio_${formatBackupTimestamp(new Date())}.pdf`, "application/pdf");
