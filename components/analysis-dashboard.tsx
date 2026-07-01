@@ -26,9 +26,11 @@ import {
   getSupabaseEnvironmentStatus,
   getRuntimeSupabaseConfig,
   getSupabaseRuntimeConfigStatus,
+  importDocumentsAndCostItemsToSupabase,
   importMissingObjectsToSupabase,
   loadSupabaseObjects,
   updateSupabaseObject,
+  type SupabaseDocumentCostImportSummary,
   type SupabaseObjectImportSummary
 } from "../lib/supabase";
 import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
@@ -122,6 +124,12 @@ interface DataTransferStatus {
 interface SupabaseObjectImportStatus {
   message: string;
   summary: SupabaseObjectImportSummary | null;
+  kind: "idle" | "success" | "error";
+}
+
+interface SupabaseDocumentImportStatus {
+  message: string;
+  summary: SupabaseDocumentCostImportSummary | null;
   kind: "idle" | "success" | "error";
 }
 
@@ -444,6 +452,11 @@ export function AnalysisDashboard() {
     kind: "idle"
   });
   const [supabaseObjectImportStatus, setSupabaseObjectImportStatus] = useState<SupabaseObjectImportStatus>({
+    message: "",
+    summary: null,
+    kind: "idle"
+  });
+  const [supabaseDocumentImportStatus, setSupabaseDocumentImportStatus] = useState<SupabaseDocumentImportStatus>({
     message: "",
     summary: null,
     kind: "idle"
@@ -820,6 +833,55 @@ export function AnalysisDashboard() {
         kind: "error",
         message: error instanceof Error ? error.message : "Supabase-Import fehlgeschlagen.",
         summary: { imported: 0, skipped: 0, errors: [error instanceof Error ? error.message : "Unbekannter Fehler"] }
+      });
+    }
+  }
+
+  async function importLocalDocumentsToSupabase() {
+    const storedDocuments = getDocuments();
+    if (!storedDocuments.length) {
+      setSupabaseDocumentImportStatus({
+        kind: "error",
+        message: "Keine lokalen Dokumentdaten im Browser-Speicher gefunden.",
+        summary: { documentsImported: 0, costItemsImported: 0, skipped: 0, errors: ["localStorage-Key paribus-baukosten.documents.v1 enthaelt keine Dokumente."] }
+      });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Lokale Dokumente und erkannte Kostenpositionen werden nach Supabase importiert.\n\n` +
+      `Quelle: localStorage documents\n` +
+      `Dokumente fuer Import: ${storedDocuments.length}\n\n` +
+      `Bestehende Daten werden nicht geloescht. Duplikate werden uebersprungen. Fortfahren?`
+    );
+    if (!confirmed) {
+      setSupabaseDocumentImportStatus({ kind: "idle", message: "Supabase-Dokumentimport abgebrochen.", summary: null });
+      return;
+    }
+
+    setSupabaseDocumentImportStatus({
+      kind: "idle",
+      message: "Supabase-Dokumentimport laeuft...",
+      summary: null
+    });
+
+    try {
+      const summary = await importDocumentsAndCostItemsToSupabase(storedDocuments);
+      setSupabaseDocumentImportStatus({
+        kind: summary.errors.length ? "error" : "success",
+        message: "Supabase-Dokumentimport abgeschlossen.",
+        summary
+      });
+    } catch (error) {
+      setSupabaseDocumentImportStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Supabase-Dokumentimport fehlgeschlagen.",
+        summary: {
+          documentsImported: 0,
+          costItemsImported: 0,
+          skipped: 0,
+          errors: [error instanceof Error ? error.message : "Unbekannter Fehler"]
+        }
       });
     }
   }
@@ -1386,12 +1448,14 @@ export function AnalysisDashboard() {
                 progress={reanalysisProgress}
                 dataTransferStatus={dataTransferStatus}
                 supabaseObjectImportStatus={supabaseObjectImportStatus}
+                supabaseDocumentImportStatus={supabaseDocumentImportStatus}
                 asbestosDebugReport={asbestosDebugReport}
                 onReanalyzeAll={reanalyzeAllObjects}
                 onRunAsbestosDebug={runAsbestosDebug}
                 onExportData={exportAppData}
                 onImportData={importAppData}
                 onImportLocalObjectsToSupabase={importLocalObjectsToSupabase}
+                onImportLocalDocumentsToSupabase={importLocalDocumentsToSupabase}
               />
               ) : null}
             </div>
@@ -4089,22 +4153,26 @@ function SettingsView({
   progress,
   dataTransferStatus,
   supabaseObjectImportStatus,
+  supabaseDocumentImportStatus,
   asbestosDebugReport,
   onReanalyzeAll,
   onRunAsbestosDebug,
   onExportData,
   onImportData,
-  onImportLocalObjectsToSupabase
+  onImportLocalObjectsToSupabase,
+  onImportLocalDocumentsToSupabase
 }: {
   progress: ReanalysisProgress;
   dataTransferStatus: DataTransferStatus;
   supabaseObjectImportStatus: SupabaseObjectImportStatus;
+  supabaseDocumentImportStatus: SupabaseDocumentImportStatus;
   asbestosDebugReport: AsbestosDebugReport;
   onReanalyzeAll: () => Promise<void>;
   onRunAsbestosDebug: () => void;
   onExportData: () => void;
   onImportData: (file: File) => Promise<void>;
   onImportLocalObjectsToSupabase: () => Promise<void>;
+  onImportLocalDocumentsToSupabase: () => Promise<void>;
 }) {
   const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const currentSummary = summarizeCurrentAppData();
@@ -4140,6 +4208,7 @@ function SettingsView({
           <div className="headerActions">
             <button type="button" onClick={onRunAsbestosDebug}>Asbest-Debug ausführen</button>
             <button type="button" onClick={onImportLocalObjectsToSupabase}>Objekte nach Supabase importieren</button>
+            <button type="button" onClick={onImportLocalDocumentsToSupabase}>Dokumente nach Supabase importieren</button>
             <button type="button" onClick={onExportData}>Daten sichern</button>
             <label className="imageUploadButton">
               Daten wiederherstellen
@@ -4161,6 +4230,7 @@ function SettingsView({
           summary={dataTransferStatus.summary ?? currentSummary}
         />
         <SupabaseObjectImportSummaryView status={supabaseObjectImportStatus} />
+        <SupabaseDocumentImportSummaryView status={supabaseDocumentImportStatus} />
         <AsbestosDebugReportView report={asbestosDebugReport} />
       </div>
       <div className="settingsGrid">
@@ -4222,6 +4292,23 @@ function SupabaseObjectImportSummaryView({ status }: { status: SupabaseObjectImp
       <strong>{status.message}</strong>
       <div>
         <span>Importiert: {formatNumber(summary.imported)}</span>
+        <span>Uebersprungen: {formatNumber(summary.skipped)}</span>
+        <span>Fehler: {formatNumber(summary.errors.length)}</span>
+      </div>
+      {summary.errors.length ? <small>{summary.errors.slice(0, 3).join(" | ")}</small> : null}
+    </div>
+  );
+}
+
+function SupabaseDocumentImportSummaryView({ status }: { status: SupabaseDocumentImportStatus }) {
+  if (status.kind === "idle" && !status.message) return null;
+  const summary = status.summary ?? { documentsImported: 0, costItemsImported: 0, skipped: 0, errors: [] };
+  return (
+    <div className={`dataTransferSummary ${status.kind === "error" ? "dataTransferError" : ""}`}>
+      <strong>{status.message}</strong>
+      <div>
+        <span>Dokumente importiert: {formatNumber(summary.documentsImported)}</span>
+        <span>Kostenpositionen importiert: {formatNumber(summary.costItemsImported)}</span>
         <span>Uebersprungen: {formatNumber(summary.skipped)}</span>
         <span>Fehler: {formatNumber(summary.errors.length)}</span>
       </div>
