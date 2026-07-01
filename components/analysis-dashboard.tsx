@@ -600,11 +600,13 @@ export function AnalysisDashboard() {
       if (assignmentSource === "supabase") saveAssignments(supabaseAssignments);
 
       setObjects(nextObjects);
-      setAnalysis(buildAnalysisFromDocuments(nextDocuments));
+      if (documentSource === "supabase") {
+        setAnalysis(buildAnalysisFromDocuments(nextDocuments));
+        setSelectedDocumentId((current) => nextDocuments.some((document) => document.id === current) ? current : nextDocuments[0]?.id ?? null);
+      }
       setProjects(nextProjects);
       setAssignments(nextAssignments);
       setSelectedObjectId((current) => nextObjects.some((object) => object.id === current) ? current : nextObjects[0]?.id ?? null);
-      setSelectedDocumentId((current) => nextDocuments.some((document) => document.id === current) ? current : nextDocuments[0]?.id ?? null);
       setSelectedProjectId((current) => nextProjects.some((project) => project.id === current) ? current : nextProjects[0]?.id ?? null);
     } catch (error) {
       console.error("[Supabase] Daten konnten nicht geladen werden:", error);
