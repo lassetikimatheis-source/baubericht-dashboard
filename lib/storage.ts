@@ -189,8 +189,15 @@ export function getDocuments(): ObjectAnalysis[] {
     if (result.changed) changed = true;
     return result.document;
   });
-  if (changed) writeJson(STORAGE_KEYS.documents, normalized);
-  return normalized;
+  const deduped = dedupeStoredDocuments(normalized);
+  if (changed || deduped.length !== normalized.length) {
+    console.warn("[Storage] Doppelte Dokumente im localStorage bereinigt", {
+      vorher: normalized.length,
+      nachher: deduped.length
+    });
+    writeJson(STORAGE_KEYS.documents, deduped);
+  }
+  return deduped;
 }
 
 export function getLocalDocumentStorageDiagnostics(): LocalDocumentStorageDiagnostic[] {
@@ -322,6 +329,46 @@ function parseAppDataBackup(value: unknown): AppDataBackup {
       assignments: keys.assignments as Record<string, string | null>
     }
   };
+}
+
+function dedupeStoredDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
+  const byKey = new Map<string, ObjectAnalysis>();
+  documents.forEach((document) => {
+    const key = storedDocumentDedupeKey(document);
+    const existing = byKey.get(key);
+    if (!existing || storedDocumentCompletenessScore(document) > storedDocumentCompletenessScore(existing)) {
+      byKey.set(key, document);
+    }
+  });
+  return Array.from(byKey.values());
+}
+
+function storedDocumentDedupeKey(document: ObjectAnalysis): string {
+  const sourceId = document.sourceDocumentIds?.[0]?.trim();
+  if (sourceId) return `source:${sourceId.toLowerCase()}`;
+  const documentNumber = stringFieldValue(document.documentNumber);
+  const objectNumber = stringFieldValue(document.objectNumber);
+  const address = stringFieldValue(document.objectAddress);
+  const total = document.totalCost?.value ?? "";
+  const fallback = [documentNumber, objectNumber || address, total].map((value) => String(value).trim().toLowerCase()).filter(Boolean).join("|");
+  return fallback || `id:${document.id}`;
+}
+
+function storedDocumentCompletenessScore(document: ObjectAnalysis): number {
+  return [
+    document.clusters?.length ?? 0,
+    document.measureDetails?.length ?? 0,
+    document.totalCost?.value !== null ? 1 : 0,
+    stringFieldValue(document.documentNumber) ? 1 : 0,
+    stringFieldValue(document.objectNumber) ? 1 : 0,
+    stringFieldValue(document.objectAddress) ? 1 : 0
+  ].reduce((sum, value) => sum + Number(value), 0);
+}
+
+function stringFieldValue(field: { value: unknown } | null | undefined): string {
+  if (!field || field.value === null || field.value === undefined) return "";
+  if (Array.isArray(field.value)) return field.value.join(", ");
+  return String(field.value);
 }
 
 function parseJsonSafely(raw: string | null): unknown {

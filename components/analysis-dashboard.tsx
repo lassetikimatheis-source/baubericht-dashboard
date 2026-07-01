@@ -5493,7 +5493,7 @@ function buildAnalysisFromDocuments(
   documents: ObjectAnalysis[],
   base: PortfolioAnalysisState = emptyAnalysisState
 ): PortfolioAnalysisState {
-  const normalizedDocuments = documents.map((document) => normalizeDocumentTrades(document).document);
+  const normalizedDocuments = dedupeAnalysisDocuments(documents.map((document) => normalizeDocumentTrades(document).document));
   const costDocuments = selectEffectiveCostDocuments(normalizedDocuments);
   return {
     ...base,
@@ -5511,6 +5511,49 @@ function buildAnalysisFromDocuments(
     reviewRequiredCount: countReviewCases(normalizedDocuments),
     issues: base.issues ?? []
   };
+}
+
+function dedupeAnalysisDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
+  const byKey = new Map<string, ObjectAnalysis>();
+  documents.forEach((document) => {
+    const key = documentDedupeKey(document);
+    const existing = byKey.get(key);
+    if (!existing || documentCompletenessScore(document) > documentCompletenessScore(existing)) {
+      byKey.set(key, document);
+    }
+  });
+  if (byKey.size !== documents.length) {
+    console.warn("[Analyse] Doppelte Dokumente fuer Anzeige bereinigt", {
+      vorher: documents.length,
+      nachher: byKey.size
+    });
+  }
+  return Array.from(byKey.values());
+}
+
+function documentDedupeKey(document: ObjectAnalysis): string {
+  const sourceId = document.sourceDocumentIds?.[0]?.trim();
+  if (sourceId) return `source:${sourceId.toLowerCase()}`;
+  const documentNumber = fieldOrUnknown(document.documentNumber);
+  const objectNumber = fieldOrUnknown(document.objectNumber);
+  const address = fieldOrUnknown(document.objectAddress);
+  const total = document.totalCost.value ?? "";
+  const fallback = [documentNumber, objectNumber !== "k.A." ? objectNumber : address, total]
+    .map((value) => String(value).trim().toLowerCase())
+    .filter((value) => value && value !== "k.a.")
+    .join("|");
+  return fallback || `id:${document.id}`;
+}
+
+function documentCompletenessScore(document: ObjectAnalysis): number {
+  return [
+    document.clusters.length,
+    document.measureDetails?.length ?? 0,
+    document.totalCost.value !== null ? 1 : 0,
+    fieldOrUnknown(document.documentNumber) !== "k.A." ? 1 : 0,
+    fieldOrUnknown(document.objectNumber) !== "k.A." ? 1 : 0,
+    fieldOrUnknown(document.objectAddress) !== "k.A." ? 1 : 0
+  ].reduce((sum, value) => sum + Number(value), 0);
 }
 
 function selectEffectiveCostDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
@@ -6076,11 +6119,11 @@ function buildReanalysisFindings(previousDocuments: ObjectAnalysis[], documents:
 function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: ObjectAnalysis[]): ObjectAnalysis[] {
   const normalizedExisting = existing.map((document) => normalizeDocumentTrades(document).document);
   const normalizedIncoming = incoming.map((document) => normalizeDocumentTrades(document).document);
-  const byId = new Map(normalizedExisting.map((document) => [document.id, document]));
+  const byKey = new Map(normalizedExisting.map((document) => [documentDedupeKey(document), document]));
   const merged = [...normalizedExisting];
 
   normalizedIncoming.forEach((document) => {
-    const match = byId.get(document.id);
+    const match = byKey.get(documentDedupeKey(document));
     if (!match) {
       merged.push(document);
       return;
@@ -6089,7 +6132,7 @@ function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: Object
     merged[index] = mergeDocumentPreferManual(match, document);
   });
 
-  return merged;
+  return dedupeAnalysisDocuments(merged);
 }
 
 function mergeDocumentPreferManual(existing: ObjectAnalysis, incoming: ObjectAnalysis): ObjectAnalysis {
