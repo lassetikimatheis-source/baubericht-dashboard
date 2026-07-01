@@ -71,6 +71,8 @@ async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supaba
       supabaseAnonKey?: string;
       hasUrl?: boolean;
       hasAnonKey?: boolean;
+      hasNextPublicAnonKey?: boolean;
+      hasServerAnonKey?: boolean;
       urlVariableName?: string;
       anonKeyVariableName?: string;
       runtime?: string;
@@ -78,6 +80,8 @@ async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supaba
     console.log("[Supabase] Runtime-Konfiguration geladen", {
       [data.urlVariableName ?? SUPABASE_URL_ENV_NAME]: data.hasUrl ? "vorhanden" : "fehlt",
       [data.anonKeyVariableName ?? SUPABASE_ANON_KEY_ENV_NAME]: data.hasAnonKey ? "vorhanden" : "fehlt",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY_server: data.hasNextPublicAnonKey ? "vorhanden" : "fehlt",
+      SUPABASE_ANON_KEY_serverFallback: data.hasServerAnonKey ? "vorhanden" : "fehlt",
       runtime: data.runtime ?? "server"
     });
     if (!data.supabaseUrl || !data.supabaseAnonKey) return null;
