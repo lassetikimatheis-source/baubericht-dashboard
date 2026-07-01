@@ -531,6 +531,37 @@ export function AnalysisDashboard() {
     setSelectedDocumentId(storedDocuments[0]?.id ?? null);
   }
 
+  function applySupabaseDocumentsToState(nextDocuments: ObjectAnalysis[], context: string) {
+    setAnalysis((current) => {
+      if (current.objects.length > 0 && nextDocuments.length === 0) {
+        console.warn("[Online-Modus] Leerer Supabase-Stand ignoriert, lokale Dokumente bleiben erhalten", {
+          context,
+          currentDocuments: current.objects.length,
+          supabaseDocuments: nextDocuments.length
+        });
+        return current;
+      }
+      const currentHasMeasures = current.objects.some((document) =>
+        document.clusters.length > 0 || (document.measureDetails?.length ?? 0) > 0
+      );
+      const nextHasMeasures = nextDocuments.some((document) =>
+        document.clusters.length > 0 || (document.measureDetails?.length ?? 0) > 0
+      );
+      if (currentHasMeasures && !nextHasMeasures) {
+        console.warn("[Online-Modus] Leerer Supabase-cost_items-Stand ignoriert, lokale Dokumente bleiben erhalten", {
+          context,
+          currentDocuments: current.objects.length,
+          supabaseDocuments: nextDocuments.length
+        });
+        return current;
+      }
+      return buildAnalysisFromDocuments(nextDocuments, current);
+    });
+    if (nextDocuments.length > 0) {
+      setSelectedDocumentId((current) => nextDocuments.some((document) => document.id === current) ? current : nextDocuments[0]?.id ?? null);
+    }
+  }
+
   async function loadSupabaseObjectData() {
     try {
       const localObjects = getObjects();
@@ -600,8 +631,7 @@ export function AnalysisDashboard() {
 
       setObjects(nextObjects);
       if (documentSource === "supabase") {
-        setAnalysis(buildAnalysisFromDocuments(nextDocuments));
-        setSelectedDocumentId((current) => nextDocuments.some((document) => document.id === current) ? current : nextDocuments[0]?.id ?? null);
+        applySupabaseDocumentsToState(nextDocuments, "App-Load");
       }
       setProjects(nextProjects);
       setAssignments(nextAssignments);
@@ -992,8 +1022,7 @@ export function AnalysisDashboard() {
       console.log("[Supabase Dokumentimport] importierte cost_items", summary.costItemsImported);
       if (shouldUseSupabaseDocumentLoad(storedDocuments, loadDiagnosis, "Dokumentimport")) {
         loadDiagnosis.documents.forEach(saveDocument);
-        setAnalysis(buildAnalysisFromDocuments(loadDiagnosis.documents));
-        setSelectedDocumentId((current) => loadDiagnosis.documents.some((document) => document.id === current) ? current : loadDiagnosis.documents[0]?.id ?? null);
+        applySupabaseDocumentsToState(loadDiagnosis.documents, "Dokumentimport");
       }
       setSupabaseOnlineStatus((current) => ({
         ...current,
