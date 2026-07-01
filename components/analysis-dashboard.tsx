@@ -547,9 +547,8 @@ export function AnalysisDashboard() {
       } = await loadSupabaseOnlineData();
       const supabaseAssignmentCount = Object.keys(supabaseAssignments).length;
       const objectSource = supabaseObjects.length ? "supabase" : "localStorage";
-      const documentSource = supabaseDocuments.supabaseDocumentCount > 0 && (supabaseDocuments.supabaseCostItemCount > 0 || localDocuments.length === 0)
-        ? "supabase"
-        : "localStorage";
+      const useSupabaseDocuments = shouldUseSupabaseDocumentLoad(localDocuments, supabaseDocuments, "App-Load");
+      const documentSource = useSupabaseDocuments ? "supabase" : "localStorage";
       const costItemSource = supabaseDocuments.supabaseCostItemCount > 0 ? "supabase" : "localStorage";
       const projectSource = supabaseProjects.length ? "supabase" : "localStorage";
       const assignmentSource = supabaseAssignmentCount > 0 ? "supabase" : "localStorage";
@@ -991,7 +990,7 @@ export function AnalysisDashboard() {
       console.log("[Supabase Dokumentimport] lokale Dokumente", storedDocuments.length);
       console.log("[Supabase Dokumentimport] importierte Dokumente", summary.documentsImported);
       console.log("[Supabase Dokumentimport] importierte cost_items", summary.costItemsImported);
-      if (loadDiagnosis.documents.length) {
+      if (shouldUseSupabaseDocumentLoad(storedDocuments, loadDiagnosis, "Dokumentimport")) {
         loadDiagnosis.documents.forEach(saveDocument);
         setAnalysis(buildAnalysisFromDocuments(loadDiagnosis.documents));
         setSelectedDocumentId((current) => loadDiagnosis.documents.some((document) => document.id === current) ? current : loadDiagnosis.documents[0]?.id ?? null);
@@ -5251,6 +5250,42 @@ function uploadSourceName(files: File[]): string {
   if (files.length === 0) return "";
   if (files.length === 1) return files[0].name;
   return files.map((file) => file.name).join(", ");
+}
+
+function shouldUseSupabaseDocumentLoad(
+  currentDocuments: ObjectAnalysis[],
+  result: {
+    documents: ObjectAnalysis[];
+    supabaseDocumentCount: number;
+    supabaseCostItemCount: number;
+  },
+  context: string
+): boolean {
+  console.log(`[Online-Modus] ${context} lokale Dokumente count`, currentDocuments.length);
+  console.log(`[Online-Modus] ${context} Supabase documents count`, result.supabaseDocumentCount);
+  if (currentDocuments.length > 0 && result.supabaseDocumentCount === 0) {
+    console.warn("[Online-Modus] Leerer Supabase-Stand ignoriert, lokale Dokumente bleiben erhalten", {
+      context,
+      localDocuments: currentDocuments.length,
+      supabaseDocuments: result.supabaseDocumentCount
+    });
+    return false;
+  }
+  const currentHasMeasures = currentDocuments.some((document) =>
+    document.clusters.length > 0 || (document.measureDetails?.length ?? 0) > 0
+  );
+  if (currentHasMeasures && result.supabaseCostItemCount === 0) {
+    console.warn("[Online-Modus] Leerer Supabase-cost_items-Stand ignoriert, lokale Dokumente bleiben erhalten", {
+      context,
+      localDocuments: currentDocuments.length,
+      supabaseDocuments: result.supabaseDocumentCount,
+      supabaseCostItems: result.supabaseCostItemCount
+    });
+    return false;
+  }
+  const useSupabase = result.documents.length > 0;
+  console.log(`[Online-Modus] ${context} verwendete Quelle`, useSupabase ? "Supabase" : "localStorage");
+  return useSupabase;
 }
 
 function diagnoseSupabaseDocumentLoad(result: {
