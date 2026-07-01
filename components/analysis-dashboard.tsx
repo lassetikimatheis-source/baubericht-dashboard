@@ -533,7 +533,11 @@ export function AnalysisDashboard() {
 
   async function loadSupabaseObjectData() {
     try {
-      const localDocumentsTotal = getDocuments().length;
+      const localObjects = getObjects();
+      const localDocuments = getDocuments();
+      const localProjects = getProjects();
+      const localAssignments = getAssignments();
+      const localDocumentsTotal = localDocuments.length;
       logLocalDocumentStorageDiagnostics("App-Load");
       const {
         objects: supabaseObjects,
@@ -542,6 +546,19 @@ export function AnalysisDashboard() {
         assignments: supabaseAssignments
       } = await loadSupabaseOnlineData();
       const supabaseAssignmentCount = Object.keys(supabaseAssignments).length;
+      const objectSource = supabaseObjects.length ? "supabase" : "localStorage";
+      const documentSource = supabaseDocuments.supabaseDocumentCount > 0 && (supabaseDocuments.supabaseCostItemCount > 0 || localDocuments.length === 0)
+        ? "supabase"
+        : "localStorage";
+      const costItemSource = supabaseDocuments.supabaseCostItemCount > 0 ? "supabase" : "localStorage";
+      const projectSource = supabaseProjects.length ? "supabase" : "localStorage";
+      const assignmentSource = supabaseAssignmentCount > 0 ? "supabase" : "localStorage";
+      const nextDocuments = documentSource === "supabase" ? supabaseDocuments.documents : localDocuments;
+      const nextProjects = projectSource === "supabase" ? supabaseProjects : localProjects;
+      const nextAssignments = assignmentSource === "supabase" ? supabaseAssignments : localAssignments;
+      const nextObjects = objectSource === "supabase"
+        ? buildObjectsFromStoredData(supabaseObjects, nextDocuments, nextProjects)
+        : buildObjectsFromStoredData(localObjects, nextDocuments, nextProjects);
       setSupabaseOnlineStatus({
         objectCount: supabaseObjects.length,
         documentCount: supabaseDocuments.supabaseDocumentCount,
@@ -558,6 +575,16 @@ export function AnalysisDashboard() {
       console.log("[Supabase] App-Dokumente im App-Load", supabaseDocuments.appDocumentCount);
       console.log("[Supabase] measureDetails im App-Load", supabaseDocuments.measureDetailsCount);
       console.log("[Supabase] clusters im App-Load", supabaseDocuments.clustersCount);
+      console.log("[Online-Modus] lokale documents count", localDocuments.length);
+      console.log("[Online-Modus] Supabase documents count", supabaseDocuments.supabaseDocumentCount);
+      console.log("[Online-Modus] verwendete documents-Quelle", documentSource);
+      console.log("[Online-Modus] Datenquelle App-Load", {
+        objects: objectSource,
+        documents: documentSource,
+        costItems: costItemSource,
+        projects: projectSource,
+        assignments: assignmentSource
+      });
       setSupabaseDocumentLoadDiagnosis({
         message: diagnoseSupabaseDocumentLoad(supabaseDocuments),
         localDocumentsTotal,
@@ -567,25 +594,18 @@ export function AnalysisDashboard() {
         measureDetailsCount: supabaseDocuments.measureDetailsCount,
         clustersCount: supabaseDocuments.clustersCount
       });
-      if (supabaseObjects.length) {
-        supabaseObjects.forEach(saveObject);
-        setObjects(supabaseObjects);
-        setSelectedObjectId((current) => current ?? supabaseObjects[0]?.id ?? null);
-      }
-      if (supabaseDocuments.documents.length) {
-        supabaseDocuments.documents.forEach(saveDocument);
-        setAnalysis(buildAnalysisFromDocuments(supabaseDocuments.documents));
-        setSelectedDocumentId((current) => supabaseDocuments.documents.some((document) => document.id === current) ? current : supabaseDocuments.documents[0]?.id ?? null);
-      }
-      if (supabaseProjects.length) {
-        supabaseProjects.forEach(saveProject);
-        setProjects(supabaseProjects);
-        setSelectedProjectId((current) => current ?? supabaseProjects[0]?.id ?? null);
-      }
-      if (supabaseAssignmentCount > 0) {
-        saveAssignments(supabaseAssignments);
-        setAssignments(supabaseAssignments);
-      }
+      if (objectSource === "supabase") supabaseObjects.forEach(saveObject);
+      if (documentSource === "supabase") supabaseDocuments.documents.forEach(saveDocument);
+      if (projectSource === "supabase") supabaseProjects.forEach(saveProject);
+      if (assignmentSource === "supabase") saveAssignments(supabaseAssignments);
+
+      setObjects(nextObjects);
+      setAnalysis(buildAnalysisFromDocuments(nextDocuments));
+      setProjects(nextProjects);
+      setAssignments(nextAssignments);
+      setSelectedObjectId((current) => nextObjects.some((object) => object.id === current) ? current : nextObjects[0]?.id ?? null);
+      setSelectedDocumentId((current) => nextDocuments.some((document) => document.id === current) ? current : nextDocuments[0]?.id ?? null);
+      setSelectedProjectId((current) => nextProjects.some((project) => project.id === current) ? current : nextProjects[0]?.id ?? null);
     } catch (error) {
       console.error("[Supabase] Daten konnten nicht geladen werden:", error);
       setMessage(error instanceof Error ? error.message : "Supabase-Daten konnten nicht geladen werden.");
@@ -4394,8 +4414,6 @@ function SettingsView({
 }) {
   const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const currentSummary = summarizeCurrentAppData();
-  const showObjectImport = migrationMode || supabaseOnlineStatus.objectCount === 0;
-  const showDocumentImport = migrationMode || supabaseOnlineStatus.documentCount === 0;
   return (
     <section className="panel">
       <div className="panelHeader">
@@ -4427,8 +4445,8 @@ function SettingsView({
           </div>
           <div className="headerActions">
             <button type="button" onClick={onRunAsbestosDebug}>Asbest-Debug ausführen</button>
-            {showObjectImport ? <button type="button" onClick={onImportLocalObjectsToSupabase}>Objekte nach Supabase importieren</button> : null}
-            {showDocumentImport ? <button type="button" onClick={onImportLocalDocumentsToSupabase}>Dokumente nach Supabase importieren</button> : null}
+            <button type="button" onClick={onImportLocalObjectsToSupabase}>Objekte nach Supabase importieren</button>
+            <button type="button" onClick={onImportLocalDocumentsToSupabase}>Dokumente nach Supabase importieren</button>
             <button type="button" onClick={onExportData}>Daten sichern</button>
             <button type="button" onClick={() => onToggleMigrationMode(!migrationMode)}>
               {migrationMode ? "Migrationsmodus aus" : "Migrationsmodus an"}
