@@ -24,6 +24,7 @@ import {
   createSupabaseObject,
   deleteSupabaseObject,
   getSupabaseEnvironmentStatus,
+  getSupabaseRuntimeConfigStatus,
   importMissingObjectsToSupabase,
   loadSupabaseObjects,
   updateSupabaseObject,
@@ -744,9 +745,12 @@ export function AnalysisDashboard() {
 
   async function importLocalObjectsToSupabase() {
     const supabaseEnvironment = getSupabaseEnvironmentStatus();
+    const supabaseRuntime = await getSupabaseRuntimeConfigStatus();
     console.log("[Supabase] Objektimport startet", {
       [supabaseEnvironment.urlVariableName]: supabaseEnvironment.hasUrl ? "Ja" : "Nein",
       [supabaseEnvironment.anonKeyVariableName]: supabaseEnvironment.hasAnonKey ? "Ja" : "Nein",
+      runtimeConfigLoaded: supabaseRuntime.loaded ? "Ja" : "Nein",
+      runtimeHasAnonKey: supabaseRuntime.hasAnonKey ? "Ja" : "Nein",
       runtime: supabaseEnvironment.runtime,
       urlHost: supabaseEnvironment.urlHost
     });
@@ -778,7 +782,7 @@ export function AnalysisDashboard() {
 
     setSupabaseObjectImportStatus({
       kind: "idle",
-      message: `Supabase-Import laeuft... Client URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Client Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}. Falls nein, wird der Server-Runtime-Fallback genutzt.`,
+      message: `Supabase-Import laeuft... Client URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Client Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}, Runtime Config geladen: ${supabaseRuntime.loaded ? "Ja" : "Nein"}, Runtime hasAnonKey: ${supabaseRuntime.hasAnonKey ? "Ja" : "Nein"}.`,
       summary: null
     });
 

@@ -3,6 +3,7 @@ import type { StoredObjectRecord } from "./storage";
 
 let browserSupabaseClient: SupabaseClient | null = null;
 let runtimeSupabaseConfig: { supabaseUrl: string; supabaseAnonKey: string } | null = null;
+let runtimeSupabaseStatus: SupabaseRuntimeConfigStatus | null = null;
 
 const SUPABASE_URL_ENV_NAME = "NEXT_PUBLIC_SUPABASE_URL";
 const SUPABASE_ANON_KEY_ENV_NAME = "NEXT_PUBLIC_SUPABASE_ANON_KEY";
@@ -14,6 +15,15 @@ export interface SupabaseEnvironmentStatus {
   hasAnonKey: boolean;
   runtime: "client" | "server";
   urlHost: string | null;
+}
+
+export interface SupabaseRuntimeConfigStatus {
+  loaded: boolean;
+  hasUrl: boolean;
+  hasAnonKey: boolean;
+  hasNextPublicAnonKey: boolean;
+  hasServerAnonKey: boolean;
+  runtime: string;
 }
 
 export function getSupabaseEnvironmentStatus(): SupabaseEnvironmentStatus {
@@ -57,8 +67,32 @@ async function getSupabaseClientAsync(): Promise<SupabaseClient | null> {
   return browserSupabaseClient;
 }
 
+export async function getSupabaseRuntimeConfigStatus(): Promise<SupabaseRuntimeConfigStatus> {
+  await getRuntimeSupabaseConfig();
+  return runtimeSupabaseStatus ?? {
+    loaded: false,
+    hasUrl: false,
+    hasAnonKey: false,
+    hasNextPublicAnonKey: false,
+    hasServerAnonKey: false,
+    runtime: "server"
+  };
+}
+
 async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supabaseAnonKey: string } | null> {
-  if (runtimeSupabaseConfig) return runtimeSupabaseConfig;
+  if (runtimeSupabaseConfig) {
+    runtimeSupabaseStatus = {
+      ...(runtimeSupabaseStatus ?? {
+        hasNextPublicAnonKey: false,
+        hasServerAnonKey: false,
+        runtime: "server"
+      }),
+      loaded: true,
+      hasUrl: true,
+      hasAnonKey: true
+    };
+    return runtimeSupabaseConfig;
+  }
   if (typeof window === "undefined") return null;
   try {
     const response = await fetch("/api/supabase-config", { cache: "no-store" });
@@ -77,6 +111,14 @@ async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supaba
       anonKeyVariableName?: string;
       runtime?: string;
     };
+    runtimeSupabaseStatus = {
+      loaded: Boolean(data.supabaseUrl && data.supabaseAnonKey),
+      hasUrl: Boolean(data.hasUrl),
+      hasAnonKey: Boolean(data.hasAnonKey),
+      hasNextPublicAnonKey: Boolean(data.hasNextPublicAnonKey),
+      hasServerAnonKey: Boolean(data.hasServerAnonKey),
+      runtime: data.runtime ?? "server"
+    };
     console.log("[Supabase] Runtime-Konfiguration geladen", {
       [data.urlVariableName ?? SUPABASE_URL_ENV_NAME]: data.hasUrl ? "vorhanden" : "fehlt",
       [data.anonKeyVariableName ?? SUPABASE_ANON_KEY_ENV_NAME]: data.hasAnonKey ? "vorhanden" : "fehlt",
@@ -92,6 +134,14 @@ async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supaba
     return runtimeSupabaseConfig;
   } catch (error) {
     console.error("[Supabase] Runtime-Konfiguration fehlgeschlagen.", error);
+    runtimeSupabaseStatus = {
+      loaded: false,
+      hasUrl: false,
+      hasAnonKey: false,
+      hasNextPublicAnonKey: false,
+      hasServerAnonKey: false,
+      runtime: "server"
+    };
     return null;
   }
 }
@@ -360,7 +410,8 @@ function safeUrlHost(value: string | undefined): string | null {
 
 function formatMissingSupabaseEnvironment(): string {
   const environment = getSupabaseEnvironmentStatus();
-  return `Environment Variables fehlen (${environment.urlVariableName}: ${environment.hasUrl ? "vorhanden" : "fehlt"}, ${environment.anonKeyVariableName}: ${environment.hasAnonKey ? "vorhanden" : "fehlt"}, Laufzeit: ${environment.runtime}).`;
+  const runtime = runtimeSupabaseStatus;
+  return `Supabase-Konfiguration fehlt (Client ${environment.urlVariableName}: ${environment.hasUrl ? "vorhanden" : "fehlt"}, Client ${environment.anonKeyVariableName}: ${environment.hasAnonKey ? "vorhanden" : "fehlt"}, Runtime Config geladen: ${runtime?.loaded ? "Ja" : "Nein"}, Runtime hasAnonKey: ${runtime?.hasAnonKey ? "Ja" : "Nein"}, Laufzeit: ${environment.runtime}).`;
 }
 
 function isUuid(value: string): boolean {
