@@ -28,6 +28,7 @@ import {
   getSupabaseRuntimeConfigStatus,
   importDocumentsAndCostItemsToSupabase,
   importMissingObjectsToSupabase,
+  loadSupabaseDocumentsWithCostItems,
   loadSupabaseObjects,
   updateSupabaseObject,
   type SupabaseDocumentCostImportSummary,
@@ -492,14 +493,25 @@ export function AnalysisDashboard() {
 
   async function loadSupabaseObjectData() {
     try {
-      const supabaseObjects = await loadSupabaseObjects();
-      if (!supabaseObjects.length) return;
-      supabaseObjects.forEach(saveObject);
-      setObjects(supabaseObjects);
-      setSelectedObjectId((current) => current ?? supabaseObjects[0]?.id ?? null);
+      const [supabaseObjects, supabaseDocuments] = await Promise.all([
+        loadSupabaseObjects(),
+        loadSupabaseDocumentsWithCostItems()
+      ]);
+      console.log("[Supabase] documents im App-Load", supabaseDocuments.length);
+      console.log("[Supabase] cost_items im App-Load", supabaseDocuments.reduce((count, document) => count + document.clusters.length, 0));
+      if (supabaseObjects.length) {
+        supabaseObjects.forEach(saveObject);
+        setObjects(supabaseObjects);
+        setSelectedObjectId((current) => current ?? supabaseObjects[0]?.id ?? null);
+      }
+      if (supabaseDocuments.length) {
+        supabaseDocuments.forEach(saveDocument);
+        setAnalysis(buildAnalysisFromDocuments(supabaseDocuments));
+        setSelectedDocumentId((current) => current ?? supabaseDocuments[0]?.id ?? null);
+      }
     } catch (error) {
-      console.error("[Supabase] Objekte konnten nicht geladen werden:", error);
-      setMessage(error instanceof Error ? error.message : "Supabase-Objekte konnten nicht geladen werden.");
+      console.error("[Supabase] Daten konnten nicht geladen werden:", error);
+      setMessage(error instanceof Error ? error.message : "Supabase-Daten konnten nicht geladen werden.");
     }
   }
 

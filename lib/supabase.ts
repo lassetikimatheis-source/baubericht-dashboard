@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { emptyField } from "./analysis-state";
 import type { StoredObjectRecord } from "./storage";
-import type { ObjectAnalysis } from "../types/analysis";
+import type { CostAllocation, MeasureCluster, MeasureDetail, ObjectAnalysis } from "../types/analysis";
 
 let browserSupabaseClient: SupabaseClient | null = null;
 let runtimeSupabaseConfig: { supabaseUrl: string; supabaseAnonKey: string } | null = null;
@@ -423,6 +424,47 @@ export async function deleteSupabaseObject(id: string): Promise<void> {
   }
 }
 
+export async function loadSupabaseDocumentsWithCostItems(): Promise<ObjectAnalysis[]> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return [];
+
+  const [objectsResult, documentsResult, costItemsResult] = await Promise.all([
+    supabase.from("objects").select("*"),
+    supabase.from("documents").select("*"),
+    supabase.from("cost_items").select("*")
+  ]);
+
+  if (objectsResult.error) throw new Error(`Supabase-Objekte konnten nicht geladen werden: ${formatSupabaseError(objectsResult.error)}`);
+  if (documentsResult.error) throw new Error(`Supabase-Dokumente konnten nicht geladen werden: ${formatSupabaseError(documentsResult.error)}`);
+  if (costItemsResult.error) throw new Error(`Supabase-Kostenpositionen konnten nicht geladen werden: ${formatSupabaseError(costItemsResult.error)}`);
+
+  const objectById = new Map<string, GenericSupabaseRow>();
+  (objectsResult.data ?? []).forEach((row) => {
+    const objectRow = row as GenericSupabaseRow;
+    const id = stringValue(objectRow.id);
+    if (id) objectById.set(id, objectRow);
+  });
+
+  const costItemsByDocumentId = new Map<string, GenericSupabaseRow[]>();
+  (costItemsResult.data ?? []).forEach((row) => {
+    const costItem = row as GenericSupabaseRow;
+    const documentId = stringValue(costItem.document_id);
+    if (!documentId) return;
+    costItemsByDocumentId.set(documentId, [...(costItemsByDocumentId.get(documentId) ?? []), costItem]);
+  });
+
+  console.log("[Supabase] documents geladen", documentsResult.data?.length ?? 0);
+  console.log("[Supabase] cost_items geladen", costItemsResult.data?.length ?? 0);
+
+  return (documentsResult.data ?? []).map((row) => {
+    const documentRow = row as GenericSupabaseRow;
+    const documentId = stringValue(documentRow.id);
+    const objectRow = objectById.get(stringValue(documentRow.object_id)) ?? {};
+    const costItems = costItemsByDocumentId.get(documentId) ?? [];
+    return objectAnalysisFromSupabase(documentRow, objectRow, costItems);
+  });
+}
+
 export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAnalysis[]): Promise<SupabaseDocumentCostImportSummary> {
   await getRuntimeSupabaseConfig({ forceRefresh: true });
   console.log("[Supabase Dokumentimport] Runtime Config vor Import", runtimeSupabaseStatus ?? {
@@ -539,6 +581,139 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
 }
 
 type GenericSupabaseRow = Record<string, unknown>;
+
+function objectAnalysisFromSupabase(
+  documentRow: GenericSupabaseRow,
+  objectRow: GenericSupabaseRow,
+  costItems: GenericSupabaseRow[]
+): ObjectAnalysis {
+  const documentId = stringValue(documentRow.local_document_id || documentRow.id || `supabase-document-${Date.now()}`);
+  const sourceDocumentId = stringValue(documentRow.source_document_id || documentRow.file_name || documentRow.document_name || documentRow.name || documentId);
+  const grossAmount = numberValue(documentRow.gross_amount ?? documentRow.amount ?? documentRow.cost_gross) ?? sumNumbers(costItems.map((item) =>
+    numberValue(item.gross_amount ?? item.amount ?? item.cost_gross)
+  ));
+  const clusters = costItems.map((item, index) => costItemRowToMeasureItem(item, documentId, sourceDocumentId, index));
+  const measureDetails = costItems.map((item) => costItemRowToMeasureDetail(item));
+
+  return {
+    id: documentId,
+    aiAgentName: textField("Supabase"),
+    confidenceScore: numberField(numberValue(documentRow.confidence_score)),
+    projectSuggestion: textField(""),
+    assignmentSuggestion: textField(""),
+    documentType: textField(stringValue(documentRow.document_type || documentRow.type)),
+    installmentNumber: textField(stringValue(readMetadataValue(documentRow, "installmentNumber"))),
+    projectType: textField(stringValue(readMetadataValue(documentRow, "projectType"))),
+    provider: textField(stringValue(documentRow.provider)),
+    year: numberField(yearFromDate(stringValue(documentRow.document_date))),
+    fund: textField(stringValue(objectRow.fund)),
+    objectNumber: textField(stringValue(documentRow.object_number || objectRow.object_number)),
+    apartmentNumber: textField(stringValue(documentRow.apartment_number)),
+    objectAddress: textField(stringValue(objectRow.address)),
+    location: textField([objectRow.postal_code, objectRow.city].map(stringValue).filter(Boolean).join(" ")),
+    documentDate: textField(stringValue(documentRow.document_date)),
+    documentNumber: textField(stringValue(documentRow.document_number || documentRow.name || documentRow.document_name)),
+    renovatedApartmentCount: numberField(numberValue(documentRow.renovated_apartment_count)),
+    renovatedApartments: listField([]),
+    livingAreaSqm: numberField(numberValue(documentRow.living_area_sqm)),
+    totalAreaSqm: numberField(numberValue(objectRow.total_area)),
+    renovatedAreaSqm: numberField(numberValue(objectRow.renovated_area)),
+    netCost: numberField(numberValue(documentRow.net_amount)),
+    vatCost: numberField(numberValue(documentRow.vat_amount)),
+    totalCost: numberField(grossAmount),
+    costPerApartment: numberField(null),
+    costPerSqm: numberField(null),
+    measureDescription: textField(clusters.map((cluster) => stringValue(cluster.description.value)).filter(Boolean).join(", ")),
+    dataQuality: textField(stringValue(readMetadataValue(documentRow, "dataQuality")) || "Supabase"),
+    missingInformation: listField(Array.isArray(readMetadataValue(documentRow, "missingInformation")) ? readMetadataValue(documentRow, "missingInformation") as string[] : []),
+    costDebug: null,
+    measureDetails,
+    measureDebug: null,
+    remarks: textField(""),
+    manualChanges: [],
+    clusters,
+    sourceDocumentIds: [sourceDocumentId]
+  };
+}
+
+function costItemRowToMeasureItem(
+  row: GenericSupabaseRow,
+  documentId: string,
+  sourceDocumentId: string,
+  index: number
+): ObjectAnalysis["clusters"][number] {
+  const tradeName = stringValue(row.trade_name || row.trade || row.trade_label || row.title || "Unklar");
+  const description = stringValue(row.description || row.title || tradeName);
+  const amount = numberValue(row.gross_amount ?? row.amount ?? row.cost_gross);
+  return {
+    id: stringValue(row.local_cost_item_id || row.id || `${documentId}:cost-item:${index}`),
+    cluster: textField((tradeName || "Unklar") as MeasureCluster),
+    description: textField(description),
+    totalCost: numberField(amount),
+    allocation: textField((stringValue(row.allocation) || null) as CostAllocation),
+    sourceDocumentId,
+    lineItems: []
+  };
+}
+
+function costItemRowToMeasureDetail(row: GenericSupabaseRow): MeasureDetail {
+  const tradeName = stringValue(row.trade_name || row.trade || row.trade_label || "Unklar");
+  const description = stringValue(row.description || row.title || tradeName);
+  return {
+    abschnitt: stringValue(row.title || row.description || tradeName),
+    cluster: (tradeName || "Unklar") as MeasureCluster,
+    summe: numberValue(row.gross_amount ?? row.amount ?? row.cost_gross),
+    beschreibung: description,
+    quelle: stringValue(row.source || row.document_id)
+  };
+}
+
+function textField<T extends string | MeasureCluster | CostAllocation>(value: T | null | undefined) {
+  return {
+    ...emptyField<T>(),
+    value: value ?? null
+  };
+}
+
+function numberField(value: number | null | undefined) {
+  return {
+    ...emptyField<number>(),
+    value: value ?? null
+  };
+}
+
+function listField<T>(value: T[]) {
+  return {
+    ...emptyField<T[]>(),
+    value
+  };
+}
+
+function readMetadataValue(row: GenericSupabaseRow, key: string): unknown {
+  const metadata = row.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return undefined;
+  return (metadata as Record<string, unknown>)[key];
+}
+
+function numberValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\./g, "").replace(",", ".").replace(/[^0-9.-]/g, "");
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sumNumbers(values: Array<number | null>): number | null {
+  const known = values.filter((value): value is number => value !== null);
+  if (!known.length) return null;
+  return known.reduce((sum, value) => sum + value, 0);
+}
+
+function yearFromDate(value: string): number | null {
+  const match = value.match(/\b(19|20)\d{2}\b/);
+  return match ? Number(match[0]) : null;
+}
 
 interface SupabaseDocumentObjectResolution {
   objectRow: GenericSupabaseRow | null;
