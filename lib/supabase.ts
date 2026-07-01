@@ -280,6 +280,15 @@ export interface SupabaseDocumentCostImportSummary {
   errors: string[];
 }
 
+export interface SupabaseDocumentLoadResult {
+  documents: ObjectAnalysis[];
+  supabaseDocumentCount: number;
+  supabaseCostItemCount: number;
+  appDocumentCount: number;
+  measureDetailsCount: number;
+  clustersCount: number;
+}
+
 export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
   const supabase = await getSupabaseClientAsync();
   if (!supabase) return [];
@@ -428,9 +437,18 @@ export async function deleteSupabaseObject(id: string): Promise<void> {
   }
 }
 
-export async function loadSupabaseDocumentsWithCostItems(): Promise<ObjectAnalysis[]> {
+export async function loadSupabaseDocumentsWithCostItems(): Promise<SupabaseDocumentLoadResult> {
   const supabase = await getSupabaseClientAsync();
-  if (!supabase) return [];
+  if (!supabase) {
+    return {
+      documents: [],
+      supabaseDocumentCount: 0,
+      supabaseCostItemCount: 0,
+      appDocumentCount: 0,
+      measureDetailsCount: 0,
+      clustersCount: 0
+    };
+  }
 
   const [objectsResult, documentsResult, costItemsResult] = await Promise.all([
     supabase.from("objects").select("*"),
@@ -450,23 +468,48 @@ export async function loadSupabaseDocumentsWithCostItems(): Promise<ObjectAnalys
   });
 
   const costItemsByDocumentId = new Map<string, GenericSupabaseRow[]>();
+  const costItemsByLocalDocumentId = new Map<string, GenericSupabaseRow[]>();
   (costItemsResult.data ?? []).forEach((row) => {
     const costItem = row as GenericSupabaseRow;
     const documentId = stringValue(costItem.document_id);
-    if (!documentId) return;
-    costItemsByDocumentId.set(documentId, [...(costItemsByDocumentId.get(documentId) ?? []), costItem]);
+    if (documentId) {
+      costItemsByDocumentId.set(documentId, [...(costItemsByDocumentId.get(documentId) ?? []), costItem]);
+    }
+    const localDocumentId = stringValue(readMetadataValue(costItem, "localDocumentId") || costItem.local_document_id || costItem.source_document_id);
+    if (localDocumentId) {
+      costItemsByLocalDocumentId.set(localDocumentId, [...(costItemsByLocalDocumentId.get(localDocumentId) ?? []), costItem]);
+    }
   });
 
   console.log("[Supabase] documents geladen", documentsResult.data?.length ?? 0);
   console.log("[Supabase] cost_items geladen", costItemsResult.data?.length ?? 0);
 
-  return (documentsResult.data ?? []).map((row) => {
+  const appDocuments = (documentsResult.data ?? []).map((row) => {
     const documentRow = row as GenericSupabaseRow;
     const documentId = stringValue(documentRow.id);
+    const localDocumentId = stringValue(documentRow.local_document_id || readMetadataValue(documentRow, "localId"));
+    const sourceDocumentId = stringValue(documentRow.source_document_id || documentRow.file_name || documentRow.document_name || documentRow.name);
     const objectRow = objectById.get(stringValue(documentRow.object_id)) ?? {};
-    const costItems = costItemsByDocumentId.get(documentId) ?? [];
+    const costItems = uniqueRowsById([
+      ...(costItemsByDocumentId.get(documentId) ?? []),
+      ...(localDocumentId ? costItemsByLocalDocumentId.get(localDocumentId) ?? [] : []),
+      ...(sourceDocumentId ? costItemsByLocalDocumentId.get(sourceDocumentId) ?? [] : [])
+    ]);
     return objectAnalysisFromSupabase(documentRow, objectRow, costItems);
   });
+
+  console.log("[Supabase] App-Dokumente erzeugt", appDocuments.length);
+  console.log("[Supabase] measureDetails erzeugt", appDocuments.reduce((count, document) => count + (document.measureDetails?.length ?? 0), 0));
+  console.log("[Supabase] clusters erzeugt", appDocuments.reduce((count, document) => count + document.clusters.length, 0));
+
+  return {
+    documents: appDocuments,
+    supabaseDocumentCount: documentsResult.data?.length ?? 0,
+    supabaseCostItemCount: costItemsResult.data?.length ?? 0,
+    appDocumentCount: appDocuments.length,
+    measureDetailsCount: appDocuments.reduce((count, document) => count + (document.measureDetails?.length ?? 0), 0),
+    clustersCount: appDocuments.reduce((count, document) => count + document.clusters.length, 0)
+  };
 }
 
 export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAnalysis[]): Promise<SupabaseDocumentCostImportSummary> {
@@ -736,6 +779,16 @@ function sumNumbers(values: Array<number | null>): number | null {
 function yearFromDate(value: string): number | null {
   const match = value.match(/\b(19|20)\d{2}\b/);
   return match ? Number(match[0]) : null;
+}
+
+function uniqueRowsById(rows: GenericSupabaseRow[]): GenericSupabaseRow[] {
+  const seen = new Set<string>();
+  return rows.filter((row, index) => {
+    const key = stringValue(row.id || row.local_cost_item_id || row.description || index);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 interface SupabaseDocumentObjectResolution {

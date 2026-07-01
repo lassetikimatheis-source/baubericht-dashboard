@@ -497,17 +497,20 @@ export function AnalysisDashboard() {
         loadSupabaseObjects(),
         loadSupabaseDocumentsWithCostItems()
       ]);
-      console.log("[Supabase] documents im App-Load", supabaseDocuments.length);
-      console.log("[Supabase] cost_items im App-Load", supabaseDocuments.reduce((count, document) => count + document.clusters.length, 0));
+      console.log("[Supabase] documents im App-Load", supabaseDocuments.supabaseDocumentCount);
+      console.log("[Supabase] cost_items im App-Load", supabaseDocuments.supabaseCostItemCount);
+      console.log("[Supabase] App-Dokumente im App-Load", supabaseDocuments.appDocumentCount);
+      console.log("[Supabase] measureDetails im App-Load", supabaseDocuments.measureDetailsCount);
+      console.log("[Supabase] clusters im App-Load", supabaseDocuments.clustersCount);
       if (supabaseObjects.length) {
         supabaseObjects.forEach(saveObject);
         setObjects(supabaseObjects);
         setSelectedObjectId((current) => current ?? supabaseObjects[0]?.id ?? null);
       }
-      if (supabaseDocuments.length) {
-        supabaseDocuments.forEach(saveDocument);
-        setAnalysis(buildAnalysisFromDocuments(supabaseDocuments));
-        setSelectedDocumentId((current) => current ?? supabaseDocuments[0]?.id ?? null);
+      if (supabaseDocuments.documents.length) {
+        supabaseDocuments.documents.forEach(saveDocument);
+        setAnalysis(buildAnalysisFromDocuments(supabaseDocuments.documents));
+        setSelectedDocumentId((current) => supabaseDocuments.documents.some((document) => document.id === current) ? current : supabaseDocuments.documents[0]?.id ?? null);
       }
     } catch (error) {
       console.error("[Supabase] Daten konnten nicht geladen werden:", error);
