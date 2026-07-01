@@ -43,6 +43,7 @@ import {
   getAssignments,
   getDocuments,
   getEntrances,
+  getLocalDocumentStorageDiagnostics,
   getObjects,
   getProjects,
   exportAppDataBackup,
@@ -512,6 +513,7 @@ export function AnalysisDashboard() {
   async function loadSupabaseObjectData() {
     try {
       const localDocumentsTotal = getDocuments().length;
+      logLocalDocumentStorageDiagnostics("App-Load");
       const [supabaseObjects, supabaseDocuments] = await Promise.all([
         loadSupabaseObjects(),
         loadSupabaseDocumentsWithCostItems()
@@ -880,6 +882,7 @@ export function AnalysisDashboard() {
 
   async function importLocalDocumentsToSupabase() {
     const storedDocuments = getDocuments();
+    logLocalDocumentStorageDiagnostics("Dokumentimport");
     if (!storedDocuments.length) {
       setSupabaseDocumentImportStatus({
         kind: "error",
@@ -5104,6 +5107,13 @@ function diagnoseSupabaseDocumentLoad(result: {
     return "Dokumente geladen, aber Mapping fehlgeschlagen";
   }
   return "Dokumente erfolgreich geladen";
+}
+
+function logLocalDocumentStorageDiagnostics(context: string): void {
+  const diagnostics = getLocalDocumentStorageDiagnostics();
+  console.log(`[LocalStorage Dokumente] ${context}`, diagnostics);
+  const primary = diagnostics.find((entry) => entry.key === "paribus-baukosten.documents.v1");
+  console.log(`[LocalStorage Dokumente] ${context} paribus-baukosten.documents.v1`, primary?.count ?? 0);
 }
 
 function buildUploadGroupRows(documents: ObjectAnalysis[]) {

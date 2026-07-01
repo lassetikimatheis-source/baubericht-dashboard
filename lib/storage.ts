@@ -79,6 +79,12 @@ export interface AppDataSummary {
   assignments: number;
 }
 
+export interface LocalDocumentStorageDiagnostic {
+  key: string;
+  count: number;
+  shape: string;
+}
+
 export interface AnalysisBackupResult {
   id: string | null;
   warning: string | null;
@@ -187,6 +193,24 @@ export function getDocuments(): ObjectAnalysis[] {
   return normalized;
 }
 
+export function getLocalDocumentStorageDiagnostics(): LocalDocumentStorageDiagnostic[] {
+  if (typeof window === "undefined") return [];
+  const diagnostics: LocalDocumentStorageDiagnostic[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index) ?? "";
+    if (!/documents?|analysis/i.test(key)) continue;
+    const raw = window.localStorage.getItem(key);
+    const parsed = parseJsonSafely(raw);
+    diagnostics.push({
+      key,
+      count: countDocumentLikeEntries(parsed),
+      shape: describeStorageShape(parsed)
+    });
+  }
+  diagnostics.sort((left, right) => left.key.localeCompare(right.key));
+  return diagnostics;
+}
+
 export function saveAssignments(assignments: Record<string, string | null>): void {
   writeJson(STORAGE_KEYS.assignments, assignments);
 }
@@ -203,7 +227,7 @@ export function createAnalysisBackup(): AnalysisBackupResult {
     objects: readCollection<StoredObjectRecord>(STORAGE_KEYS.objects),
     entrances: readCollection<StoredEntranceRecord>(STORAGE_KEYS.entrances),
     projects: readCollection<StoredProjectRecord>(STORAGE_KEYS.projects),
-    documents: readCollection<ObjectAnalysis>(STORAGE_KEYS.documents),
+    documents: getDocuments(),
     assignments: readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {})
   };
   try {
@@ -236,7 +260,7 @@ export function exportAppDataBackup(): AppDataBackup {
       objects: readCollection<StoredObjectRecord>(STORAGE_KEYS.objects),
       entrances: readCollection<StoredEntranceRecord>(STORAGE_KEYS.entrances),
       projects: readCollection<StoredProjectRecord>(STORAGE_KEYS.projects),
-      documents: readCollection<ObjectAnalysis>(STORAGE_KEYS.documents),
+      documents: getDocuments(),
       assignments: readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {})
     }
   };
@@ -298,6 +322,35 @@ function parseAppDataBackup(value: unknown): AppDataBackup {
       assignments: keys.assignments as Record<string, string | null>
     }
   };
+}
+
+function parseJsonSafely(raw: string | null): unknown {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function countDocumentLikeEntries(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (!isRecord(value)) return 0;
+  if (Array.isArray(value.documents)) return value.documents.length;
+  if (isRecord(value.keys) && Array.isArray(value.keys.documents)) return value.keys.documents.length;
+  if (Array.isArray(value.objects)) return value.objects.length;
+  if (isRecord(value.analysis) && Array.isArray(value.analysis.objects)) return value.analysis.objects.length;
+  return 0;
+}
+
+function describeStorageShape(value: unknown): string {
+  if (Array.isArray(value)) return "array";
+  if (!isRecord(value)) return typeof value;
+  if (Array.isArray(value.documents)) return "object.documents";
+  if (isRecord(value.keys) && Array.isArray(value.keys.documents)) return "backup.keys.documents";
+  if (Array.isArray(value.objects)) return "object.objects";
+  if (isRecord(value.analysis) && Array.isArray(value.analysis.objects)) return "analysis.objects";
+  return "object";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
