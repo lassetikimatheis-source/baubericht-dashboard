@@ -778,7 +778,7 @@ export function AnalysisDashboard() {
 
     setSupabaseObjectImportStatus({
       kind: "idle",
-      message: `Supabase-Import laeuft... URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}.`,
+      message: `Supabase-Import laeuft... Client URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Client Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}. Falls nein, wird der Server-Runtime-Fallback genutzt.`,
       summary: null
     });
 

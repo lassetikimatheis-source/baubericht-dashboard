@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { StoredObjectRecord } from "./storage";
 
 let browserSupabaseClient: SupabaseClient | null = null;
+let runtimeSupabaseConfig: { supabaseUrl: string; supabaseAnonKey: string } | null = null;
 
 const SUPABASE_URL_ENV_NAME = "NEXT_PUBLIC_SUPABASE_URL";
 const SUPABASE_ANON_KEY_ENV_NAME = "NEXT_PUBLIC_SUPABASE_ANON_KEY";
@@ -45,6 +46,52 @@ export function getSupabaseClient(): SupabaseClient | null {
   return browserSupabaseClient;
 }
 
+async function getSupabaseClientAsync(): Promise<SupabaseClient | null> {
+  const directClient = getSupabaseClient();
+  if (directClient) return directClient;
+  const runtimeConfig = await getRuntimeSupabaseConfig();
+  if (!runtimeConfig) return null;
+  if (!browserSupabaseClient) {
+    browserSupabaseClient = createClient(runtimeConfig.supabaseUrl, runtimeConfig.supabaseAnonKey);
+  }
+  return browserSupabaseClient;
+}
+
+async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supabaseAnonKey: string } | null> {
+  if (runtimeSupabaseConfig) return runtimeSupabaseConfig;
+  if (typeof window === "undefined") return null;
+  try {
+    const response = await fetch("/api/supabase-config", { cache: "no-store" });
+    if (!response.ok) {
+      console.error("[Supabase] Runtime-Konfiguration konnte nicht geladen werden.", { status: response.status });
+      return null;
+    }
+    const data = await response.json() as {
+      supabaseUrl?: string;
+      supabaseAnonKey?: string;
+      hasUrl?: boolean;
+      hasAnonKey?: boolean;
+      urlVariableName?: string;
+      anonKeyVariableName?: string;
+      runtime?: string;
+    };
+    console.log("[Supabase] Runtime-Konfiguration geladen", {
+      [data.urlVariableName ?? SUPABASE_URL_ENV_NAME]: data.hasUrl ? "vorhanden" : "fehlt",
+      [data.anonKeyVariableName ?? SUPABASE_ANON_KEY_ENV_NAME]: data.hasAnonKey ? "vorhanden" : "fehlt",
+      runtime: data.runtime ?? "server"
+    });
+    if (!data.supabaseUrl || !data.supabaseAnonKey) return null;
+    runtimeSupabaseConfig = {
+      supabaseUrl: data.supabaseUrl,
+      supabaseAnonKey: data.supabaseAnonKey
+    };
+    return runtimeSupabaseConfig;
+  } catch (error) {
+    console.error("[Supabase] Runtime-Konfiguration fehlgeschlagen.", error);
+    return null;
+  }
+}
+
 export async function runSupabaseConnectionTest(): Promise<void> {
   console.log("[Supabase] Test wird ausgeführt");
 
@@ -59,7 +106,7 @@ export async function runSupabaseConnectionTest(): Promise<void> {
     urlHost: environment.urlHost
   });
 
-  const supabase = getSupabaseClient();
+  const supabase = await getSupabaseClientAsync();
   if (!supabase) {
     console.error("[Supabase] Verbindungstest abgebrochen: Environment Variables fehlen.", {
       NEXT_PUBLIC_SUPABASE_URL: Boolean(supabaseUrl),
@@ -126,7 +173,7 @@ export interface SupabaseObjectImportSummary {
 }
 
 export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
-  const supabase = getSupabaseClient();
+  const supabase = await getSupabaseClientAsync();
   if (!supabase) return [];
 
   const { data, error } = await supabase
@@ -142,7 +189,7 @@ export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
 }
 
 export async function createSupabaseObject(object: StoredObjectRecord): Promise<StoredObjectRecord> {
-  const supabase = getSupabaseClient();
+  const supabase = await getSupabaseClientAsync();
   if (!supabase) {
     throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
   }
@@ -203,7 +250,7 @@ export async function importMissingObjectsToSupabase(objects: StoredObjectRecord
 }
 
 export async function updateSupabaseObject(object: StoredObjectRecord): Promise<StoredObjectRecord> {
-  const supabase = getSupabaseClient();
+  const supabase = await getSupabaseClientAsync();
   if (!supabase) {
     throw new Error(`Supabase-Objekt konnte nicht aktualisiert werden: ${formatMissingSupabaseEnvironment()}`);
   }
@@ -227,7 +274,7 @@ export async function updateSupabaseObject(object: StoredObjectRecord): Promise<
 
 export async function deleteSupabaseObject(id: string): Promise<void> {
   if (!isUuid(id)) return;
-  const supabase = getSupabaseClient();
+  const supabase = await getSupabaseClientAsync();
   if (!supabase) {
     throw new Error(`Supabase-Objekt konnte nicht geloescht werden: ${formatMissingSupabaseEnvironment()}`);
   }
