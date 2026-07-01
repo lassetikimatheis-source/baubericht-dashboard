@@ -24,6 +24,9 @@ export interface SupabaseRuntimeConfigStatus {
   hasNextPublicAnonKey: boolean;
   hasServerAnonKey: boolean;
   runtime: string;
+  httpStatus: number | null;
+  responseText: string;
+  error: string | null;
 }
 
 export function getSupabaseEnvironmentStatus(): SupabaseEnvironmentStatus {
@@ -75,7 +78,10 @@ export async function getSupabaseRuntimeConfigStatus(): Promise<SupabaseRuntimeC
     hasAnonKey: false,
     hasNextPublicAnonKey: false,
     hasServerAnonKey: false,
-    runtime: "server"
+    runtime: "server",
+    httpStatus: null,
+    responseText: "",
+    error: null
   };
 }
 
@@ -85,22 +91,40 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
       ...(runtimeSupabaseStatus ?? {
         hasNextPublicAnonKey: false,
         hasServerAnonKey: false,
-        runtime: "server"
+        runtime: "server",
+        httpStatus: null,
+        responseText: "",
+        error: null
       }),
       loaded: true,
       hasUrl: true,
-      hasAnonKey: true
+      hasAnonKey: true,
+      httpStatus: runtimeSupabaseStatus?.httpStatus ?? 200,
+      responseText: runtimeSupabaseStatus?.responseText ?? "",
+      error: null
     };
     return runtimeSupabaseConfig;
   }
   if (typeof window === "undefined") return null;
   try {
     const response = await fetch("/api/supabase-config", { cache: "no-store" });
+    const responseText = await response.text();
     if (!response.ok) {
-      console.error("[Supabase] Runtime-Konfiguration konnte nicht geladen werden.", { status: response.status });
+      runtimeSupabaseStatus = {
+        loaded: false,
+        hasUrl: false,
+        hasAnonKey: false,
+        hasNextPublicAnonKey: false,
+        hasServerAnonKey: false,
+        runtime: "server",
+        httpStatus: response.status,
+        responseText,
+        error: `HTTP ${response.status}`
+      };
+      console.error("[Supabase] Runtime-Konfiguration konnte nicht geladen werden.", { status: response.status, responseText });
       return null;
     }
-    const data = await response.json() as {
+    const data = JSON.parse(responseText) as {
       supabaseUrl?: string;
       supabaseAnonKey?: string;
       hasUrl?: boolean;
@@ -119,7 +143,10 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
       hasAnonKey: Boolean(data.hasAnonKey),
       hasNextPublicAnonKey: Boolean(data.hasNextPublicAnonKey),
       hasServerAnonKey: Boolean(data.hasServerAnonKey),
-      runtime: data.runtime ?? "server"
+      runtime: data.runtime ?? "server",
+      httpStatus: response.status,
+      responseText,
+      error: null
     };
     console.log("[Supabase] Runtime-Konfiguration geladen", {
       [data.urlVariableName ?? SUPABASE_URL_ENV_NAME]: data.hasUrl ? "vorhanden" : "fehlt",
@@ -130,7 +157,14 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
       resolvedAnonKeyFrom: data.resolvedAnonKeyFrom ?? null,
       runtime: data.runtime ?? "server"
     });
-    if (!data.supabaseUrl || !data.supabaseAnonKey || !isHttpUrl(data.supabaseUrl)) return null;
+    if (!data.supabaseUrl || !data.supabaseAnonKey || !isHttpUrl(data.supabaseUrl)) {
+      runtimeSupabaseStatus = {
+        ...runtimeSupabaseStatus,
+        loaded: false,
+        error: "Runtime-Konfiguration enthielt keine gueltige Supabase URL oder keinen Anon Key."
+      };
+      return null;
+    }
     runtimeSupabaseConfig = {
       supabaseUrl: data.supabaseUrl,
       supabaseAnonKey: data.supabaseAnonKey
@@ -144,7 +178,10 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
       hasAnonKey: false,
       hasNextPublicAnonKey: false,
       hasServerAnonKey: false,
-      runtime: "server"
+      runtime: "server",
+      httpStatus: null,
+      responseText: "",
+      error: error instanceof Error ? error.message : "Runtime-Konfiguration fehlgeschlagen."
     };
     return null;
   }

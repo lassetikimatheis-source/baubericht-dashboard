@@ -748,14 +748,32 @@ export function AnalysisDashboard() {
     const supabaseEnvironment = getSupabaseEnvironmentStatus();
     await getRuntimeSupabaseConfig({ forceRefresh: true });
     const supabaseRuntime = await getSupabaseRuntimeConfigStatus();
+    const runtimeMessage = `Runtime Config geladen: ${supabaseRuntime.loaded ? "Ja" : "Nein"}, Runtime hasAnonKey: ${supabaseRuntime.hasAnonKey ? "Ja" : "Nein"}, HTTP Status: ${supabaseRuntime.httpStatus ?? "k.A."}.`;
     console.log("[Supabase] Objektimport startet", {
       [supabaseEnvironment.urlVariableName]: supabaseEnvironment.hasUrl ? "Ja" : "Nein",
       [supabaseEnvironment.anonKeyVariableName]: supabaseEnvironment.hasAnonKey ? "Ja" : "Nein",
       runtimeConfigLoaded: supabaseRuntime.loaded ? "Ja" : "Nein",
       runtimeHasAnonKey: supabaseRuntime.hasAnonKey ? "Ja" : "Nein",
+      runtimeHttpStatus: supabaseRuntime.httpStatus,
+      runtimeResponseText: supabaseRuntime.responseText,
       runtime: supabaseEnvironment.runtime,
       urlHost: supabaseEnvironment.urlHost
     });
+    if (!supabaseRuntime.loaded || !supabaseRuntime.hasUrl || !supabaseRuntime.hasAnonKey) {
+      setSupabaseObjectImportStatus({
+        kind: "error",
+        message: `Supabase-Konfiguration konnte nicht geladen werden. ${runtimeMessage}`,
+        summary: {
+          imported: 0,
+          skipped: 0,
+          errors: [
+            `HTTP Status: ${supabaseRuntime.httpStatus ?? "k.A."}`,
+            `Antwort: ${supabaseRuntime.responseText || supabaseRuntime.error || "Keine Antwort"}`
+          ]
+        }
+      });
+      return;
+    }
     const storedObjects = getObjects();
     const storedDocuments = getDocuments();
     const storedProjects = getProjects();
@@ -784,7 +802,7 @@ export function AnalysisDashboard() {
 
     setSupabaseObjectImportStatus({
       kind: "idle",
-      message: `Supabase-Import laeuft... Client URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Client Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}, Runtime Config geladen: ${supabaseRuntime.loaded ? "Ja" : "Nein"}, Runtime hasAnonKey: ${supabaseRuntime.hasAnonKey ? "Ja" : "Nein"}.`,
+      message: `Supabase-Import laeuft... Client URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Client Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}, ${runtimeMessage}`,
       summary: null
     });
 
