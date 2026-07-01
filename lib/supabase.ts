@@ -273,6 +273,12 @@ export interface SupabaseDocumentCostImportSummary {
   localDocumentsTotal: number;
   documentsImported: number;
   costItemsImported: number;
+  supabaseDocumentCount?: number;
+  supabaseCostItemCount?: number;
+  appDocumentCount?: number;
+  measureDetailsCount?: number;
+  clustersCount?: number;
+  diagnosis?: string;
   skipped: number;
   skippedMissingObject: number;
   skippedDuplicate: number;

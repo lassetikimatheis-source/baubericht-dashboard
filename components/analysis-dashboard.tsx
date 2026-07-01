@@ -134,6 +134,16 @@ interface SupabaseDocumentImportStatus {
   kind: "idle" | "success" | "error";
 }
 
+interface SupabaseDocumentLoadDiagnosis {
+  message: string;
+  localDocumentsTotal: number;
+  supabaseDocumentCount: number;
+  supabaseCostItemCount: number;
+  appDocumentCount: number;
+  measureDetailsCount: number;
+  clustersCount: number;
+}
+
 interface AsbestosDebugHit {
   storageArea: string;
   fieldPath: string;
@@ -462,6 +472,15 @@ export function AnalysisDashboard() {
     summary: null,
     kind: "idle"
   });
+  const [supabaseDocumentLoadDiagnosis, setSupabaseDocumentLoadDiagnosis] = useState<SupabaseDocumentLoadDiagnosis>({
+    message: "",
+    localDocumentsTotal: 0,
+    supabaseDocumentCount: 0,
+    supabaseCostItemCount: 0,
+    appDocumentCount: 0,
+    measureDetailsCount: 0,
+    clustersCount: 0
+  });
   const [asbestosDebugReport, setAsbestosDebugReport] = useState<AsbestosDebugReport>({
     status: "idle",
     message: "",
@@ -493,15 +512,26 @@ export function AnalysisDashboard() {
 
   async function loadSupabaseObjectData() {
     try {
+      const localDocumentsTotal = getDocuments().length;
       const [supabaseObjects, supabaseDocuments] = await Promise.all([
         loadSupabaseObjects(),
         loadSupabaseDocumentsWithCostItems()
       ]);
+      console.log("[Supabase] lokale Dokumente im App-Load", localDocumentsTotal);
       console.log("[Supabase] documents im App-Load", supabaseDocuments.supabaseDocumentCount);
       console.log("[Supabase] cost_items im App-Load", supabaseDocuments.supabaseCostItemCount);
       console.log("[Supabase] App-Dokumente im App-Load", supabaseDocuments.appDocumentCount);
       console.log("[Supabase] measureDetails im App-Load", supabaseDocuments.measureDetailsCount);
       console.log("[Supabase] clusters im App-Load", supabaseDocuments.clustersCount);
+      setSupabaseDocumentLoadDiagnosis({
+        message: diagnoseSupabaseDocumentLoad(supabaseDocuments),
+        localDocumentsTotal,
+        supabaseDocumentCount: supabaseDocuments.supabaseDocumentCount,
+        supabaseCostItemCount: supabaseDocuments.supabaseCostItemCount,
+        appDocumentCount: supabaseDocuments.appDocumentCount,
+        measureDetailsCount: supabaseDocuments.measureDetailsCount,
+        clustersCount: supabaseDocuments.clustersCount
+      });
       if (supabaseObjects.length) {
         supabaseObjects.forEach(saveObject);
         setObjects(supabaseObjects);
@@ -891,10 +921,34 @@ export function AnalysisDashboard() {
 
     try {
       const summary = await importDocumentsAndCostItemsToSupabase(storedDocuments);
+      const loadDiagnosis = await loadSupabaseDocumentsWithCostItems();
+      const diagnosisMessage = diagnoseSupabaseDocumentLoad(loadDiagnosis);
+      console.log("[Supabase Dokumentimport] documents nach Import", loadDiagnosis.supabaseDocumentCount);
+      console.log("[Supabase Dokumentimport] cost_items nach Import", loadDiagnosis.supabaseCostItemCount);
+      console.log("[Supabase Dokumentimport] lokale Dokumente", storedDocuments.length);
+      console.log("[Supabase Dokumentimport] importierte Dokumente", summary.documentsImported);
+      console.log("[Supabase Dokumentimport] importierte cost_items", summary.costItemsImported);
+      setSupabaseDocumentLoadDiagnosis({
+        message: diagnosisMessage,
+        localDocumentsTotal: storedDocuments.length,
+        supabaseDocumentCount: loadDiagnosis.supabaseDocumentCount,
+        supabaseCostItemCount: loadDiagnosis.supabaseCostItemCount,
+        appDocumentCount: loadDiagnosis.appDocumentCount,
+        measureDetailsCount: loadDiagnosis.measureDetailsCount,
+        clustersCount: loadDiagnosis.clustersCount
+      });
       setSupabaseDocumentImportStatus({
         kind: summary.errors.length ? "error" : "success",
         message: "Supabase-Dokumentimport abgeschlossen.",
-        summary
+        summary: {
+          ...summary,
+          supabaseDocumentCount: loadDiagnosis.supabaseDocumentCount,
+          supabaseCostItemCount: loadDiagnosis.supabaseCostItemCount,
+          appDocumentCount: loadDiagnosis.appDocumentCount,
+          measureDetailsCount: loadDiagnosis.measureDetailsCount,
+          clustersCount: loadDiagnosis.clustersCount,
+          diagnosis: diagnosisMessage
+        }
       });
     } catch (error) {
       setSupabaseDocumentImportStatus({
@@ -1477,6 +1531,7 @@ export function AnalysisDashboard() {
                 dataTransferStatus={dataTransferStatus}
                 supabaseObjectImportStatus={supabaseObjectImportStatus}
                 supabaseDocumentImportStatus={supabaseDocumentImportStatus}
+                supabaseDocumentLoadDiagnosis={supabaseDocumentLoadDiagnosis}
                 asbestosDebugReport={asbestosDebugReport}
                 onReanalyzeAll={reanalyzeAllObjects}
                 onRunAsbestosDebug={runAsbestosDebug}
@@ -4182,6 +4237,7 @@ function SettingsView({
   dataTransferStatus,
   supabaseObjectImportStatus,
   supabaseDocumentImportStatus,
+  supabaseDocumentLoadDiagnosis,
   asbestosDebugReport,
   onReanalyzeAll,
   onRunAsbestosDebug,
@@ -4194,6 +4250,7 @@ function SettingsView({
   dataTransferStatus: DataTransferStatus;
   supabaseObjectImportStatus: SupabaseObjectImportStatus;
   supabaseDocumentImportStatus: SupabaseDocumentImportStatus;
+  supabaseDocumentLoadDiagnosis: SupabaseDocumentLoadDiagnosis;
   asbestosDebugReport: AsbestosDebugReport;
   onReanalyzeAll: () => Promise<void>;
   onRunAsbestosDebug: () => void;
@@ -4258,6 +4315,7 @@ function SettingsView({
           summary={dataTransferStatus.summary ?? currentSummary}
         />
         <SupabaseObjectImportSummaryView status={supabaseObjectImportStatus} />
+        <SupabaseDocumentLoadDiagnosisView diagnosis={supabaseDocumentLoadDiagnosis} />
         <SupabaseDocumentImportSummaryView status={supabaseDocumentImportStatus} />
         <AsbestosDebugReportView report={asbestosDebugReport} />
       </div>
@@ -4328,12 +4386,35 @@ function SupabaseObjectImportSummaryView({ status }: { status: SupabaseObjectImp
   );
 }
 
+function SupabaseDocumentLoadDiagnosisView({ diagnosis }: { diagnosis: SupabaseDocumentLoadDiagnosis }) {
+  if (!diagnosis.message) return null;
+  return (
+    <div className={`dataTransferSummary ${diagnosis.message.includes("leer") || diagnosis.message.includes("fehlgeschlagen") ? "dataTransferError" : ""}`}>
+      <strong>{diagnosis.message}</strong>
+      <div>
+        <span>Lokale Dokumente: {formatNumber(diagnosis.localDocumentsTotal)}</span>
+        <span>Supabase documents: {formatNumber(diagnosis.supabaseDocumentCount)}</span>
+        <span>Supabase cost_items: {formatNumber(diagnosis.supabaseCostItemCount)}</span>
+        <span>App-Dokumente: {formatNumber(diagnosis.appDocumentCount)}</span>
+        <span>measureDetails: {formatNumber(diagnosis.measureDetailsCount)}</span>
+        <span>clusters: {formatNumber(diagnosis.clustersCount)}</span>
+      </div>
+    </div>
+  );
+}
+
 function SupabaseDocumentImportSummaryView({ status }: { status: SupabaseDocumentImportStatus }) {
   if (status.kind === "idle" && !status.message) return null;
   const summary = status.summary ?? {
     localDocumentsTotal: 0,
     documentsImported: 0,
     costItemsImported: 0,
+    supabaseDocumentCount: 0,
+    supabaseCostItemCount: 0,
+    appDocumentCount: 0,
+    measureDetailsCount: 0,
+    clustersCount: 0,
+    diagnosis: "",
     skipped: 0,
     skippedMissingObject: 0,
     skippedDuplicate: 0,
@@ -4347,12 +4428,15 @@ function SupabaseDocumentImportSummaryView({ status }: { status: SupabaseDocumen
         <span>Lokale Dokumente: {formatNumber(summary.localDocumentsTotal)}</span>
         <span>Dokumente importiert: {formatNumber(summary.documentsImported)}</span>
         <span>Kostenpositionen importiert: {formatNumber(summary.costItemsImported)}</span>
+        <span>Supabase documents: {formatNumber(summary.supabaseDocumentCount ?? 0)}</span>
+        <span>Supabase cost_items: {formatNumber(summary.supabaseCostItemCount ?? 0)}</span>
         <span>Uebersprungen: {formatNumber(summary.skipped)}</span>
         <span>Ohne Objekt: {formatNumber(summary.skippedMissingObject)}</span>
         <span>Duplikate: {formatNumber(summary.skippedDuplicate)}</span>
         <span>Leer: {formatNumber(summary.skippedEmpty)}</span>
         <span>Fehler: {formatNumber(summary.errors.length)}</span>
       </div>
+      {summary.diagnosis ? <small>{summary.diagnosis}</small> : null}
       {summary.errors.length ? <small>{summary.errors.slice(0, 3).join(" | ")}</small> : null}
     </div>
   );
@@ -5009,6 +5093,21 @@ function uploadSourceName(files: File[]): string {
   if (files.length === 0) return "";
   if (files.length === 1) return files[0].name;
   return files.map((file) => file.name).join(", ");
+}
+
+function diagnoseSupabaseDocumentLoad(result: {
+  supabaseDocumentCount: number;
+  supabaseCostItemCount: number;
+  appDocumentCount: number;
+  measureDetailsCount: number;
+  clustersCount: number;
+}): string {
+  if (result.supabaseDocumentCount === 0) return "Supabase documents leer";
+  if (result.supabaseCostItemCount === 0) return "Supabase cost_items leer";
+  if (result.appDocumentCount === 0 || (result.measureDetailsCount === 0 && result.clustersCount === 0)) {
+    return "Dokumente geladen, aber Mapping fehlgeschlagen";
+  }
+  return "Dokumente erfolgreich geladen";
 }
 
 function buildUploadGroupRows(documents: ObjectAnalysis[]) {
