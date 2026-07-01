@@ -459,6 +459,7 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
   if (tradesResult.error) throw new Error(`Supabase-Gewerke konnten nicht geladen werden: ${formatSupabaseError(tradesResult.error)}`);
 
   const objectsByNumber = new Map<string, GenericSupabaseRow>();
+  const supabaseObjects = (objectsResult.data ?? []).map((row) => row as GenericSupabaseRow);
   (objectsResult.data ?? []).forEach((row) => {
     const objectNumber = normalizeObjectNumber(stringValue((row as GenericSupabaseRow).object_number));
     if (objectNumber) objectsByNumber.set(objectNumber, row as GenericSupabaseRow);
@@ -486,30 +487,24 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
 
   const sampleDocument = documents.find((document) => normalizeObjectNumber(unwrapTextField(document.objectNumber))) ?? documents[0] ?? null;
   if (sampleDocument) {
-    const sampleObject = objectsByNumber.get(normalizeObjectNumber(unwrapTextField(sampleDocument.objectNumber)));
-    const sampleDocumentRow = sampleObject ? documentRowToSupabase(sampleDocument, stringValue(sampleObject.id)) : null;
+    const sampleObject = resolveSupabaseObjectForDocument(sampleDocument, objectsByNumber, supabaseObjects);
+    const sampleDocumentRow = sampleObject.objectRow ? documentRowToSupabase(sampleDocument, stringValue(sampleObject.objectRow.id), sampleObject.objectNumber) : null;
     console.log("[Supabase Dokumentimport] Beispiel lokales Dokument", sampleDocument);
     console.log("[Supabase Dokumentimport] Beispiel documents-Datensatz", sampleDocumentRow);
-    console.log("[Supabase Dokumentimport] Beispiel cost_items-Datensaetze", sampleDocumentRow ? costItemRowsToSupabase(sampleDocument, stringValue(sampleObject?.id), "document-id", tradeIdByName) : []);
+    console.log("[Supabase Dokumentimport] Beispiel cost_items-Datensaetze", sampleDocumentRow ? costItemRowsToSupabase(sampleDocument, stringValue(sampleObject.objectRow?.id), "document-id", tradeIdByName) : []);
   }
 
   for (const document of documents) {
-    const objectNumber = normalizeObjectNumber(unwrapTextField(document.objectNumber));
-    if (!objectNumber) {
+    const resolvedObject = resolveSupabaseObjectForDocument(document, objectsByNumber, supabaseObjects);
+    if (!resolvedObject.objectRow) {
       summary.skipped += 1;
-      summary.errors.push(`${document.id}: keine Objektnummer vorhanden.`);
+      logSkippedSupabaseDocument(document, resolvedObject.reason);
+      summary.errors.push(`${documentLabel(document)}: ${resolvedObject.reason}`);
       continue;
     }
 
-    const objectRow = objectsByNumber.get(objectNumber);
-    if (!objectRow?.id) {
-      summary.skipped += 1;
-      summary.errors.push(`${unwrapTextField(document.documentNumber) || document.id}: Objekt ${unwrapTextField(document.objectNumber)} nicht in Supabase gefunden.`);
-      continue;
-    }
-
-    const objectId = stringValue(objectRow.id);
-    const documentRow = documentRowToSupabase(document, objectId);
+    const objectId = stringValue(resolvedObject.objectRow.id);
+    const documentRow = documentRowToSupabase(document, objectId, resolvedObject.objectNumber);
     const documentKey = documentDuplicateKey(documentRow);
     let supabaseDocumentId = documentIdByKey.get(documentKey) ?? null;
 
@@ -545,7 +540,137 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
 
 type GenericSupabaseRow = Record<string, unknown>;
 
-function documentRowToSupabase(document: ObjectAnalysis, objectId: string): GenericSupabaseRow {
+interface SupabaseDocumentObjectResolution {
+  objectRow: GenericSupabaseRow | null;
+  objectNumber: string;
+  reason: string;
+}
+
+function resolveSupabaseObjectForDocument(
+  document: ObjectAnalysis,
+  objectsByNumber: Map<string, GenericSupabaseRow>,
+  supabaseObjects: GenericSupabaseRow[]
+): SupabaseDocumentObjectResolution {
+  const rawObjectNumber = unwrapTextField(document.objectNumber);
+  const objectNumber = normalizeObjectNumber(rawObjectNumber);
+  if (objectNumber) {
+    const objectRow = objectsByNumber.get(objectNumber);
+    if (objectRow?.id) {
+      return {
+        objectRow,
+        objectNumber: stringValue(objectRow.object_number || rawObjectNumber),
+        reason: "Objekt per Objektnummer gefunden."
+      };
+    }
+  }
+
+  const documentAddress = documentAddressValue(document);
+  const addressMatches = findObjectMatchesByAddress(documentAddress, supabaseObjects);
+  if (addressMatches.length === 1) {
+    const objectRow = addressMatches[0];
+    return {
+      objectRow,
+      objectNumber: stringValue(objectRow.object_number),
+      reason: "Objekt per Adresse gefunden."
+    };
+  }
+
+  if (addressMatches.length > 1) {
+    return {
+      objectRow: null,
+      objectNumber: rawObjectNumber,
+      reason: `Objektzuordnung mehrdeutig fuer Adresse "${documentAddress || "k.A."}" (${addressMatches.length} Treffer).`
+    };
+  }
+
+  return {
+    objectRow: null,
+    objectNumber: rawObjectNumber,
+    reason: objectNumber
+      ? `Objekt ${rawObjectNumber} nicht in Supabase gefunden und kein Adress-Treffer fuer "${documentAddress || "k.A."}".`
+      : `Keine Objektnummer vorhanden und kein Adress-Treffer fuer "${documentAddress || "k.A."}".`
+  };
+}
+
+function findObjectMatchesByAddress(documentAddress: string, supabaseObjects: GenericSupabaseRow[]): GenericSupabaseRow[] {
+  const normalizedDocumentAddress = normalizeAddress(documentAddress);
+  if (!normalizedDocumentAddress.full) return [];
+
+  return supabaseObjects.filter((object) => {
+    const objectAddress = normalizeAddress([
+      stringValue(object.address),
+      stringValue(object.postal_code),
+      stringValue(object.city)
+    ].filter(Boolean).join(" "));
+    if (!objectAddress.full) return false;
+
+    if (objectAddress.full === normalizedDocumentAddress.full) return true;
+    if (objectAddress.streetHouse && objectAddress.streetHouse === normalizedDocumentAddress.streetHouse) return true;
+    if (objectAddress.houseNumber && normalizedDocumentAddress.houseNumber && objectAddress.houseNumber === normalizedDocumentAddress.houseNumber) {
+      return objectAddress.street && normalizedDocumentAddress.street && (
+        objectAddress.street.includes(normalizedDocumentAddress.street) ||
+        normalizedDocumentAddress.street.includes(objectAddress.street)
+      );
+    }
+    return objectAddress.full.includes(normalizedDocumentAddress.full) || normalizedDocumentAddress.full.includes(objectAddress.full);
+  });
+}
+
+function documentAddressValue(document: ObjectAnalysis): string {
+  return firstPresent(
+    unwrapTextField(document.objectAddress),
+    unwrapTextField(document.location)
+  );
+}
+
+function normalizeAddress(value: string): { full: string; street: string; houseNumber: string; streetHouse: string } {
+  const full = normalizeAddressText(value);
+  const houseNumber = full.match(/\b\d+[a-z]?\b/i)?.[0] ?? "";
+  const street = full
+    .replace(/\b\d+[a-z]?\b/i, "")
+    .replace(/\b\d{5}\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    full,
+    street,
+    houseNumber,
+    streetHouse: [street, houseNumber].filter(Boolean).join(" ")
+  };
+}
+
+function normalizeAddressText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/ÃƒÂ¤|Ã¤|ä/g, "ae")
+    .replace(/ÃƒÂ¶|Ã¶|ö/g, "oe")
+    .replace(/ÃƒÂ¼|Ã¼|ü/g, "ue")
+    .replace(/ÃƒÅ¸|ÃŸ|ß/g, "ss")
+    .replace(/strasse|straße/g, "str")
+    .replace(/\bstra?\.?\b/g, "str")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function logSkippedSupabaseDocument(document: ObjectAnalysis, reason: string): void {
+  console.warn("[Supabase Dokumentimport] Dokument uebersprungen", {
+    dokumentname: documentLabel(document),
+    erkannteAdresse: documentAddressValue(document) || "k.A.",
+    erkannteObjektnummer: unwrapTextField(document.objectNumber) || "k.A.",
+    grund: reason
+  });
+}
+
+function documentLabel(document: ObjectAnalysis): string {
+  return unwrapTextField(document.documentNumber)
+    || document.sourceDocumentIds[0]
+    || documentAddressValue(document)
+    || document.id;
+}
+
+function documentRowToSupabase(document: ObjectAnalysis, objectId: string, resolvedObjectNumber?: string): GenericSupabaseRow {
   return {
     object_id: objectId,
     local_document_id: document.id,
@@ -558,7 +683,7 @@ function documentRowToSupabase(document: ObjectAnalysis, objectId: string): Gene
     type: emptyToNull(unwrapTextField(document.documentType)),
     provider: emptyToNull(unwrapTextField(document.provider)),
     document_date: emptyToNull(unwrapTextField(document.documentDate)),
-    object_number: emptyToNull(unwrapTextField(document.objectNumber)),
+    object_number: emptyToNull(firstPresent(unwrapTextField(document.objectNumber), resolvedObjectNumber)),
     apartment_number: emptyToNull(unwrapTextField(document.apartmentNumber)),
     net_amount: document.netCost.value,
     vat_amount: document.vatCost.value,
