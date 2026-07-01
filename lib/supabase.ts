@@ -546,17 +546,21 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
   };
   console.log("[Supabase Dokumentimport] Lokale Dokumente gesamt", documents.length);
 
-  const [objectsResult, documentsResult, costItemsResult, tradesResult] = await Promise.all([
+  const [objectsResult, documentsResult, costItemsResult, tradesResult, documentTypesResult, companiesResult] = await Promise.all([
     supabase.from("objects").select("*"),
     supabase.from("documents").select("*"),
     supabase.from("cost_items").select("*"),
-    supabase.from("trades").select("*")
+    supabase.from("trades").select("*"),
+    supabase.from("document_types").select("*"),
+    supabase.from("companies").select("*")
   ]);
 
   if (objectsResult.error) throw new Error(`Supabase-Objekte konnten nicht geladen werden: ${formatSupabaseError(objectsResult.error)}`);
   if (documentsResult.error) throw new Error(`Supabase-Dokumente konnten nicht geladen werden: ${formatSupabaseError(documentsResult.error)}`);
   if (costItemsResult.error) throw new Error(`Supabase-Kostenpositionen konnten nicht geladen werden: ${formatSupabaseError(costItemsResult.error)}`);
   if (tradesResult.error) throw new Error(`Supabase-Gewerke konnten nicht geladen werden: ${formatSupabaseError(tradesResult.error)}`);
+  if (documentTypesResult.error) throw new Error(`Supabase-Dokumenttypen konnten nicht geladen werden: ${formatSupabaseError(documentTypesResult.error)}`);
+  if (companiesResult.error) throw new Error(`Supabase-Firmen konnten nicht geladen werden: ${formatSupabaseError(companiesResult.error)}`);
 
   const objectsByNumber = new Map<string, GenericSupabaseRow>();
   const supabaseObjects = (objectsResult.data ?? []).map((row) => row as GenericSupabaseRow);
@@ -575,6 +579,9 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
     });
   });
 
+  const documentTypeIdByName = buildLookupIdByName(documentTypesResult.data as GenericSupabaseRow[] | null, ["name", "label", "type", "title", "slug"]);
+  const companyIdByName = buildLookupIdByName(companiesResult.data as GenericSupabaseRow[] | null, ["name", "company_name", "label", "title", "slug"]);
+
   const existingDocumentKeys = new Set((documentsResult.data ?? [])
     .map((row) => documentDuplicateKey(row as GenericSupabaseRow))
     .filter(Boolean));
@@ -592,7 +599,7 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
   const sampleDocument = documents.find((document) => normalizeObjectNumber(unwrapTextField(document.objectNumber))) ?? documents[0] ?? null;
   if (sampleDocument) {
     const sampleObject = resolveSupabaseObjectForDocument(sampleDocument, objectsByNumber, supabaseObjects);
-    const sampleDocumentRow = sampleObject.objectRow ? documentRowToSupabase(sampleDocument, stringValue(sampleObject.objectRow.id), sampleObject.objectNumber) : null;
+    const sampleDocumentRow = sampleObject.objectRow ? documentRowToSupabase(sampleDocument, stringValue(sampleObject.objectRow.id), sampleObject.objectNumber, documentTypeIdByName, companyIdByName) : null;
     console.log("[Supabase Dokumentimport] Beispiel lokales Dokument", sampleDocument);
     console.log("[Supabase Dokumentimport] Beispiel documents-Datensatz", sampleDocumentRow);
     console.log("[Supabase Dokumentimport] Beispiel cost_items-Datensaetze", sampleDocumentRow ? costItemRowsToSupabase(sampleDocument, stringValue(sampleObject.objectRow?.id), "document-id", tradeIdByName) : []);
@@ -615,7 +622,7 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
     }
 
     const objectId = stringValue(resolvedObject.objectRow.id);
-    const documentRow = documentRowToSupabase(document, objectId, resolvedObject.objectNumber);
+    const documentRow = documentRowToSupabase(document, objectId, resolvedObject.objectNumber, documentTypeIdByName, companyIdByName);
     const documentKey = documentDuplicateKey(documentRow);
     let supabaseDocumentId = documentIdByKey.get(documentKey) ?? null;
 
@@ -625,7 +632,7 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
         summary.skippedDuplicate += 1;
         logSkippedSupabaseDocument(document, `Duplikat erkannt (${documentKey}).`, resolvedObject);
       } else {
-        const insertedDocument = await insertRowAdaptive(supabase, "documents", documentRow, ["object_id"]);
+        const insertedDocument = await insertDocumentRowAdaptive(supabase, documentRow);
         supabaseDocumentId = stringValue(insertedDocument.id);
         if (documentKey) existingDocumentKeys.add(documentKey);
         if (documentKey && supabaseDocumentId) documentIdByKey.set(documentKey, supabaseDocumentId);
@@ -944,18 +951,38 @@ function documentLabel(document: ObjectAnalysis): string {
     || document.id;
 }
 
-function documentRowToSupabase(document: ObjectAnalysis, objectId: string, resolvedObjectNumber?: string): GenericSupabaseRow {
+function documentRowToSupabase(
+  document: ObjectAnalysis,
+  objectId: string,
+  resolvedObjectNumber: string | undefined,
+  documentTypeIdByName: Map<string, string>,
+  companyIdByName: Map<string, string>
+): GenericSupabaseRow {
+  const documentTypeName = unwrapTextField(document.documentType);
+  const companyName = unwrapTextField(document.provider);
+  const documentTypeId = documentTypeIdByName.get(normalizeLookupKey(documentTypeName)) ?? null;
+  const companyId = companyIdByName.get(normalizeLookupKey(companyName)) ?? null;
+  console.log("[Supabase Dokumentimport] document_type_id Mapping", {
+    documentTypeName: documentTypeName || "k.A.",
+    documentTypeId: documentTypeId ?? "NULL"
+  });
+  console.log("[Supabase Dokumentimport] company_id Mapping", {
+    companyName: companyName || "k.A.",
+    companyId: companyId ?? "NULL"
+  });
   return {
     object_id: objectId,
+    document_type_id: documentTypeId,
+    company_id: companyId,
     local_document_id: document.id,
     source_document_id: document.sourceDocumentIds[0] ?? document.id,
     document_number: emptyToNull(unwrapTextField(document.documentNumber)),
     file_name: emptyToNull(document.sourceDocumentIds[0] ?? document.id),
     document_name: emptyToNull(document.sourceDocumentIds[0] ?? unwrapTextField(document.documentNumber) ?? document.id),
     name: emptyToNull(document.sourceDocumentIds[0] ?? unwrapTextField(document.documentNumber) ?? document.id),
-    document_type: emptyToNull(unwrapTextField(document.documentType)),
-    type: emptyToNull(unwrapTextField(document.documentType)),
-    provider: emptyToNull(unwrapTextField(document.provider)),
+    document_type: emptyToNull(documentTypeName),
+    type: emptyToNull(documentTypeName),
+    provider: emptyToNull(companyName),
     document_date: emptyToNull(unwrapTextField(document.documentDate)),
     object_number: emptyToNull(firstPresent(unwrapTextField(document.objectNumber), resolvedObjectNumber)),
     apartment_number: emptyToNull(unwrapTextField(document.apartmentNumber)),
@@ -1133,6 +1160,48 @@ async function insertRowAdaptive(
   throw new Error(`Supabase-${table}-Datensatz konnte nicht gespeichert werden: zu viele Schema-Anpassungen.`);
 }
 
+async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: GenericSupabaseRow): Promise<GenericSupabaseRow> {
+  console.log("[Supabase Dokumentimport] INSERT public.documents Datensatz", originalRow);
+  let row = { ...originalRow };
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    console.log("[Supabase Dokumentimport] INSERT public.documents Versuch", { attempt: attempt + 1, row });
+    const { data, error } = await supabase
+      .from("documents")
+      .insert(row)
+      .select("*")
+      .single();
+
+    if (!error) {
+      console.log("[Supabase Dokumentimport] INSERT public.documents erfolgreich", {
+        document_id: data?.id ?? "k.A.",
+        row: data
+      });
+      return data as GenericSupabaseRow;
+    }
+
+    console.error("[Supabase Dokumentimport] INSERT public.documents fehlgeschlagen", {
+      code: error.code ?? null,
+      message: error.message ?? null,
+      details: error.details ?? null,
+      hint: error.hint ?? null,
+      row,
+      error
+    });
+
+    const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && missingColumn !== "object_id" && missingColumn in row) {
+      console.warn(`[Supabase Dokumentimport] Optionale Spalte documents.${missingColumn} existiert nicht und wird ausgelassen.`, { row, error });
+      const { [missingColumn]: _removed, ...nextRow } = row;
+      row = nextRow;
+      continue;
+    }
+
+    throw new Error(`Supabase-documents-Datensatz konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
+  }
+
+  throw new Error("Supabase-documents-Datensatz konnte nicht gespeichert werden: zu viele Schema-Anpassungen.");
+}
+
 function extractMissingColumn(message: string): string | null {
   return message.match(/'([^']+)'\s+column/i)?.[1] ?? message.match(/column\s+"([^"]+)"/i)?.[1] ?? null;
 }
@@ -1159,6 +1228,23 @@ function costItemDuplicateKey(row: GenericSupabaseRow): string {
 
 function normalizeGenericKey(parts: string[]): string {
   return parts.map((part) => part.trim().toLowerCase()).filter(Boolean).join("|");
+}
+
+function buildLookupIdByName(rows: GenericSupabaseRow[] | null, nameFields: string[]): Map<string, string> {
+  const result = new Map<string, string>();
+  (rows ?? []).forEach((row) => {
+    const id = stringValue(row.id);
+    if (!id) return;
+    nameFields.forEach((field) => {
+      const key = normalizeLookupKey(stringValue(row[field]));
+      if (key) result.set(key, id);
+    });
+  });
+  return result;
+}
+
+function normalizeLookupKey(value: string): string {
+  return normalizeTradeLookup(value);
 }
 
 function normalizeTradeLookup(value: string): string {
