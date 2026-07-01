@@ -6638,13 +6638,16 @@ function documentBelongsToObject(
   assignments: Record<string, string | null>
 ): boolean {
   const assignedProject = projects.find((project) => project.id === assignments[document.id]);
-  if (assignedProject?.objectId) return assignedProject.objectId === object.id;
+  if (assignedProject?.objectId && assignedProject.objectId === object.id) return true;
   const documentObjectNumber = fieldOrUnknown(document.objectNumber);
   const documentAddress = fieldOrUnknown(document.objectAddress).toLowerCase();
+  const projectObjectLabel = assignedProject?.object?.toLowerCase() ?? "";
   return Boolean(
     (object.objectNumber && documentObjectNumber !== "k.A." && object.objectNumber === documentObjectNumber) ||
     (object.address && documentAddress !== "k.a." && documentAddress.includes(object.address.toLowerCase())) ||
-    (object.objectName && documentAddress !== "k.a." && documentAddress.includes(object.objectName.toLowerCase()))
+    (object.objectName && documentAddress !== "k.a." && documentAddress.includes(object.objectName.toLowerCase())) ||
+    (object.objectNumber && projectObjectLabel.includes(object.objectNumber.toLowerCase())) ||
+    (object.address && projectObjectLabel.includes(object.address.toLowerCase()))
   );
 }
 
