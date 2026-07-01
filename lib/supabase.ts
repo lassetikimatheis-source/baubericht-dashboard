@@ -289,6 +289,8 @@ export async function createSupabaseObject(object: StoredObjectRecord): Promise<
     throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
   }
   const insertRow = objectRowToSupabase(object, { includeId: true });
+  console.log("[Supabase Import] Lokales Objekt vor Insert", object);
+  console.log("[Supabase Import] Supabase-Datensatz vor Insert", insertRow);
 
   const { data, error } = await supabase
     .from("objects")
@@ -319,8 +321,17 @@ export async function importMissingObjectsToSupabase(objects: StoredObjectRecord
     runtime: "server"
   });
   const existingObjects = await loadSupabaseObjects();
-  const existingObjectNumbers = new Set(existingObjects.map((object) => normalizeObjectNumber(object.objectNumber)).filter(Boolean));
+  const existingByObjectNumber = new Map<string, StoredObjectRecord>();
+  existingObjects.forEach((object) => {
+    const objectNumber = normalizeObjectNumber(object.objectNumber);
+    if (objectNumber) existingByObjectNumber.set(objectNumber, object);
+  });
   const processedObjectNumbers = new Set<string>();
+  const sampleObject = objects.find((object) => normalizeObjectNumber(object.objectNumber)) ?? objects[0] ?? null;
+  if (sampleObject) {
+    console.log("[Supabase Import] Beispiel lokales Objekt", sampleObject);
+    console.log("[Supabase Import] Beispiel Supabase-Datensatz", objectRowToSupabase(sampleObject, { includeId: true }));
+  }
   const summary: SupabaseObjectImportSummary = {
     imported: 0,
     skipped: 0,
@@ -335,16 +346,24 @@ export async function importMissingObjectsToSupabase(objects: StoredObjectRecord
       continue;
     }
 
-    if (existingObjectNumbers.has(objectNumber) || processedObjectNumbers.has(objectNumber)) {
+    if (processedObjectNumbers.has(objectNumber)) {
       summary.skipped += 1;
       continue;
     }
 
     try {
-      await createSupabaseObject(object);
-      existingObjectNumbers.add(objectNumber);
+      const existingObject = existingByObjectNumber.get(objectNumber);
+      if (existingObject) {
+        const backfilledObject = backfillObjectRecord(existingObject, object);
+        await updateSupabaseObject(backfilledObject);
+        existingByObjectNumber.set(objectNumber, backfilledObject);
+        summary.skipped += 1;
+      } else {
+        const createdObject = await createSupabaseObject(object);
+        existingByObjectNumber.set(objectNumber, createdObject);
+        summary.imported += 1;
+      }
       processedObjectNumbers.add(objectNumber);
-      summary.imported += 1;
     } catch (error) {
       summary.errors.push(`${object.objectNumber}: ${error instanceof Error ? error.message : "Import fehlgeschlagen."}`);
     }
@@ -361,10 +380,13 @@ export async function updateSupabaseObject(object: StoredObjectRecord): Promise<
   if (!isUuid(object.id)) {
     return createSupabaseObject(object);
   }
+  const updateRow = objectRowToSupabase(object);
+  console.log("[Supabase Import] Lokales Objekt vor Update", object);
+  console.log("[Supabase Import] Supabase-Datensatz vor Update", updateRow);
 
   const { data, error } = await supabase
     .from("objects")
-    .update(objectRowToSupabase(object))
+    .update(updateRow)
     .eq("id", object.id)
     .select("*")
     .single();
@@ -433,6 +455,35 @@ function objectRowFromSupabase(row: SupabaseObjectRow, fallback?: StoredObjectRe
     createdAt: fallback?.createdAt,
     updatedAt: fallback?.updatedAt
   };
+}
+
+function backfillObjectRecord(existing: StoredObjectRecord, incoming: StoredObjectRecord): StoredObjectRecord {
+  return {
+    ...existing,
+    objectNumber: firstPresent(existing.objectNumber, incoming.objectNumber),
+    address: firstPresent(existing.address, incoming.address),
+    postalCode: firstPresent(existing.postalCode, incoming.postalCode),
+    city: firstPresent(existing.city, incoming.city),
+    constructionYear: firstPresent(existing.constructionYear, incoming.constructionYear),
+    totalLivingAreaSqm: firstPresent(existing.totalLivingAreaSqm, incoming.totalLivingAreaSqm),
+    wohnflaecheSanierteWohnung: firstPresent(existing.wohnflaecheSanierteWohnung, incoming.wohnflaecheSanierteWohnung),
+    unitCount: firstPresent(existing.unitCount, incoming.unitCount),
+    latitude: firstPresent(existing.latitude, incoming.latitude),
+    longitude: firstPresent(existing.longitude, incoming.longitude),
+    fund: firstPresent(existing.fund, incoming.fund),
+    objectName: firstPresent(existing.objectName, incoming.objectName),
+    federalState: firstPresent(existing.federalState, incoming.federalState),
+    assetManager: firstPresent(existing.assetManager, incoming.assetManager),
+    portfolioManager: firstPresent(existing.portfolioManager, incoming.portfolioManager),
+    createdAt: existing.createdAt || incoming.createdAt,
+    updatedAt: incoming.updatedAt || existing.updatedAt
+  };
+}
+
+function firstPresent(primary?: string, fallback?: string): string {
+  const primaryValue = primary?.trim() ?? "";
+  if (primaryValue) return primaryValue;
+  return fallback?.trim() ?? "";
 }
 
 function emptyToNull(value: string | undefined): string | null {
