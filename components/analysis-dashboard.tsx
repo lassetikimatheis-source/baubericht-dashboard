@@ -28,7 +28,12 @@ import {
   importDocumentsAndCostItemsToSupabase,
   importMissingObjectsToSupabase,
   loadSupabaseDocumentsWithCostItems,
-  loadSupabaseObjects,
+  loadSupabaseOnlineData,
+  saveSupabaseAssignment,
+  deleteSupabaseAssignment,
+  deleteSupabaseDocument,
+  deleteSupabaseProject,
+  upsertSupabaseProject,
   updateSupabaseObject,
   type SupabaseDocumentCostImportSummary,
   type SupabaseObjectImportSummary
@@ -142,6 +147,14 @@ interface SupabaseDocumentLoadDiagnosis {
   appDocumentCount: number;
   measureDetailsCount: number;
   clustersCount: number;
+}
+
+interface SupabaseOnlineStatus {
+  objectCount: number;
+  documentCount: number;
+  costItemCount: number;
+  projectCount: number;
+  assignmentCount: number;
 }
 
 interface AsbestosDebugHit {
@@ -481,6 +494,14 @@ export function AnalysisDashboard() {
     measureDetailsCount: 0,
     clustersCount: 0
   });
+  const [supabaseOnlineStatus, setSupabaseOnlineStatus] = useState<SupabaseOnlineStatus>({
+    objectCount: 0,
+    documentCount: 0,
+    costItemCount: 0,
+    projectCount: 0,
+    assignmentCount: 0
+  });
+  const [migrationMode, setMigrationMode] = useState(false);
   const [asbestosDebugReport, setAsbestosDebugReport] = useState<AsbestosDebugReport>({
     status: "idle",
     message: "",
@@ -514,13 +535,26 @@ export function AnalysisDashboard() {
     try {
       const localDocumentsTotal = getDocuments().length;
       logLocalDocumentStorageDiagnostics("App-Load");
-      const [supabaseObjects, supabaseDocuments] = await Promise.all([
-        loadSupabaseObjects(),
-        loadSupabaseDocumentsWithCostItems()
-      ]);
+      const {
+        objects: supabaseObjects,
+        documents: supabaseDocuments,
+        projects: supabaseProjects,
+        assignments: supabaseAssignments
+      } = await loadSupabaseOnlineData();
+      const supabaseAssignmentCount = Object.keys(supabaseAssignments).length;
+      setSupabaseOnlineStatus({
+        objectCount: supabaseObjects.length,
+        documentCount: supabaseDocuments.supabaseDocumentCount,
+        costItemCount: supabaseDocuments.supabaseCostItemCount,
+        projectCount: supabaseProjects.length,
+        assignmentCount: supabaseAssignmentCount
+      });
       console.log("[Supabase] lokale Dokumente im App-Load", localDocumentsTotal);
+      console.log("[Supabase] objects im App-Load", supabaseObjects.length);
       console.log("[Supabase] documents im App-Load", supabaseDocuments.supabaseDocumentCount);
       console.log("[Supabase] cost_items im App-Load", supabaseDocuments.supabaseCostItemCount);
+      console.log("[Supabase] projects im App-Load", supabaseProjects.length);
+      console.log("[Supabase] assignments im App-Load", supabaseAssignmentCount);
       console.log("[Supabase] App-Dokumente im App-Load", supabaseDocuments.appDocumentCount);
       console.log("[Supabase] measureDetails im App-Load", supabaseDocuments.measureDetailsCount);
       console.log("[Supabase] clusters im App-Load", supabaseDocuments.clustersCount);
@@ -542,6 +576,15 @@ export function AnalysisDashboard() {
         supabaseDocuments.documents.forEach(saveDocument);
         setAnalysis(buildAnalysisFromDocuments(supabaseDocuments.documents));
         setSelectedDocumentId((current) => supabaseDocuments.documents.some((document) => document.id === current) ? current : supabaseDocuments.documents[0]?.id ?? null);
+      }
+      if (supabaseProjects.length) {
+        supabaseProjects.forEach(saveProject);
+        setProjects(supabaseProjects);
+        setSelectedProjectId((current) => current ?? supabaseProjects[0]?.id ?? null);
+      }
+      if (supabaseAssignmentCount > 0) {
+        saveAssignments(supabaseAssignments);
+        setAssignments(supabaseAssignments);
       }
     } catch (error) {
       console.error("[Supabase] Daten konnten nicht geladen werden:", error);
@@ -865,7 +908,6 @@ export function AnalysisDashboard() {
     try {
       const summary = await importMissingObjectsToSupabase(importObjects);
       await loadSupabaseObjectData();
-      setObjects(buildObjectsFromStoredData(getObjects(), storedDocuments, storedProjects));
       setSupabaseObjectImportStatus({
         kind: summary.errors.length ? "error" : "success",
         message: "Supabase-Import abgeschlossen.",
@@ -927,6 +969,16 @@ export function AnalysisDashboard() {
       console.log("[Supabase Dokumentimport] lokale Dokumente", storedDocuments.length);
       console.log("[Supabase Dokumentimport] importierte Dokumente", summary.documentsImported);
       console.log("[Supabase Dokumentimport] importierte cost_items", summary.costItemsImported);
+      if (loadDiagnosis.documents.length) {
+        loadDiagnosis.documents.forEach(saveDocument);
+        setAnalysis(buildAnalysisFromDocuments(loadDiagnosis.documents));
+        setSelectedDocumentId((current) => loadDiagnosis.documents.some((document) => document.id === current) ? current : loadDiagnosis.documents[0]?.id ?? null);
+      }
+      setSupabaseOnlineStatus((current) => ({
+        ...current,
+        documentCount: loadDiagnosis.supabaseDocumentCount,
+        costItemCount: loadDiagnosis.supabaseCostItemCount
+      }));
       setSupabaseDocumentLoadDiagnosis({
         message: diagnosisMessage,
         localDocumentsTotal: storedDocuments.length,
@@ -1059,12 +1111,15 @@ export function AnalysisDashboard() {
       return;
     }
     const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
-    const createdProjects = documentsToAssign.map((document, index) => saveProject({
-      ...projectFromDocument(document, objects),
-      id: `project-${Date.now()}-${index}`,
-      objectId: object.id,
-      object: objectLabel(object),
-      projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
+    const createdProjects = await Promise.all(documentsToAssign.map(async (document, index) => {
+      const project = await upsertSupabaseProject({
+        ...projectFromDocument(document, objects),
+        id: `project-${Date.now()}-${index}`,
+        objectId: object.id,
+        object: objectLabel(object),
+        projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
+      });
+      return saveProject(project);
     }));
     setObjects((current) => [...current, object]);
     setProjects((current) => [...current, ...createdProjects]);
@@ -1073,9 +1128,17 @@ export function AnalysisDashboard() {
         const next = { ...current };
         documentsToAssign.forEach((document, index) => {
           next[document.id] = createdProjects[index]?.id ?? null;
+          saveSupabaseAssignment(document.id, createdProjects[index]?.id ?? null).catch((error) => {
+            console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
+            setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
+          });
         });
         saveAssignments(next);
         return next;
+      });
+      importDocumentsAndCostItemsToSupabase(documentsToAssign).then(() => loadSupabaseObjectData()).catch((error) => {
+        console.error("[Supabase] Dokumente konnten nicht gespeichert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Dokumente konnten nicht in Supabase gespeichert werden.");
       });
     }
     setSelectedObjectId(object.id);
@@ -1090,26 +1153,37 @@ export function AnalysisDashboard() {
     setView("objects");
   }
 
-  function assignUploadDocumentToObject(objectId: string) {
+  async function assignUploadDocumentToObject(objectId: string) {
     const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
     if (!documentsToAssign.length) return;
     const object = objects.find((entry) => entry.id === objectId);
     if (!object) return;
-    const createdProjects = documentsToAssign.map((document, index) => saveProject({
-      ...projectFromDocument(document, objects),
-      id: `project-${Date.now()}-${index}`,
-      objectId: object.id,
-      object: objectLabel(object),
-      projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
+    const createdProjects = await Promise.all(documentsToAssign.map(async (document, index) => {
+      const project = await upsertSupabaseProject({
+        ...projectFromDocument(document, objects),
+        id: `project-${Date.now()}-${index}`,
+        objectId: object.id,
+        object: objectLabel(object),
+        projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
+      });
+      return saveProject(project);
     }));
     setProjects((current) => [...current, ...createdProjects]);
     setAssignments((current) => {
       const next = { ...current };
       documentsToAssign.forEach((document, index) => {
         next[document.id] = createdProjects[index]?.id ?? null;
+        saveSupabaseAssignment(document.id, createdProjects[index]?.id ?? null).catch((error) => {
+          console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
+        });
       });
       saveAssignments(next);
       return next;
+    });
+    importDocumentsAndCostItemsToSupabase(documentsToAssign).then(() => loadSupabaseObjectData()).catch((error) => {
+      console.error("[Supabase] Dokumente konnten nicht gespeichert werden:", error);
+      setMessage(error instanceof Error ? error.message : "Dokumente konnten nicht in Supabase gespeichert werden.");
     });
     setSelectedObjectId(object.id);
     setUploadDocument(null);
@@ -1182,8 +1256,17 @@ export function AnalysisDashboard() {
     }));
   }
 
-  function createProject(seed?: ObjectAnalysis) {
-    const project = saveProject(projectFromDocument(seed, objects));
+  async function createProject(seed?: ObjectAnalysis) {
+    let project = projectFromDocument(seed, objects);
+    try {
+      project = await upsertSupabaseProject(project);
+      setMessage("Projekt wurde in Supabase gespeichert.");
+    } catch (error) {
+      console.error("[Supabase] Projekt konnte nicht gespeichert werden:", error);
+      setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase gespeichert werden.");
+      return;
+    }
+    project = saveProject(project);
     setProjects((current) => [...current.filter((entry) => entry.id !== project.id), project]);
     setSelectedProjectId(project.id);
     setProjectTab("overview");
@@ -1191,6 +1274,10 @@ export function AnalysisDashboard() {
       setAssignments((current) => {
         const next = { ...current, [seed.id]: project.id };
         saveAssignments(next);
+        saveSupabaseAssignment(seed.id, project.id).catch((error) => {
+          console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
+        });
         return next;
       });
       setSelectedDocumentId(seed.id);
@@ -1200,11 +1287,21 @@ export function AnalysisDashboard() {
 
   function deleteProject(projectId: string) {
     deleteStoredProject(projectId);
+    deleteSupabaseProject(projectId).catch((error) => {
+      console.error("[Supabase] Projekt konnte nicht geloescht werden:", error);
+      setMessage(error instanceof Error ? error.message : "Projekt konnte nicht aus Supabase geloescht werden.");
+    });
     setProjects((current) => current.filter((project) => project.id !== projectId));
     setAssignments((current) => {
       const next = { ...current };
       Object.keys(next).forEach((documentId) => {
-        if (next[documentId] === projectId) next[documentId] = null;
+        if (next[documentId] === projectId) {
+          next[documentId] = null;
+          saveSupabaseAssignment(documentId, null).catch((error) => {
+            console.error("[Supabase] Zuordnung konnte nicht aktualisiert werden:", error);
+            setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase aktualisiert werden.");
+          });
+        }
       });
       saveAssignments(next);
       return next;
@@ -1216,15 +1313,31 @@ export function AnalysisDashboard() {
     setProjects((current) =>
       current.map((project) => {
         if (project.id !== projectId) return project;
+        let updatedProject: ProjectRecord;
         if (field === "objectId") {
           const object = objects.find((entry) => entry.id === value);
-          return updateStoredProject({ ...project, objectId: value, object: object ? objectLabel(object) : "", entranceId: "", entrance: "" });
+          updatedProject = updateStoredProject({ ...project, objectId: value, object: object ? objectLabel(object) : "", entranceId: "", entrance: "" });
+          upsertSupabaseProject(updatedProject).catch((error) => {
+            console.error("[Supabase] Projekt konnte nicht aktualisiert werden:", error);
+            setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase aktualisiert werden.");
+          });
+          return updatedProject;
         }
         if (field === "entranceId") {
           const entrance = entrances.find((entry) => entry.id === value);
-          return updateStoredProject({ ...project, entranceId: value, entrance: entrance ? entranceLabel(entrance) : "" });
+          updatedProject = updateStoredProject({ ...project, entranceId: value, entrance: entrance ? entranceLabel(entrance) : "" });
+          upsertSupabaseProject(updatedProject).catch((error) => {
+            console.error("[Supabase] Projekt konnte nicht aktualisiert werden:", error);
+            setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase aktualisiert werden.");
+          });
+          return updatedProject;
         }
-        return updateStoredProject({ ...project, [field]: value });
+        updatedProject = updateStoredProject({ ...project, [field]: value });
+        upsertSupabaseProject(updatedProject).catch((error) => {
+          console.error("[Supabase] Projekt konnte nicht aktualisiert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase aktualisiert werden.");
+        });
+        return updatedProject;
       })
     );
   }
@@ -1238,11 +1351,19 @@ export function AnalysisDashboard() {
 
   function deleteDocument(documentId: string) {
     deleteStoredDocument(documentId);
+    deleteSupabaseDocument(documentId).catch((error) => {
+      console.error("[Supabase] Dokument konnte nicht geloescht werden:", error);
+      setMessage(error instanceof Error ? error.message : "Dokument konnte nicht aus Supabase geloescht werden.");
+    });
     setAnalysis((current) => buildAnalysisFromDocuments(current.objects.filter((document) => document.id !== documentId), current));
     setAssignments((current) => {
       const next = { ...current };
       delete next[documentId];
       saveAssignments(next);
+      deleteSupabaseAssignment(documentId).catch((error) => {
+        console.error("[Supabase] Zuordnung konnte nicht geloescht werden:", error);
+        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht aus Supabase geloescht werden.");
+      });
       return next;
     });
     setSelectedDocumentId(null);
@@ -1272,6 +1393,10 @@ export function AnalysisDashboard() {
     setAssignments((current) => {
       const next = { ...current, [documentId]: projectId };
       saveAssignments(next);
+      saveSupabaseAssignment(documentId, projectId).catch((error) => {
+        console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
+      });
       return next;
     });
   }
@@ -1531,7 +1656,10 @@ export function AnalysisDashboard() {
                 supabaseObjectImportStatus={supabaseObjectImportStatus}
                 supabaseDocumentImportStatus={supabaseDocumentImportStatus}
                 supabaseDocumentLoadDiagnosis={supabaseDocumentLoadDiagnosis}
+                supabaseOnlineStatus={supabaseOnlineStatus}
+                migrationMode={migrationMode}
                 asbestosDebugReport={asbestosDebugReport}
+                onToggleMigrationMode={setMigrationMode}
                 onReanalyzeAll={reanalyzeAllObjects}
                 onRunAsbestosDebug={runAsbestosDebug}
                 onExportData={exportAppData}
@@ -4237,7 +4365,10 @@ function SettingsView({
   supabaseObjectImportStatus,
   supabaseDocumentImportStatus,
   supabaseDocumentLoadDiagnosis,
+  supabaseOnlineStatus,
+  migrationMode,
   asbestosDebugReport,
+  onToggleMigrationMode,
   onReanalyzeAll,
   onRunAsbestosDebug,
   onExportData,
@@ -4250,7 +4381,10 @@ function SettingsView({
   supabaseObjectImportStatus: SupabaseObjectImportStatus;
   supabaseDocumentImportStatus: SupabaseDocumentImportStatus;
   supabaseDocumentLoadDiagnosis: SupabaseDocumentLoadDiagnosis;
+  supabaseOnlineStatus: SupabaseOnlineStatus;
+  migrationMode: boolean;
   asbestosDebugReport: AsbestosDebugReport;
+  onToggleMigrationMode: (enabled: boolean) => void;
   onReanalyzeAll: () => Promise<void>;
   onRunAsbestosDebug: () => void;
   onExportData: () => void;
@@ -4260,6 +4394,8 @@ function SettingsView({
 }) {
   const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const currentSummary = summarizeCurrentAppData();
+  const showObjectImport = migrationMode || supabaseOnlineStatus.objectCount === 0;
+  const showDocumentImport = migrationMode || supabaseOnlineStatus.documentCount === 0;
   return (
     <section className="panel">
       <div className="panelHeader">
@@ -4291,9 +4427,12 @@ function SettingsView({
           </div>
           <div className="headerActions">
             <button type="button" onClick={onRunAsbestosDebug}>Asbest-Debug ausführen</button>
-            <button type="button" onClick={onImportLocalObjectsToSupabase}>Objekte nach Supabase importieren</button>
-            <button type="button" onClick={onImportLocalDocumentsToSupabase}>Dokumente nach Supabase importieren</button>
+            {showObjectImport ? <button type="button" onClick={onImportLocalObjectsToSupabase}>Objekte nach Supabase importieren</button> : null}
+            {showDocumentImport ? <button type="button" onClick={onImportLocalDocumentsToSupabase}>Dokumente nach Supabase importieren</button> : null}
             <button type="button" onClick={onExportData}>Daten sichern</button>
+            <button type="button" onClick={() => onToggleMigrationMode(!migrationMode)}>
+              {migrationMode ? "Migrationsmodus aus" : "Migrationsmodus an"}
+            </button>
             <label className="imageUploadButton">
               Daten wiederherstellen
               <input

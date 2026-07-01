@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { emptyField } from "./analysis-state";
-import type { StoredObjectRecord } from "./storage";
+import type { StoredObjectRecord, StoredProjectRecord } from "./storage";
 import type { CostAllocation, MeasureCluster, MeasureDetail, ObjectAnalysis } from "../types/analysis";
 
 let browserSupabaseClient: SupabaseClient | null = null;
@@ -250,6 +250,13 @@ export interface SupabaseDocumentLoadResult {
   clustersCount: number;
 }
 
+export interface SupabaseOnlineData {
+  objects: StoredObjectRecord[];
+  documents: SupabaseDocumentLoadResult;
+  projects: StoredProjectRecord[];
+  assignments: Record<string, string | null>;
+}
+
 export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
   const supabase = await getSupabaseClientAsync();
   if (!supabase) return [];
@@ -396,6 +403,146 @@ export async function deleteSupabaseObject(id: string): Promise<void> {
   if (error) {
     throw new Error(`Supabase-Objekt konnte nicht gelöscht werden: ${formatSupabaseError(error)}`);
   }
+}
+
+export async function loadSupabaseProjects(): Promise<StoredProjectRecord[]> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*");
+
+  if (error) {
+    throw new Error(`Supabase-Projekte konnten nicht geladen werden: ${formatSupabaseError(error)}`);
+  }
+
+  return (data ?? []).map((row) => projectRowFromSupabase(row as GenericSupabaseRow));
+}
+
+export async function upsertSupabaseProject(project: StoredProjectRecord): Promise<StoredProjectRecord> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Projekt konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+  const row = projectRowToSupabase(project, { includeId: isUuid(project.id) });
+  const { data, error } = await supabase
+    .from("projects")
+    .upsert(row)
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("[Supabase] Upsert public.projects fehlgeschlagen", { row, error });
+    const inserted = await insertRowAdaptive(supabase, "projects", row, []);
+    return projectRowFromSupabase(inserted, project);
+  }
+
+  return projectRowFromSupabase(data as GenericSupabaseRow, project);
+}
+
+export async function deleteSupabaseProject(id: string): Promise<void> {
+  if (!isUuid(id)) return;
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Projekt konnte nicht geloescht werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+  const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) {
+    throw new Error(`Supabase-Projekt konnte nicht geloescht werden: ${formatSupabaseError(error)}`);
+  }
+}
+
+export async function loadSupabaseAssignments(): Promise<Record<string, string | null>> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return {};
+
+  const { data, error } = await supabase
+    .from("assignments")
+    .select("*");
+
+  if (error) {
+    throw new Error(`Supabase-Zuordnungen konnten nicht geladen werden: ${formatSupabaseError(error)}`);
+  }
+
+  const assignments: Record<string, string | null> = {};
+  (data ?? []).forEach((row) => {
+    const assignment = assignmentRowFromSupabase(row as GenericSupabaseRow);
+    if (assignment.documentId) assignments[assignment.documentId] = assignment.projectId || null;
+  });
+  return assignments;
+}
+
+export async function saveSupabaseAssignment(documentId: string, projectId: string | null): Promise<void> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Zuordnung konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+
+  const [resolvedDocumentId, resolvedProjectId] = await Promise.all([
+    resolveSupabaseIdByLocalId(supabase, "documents", documentId, "local_document_id"),
+    projectId ? resolveSupabaseIdByLocalId(supabase, "projects", projectId, "local_project_id") : Promise.resolve(null)
+  ]);
+  const row = assignmentRowToSupabase(documentId, projectId, resolvedDocumentId, resolvedProjectId);
+  const { error } = await supabase
+    .from("assignments")
+    .upsert(row);
+
+  if (error) {
+    console.error("[Supabase] Upsert public.assignments fehlgeschlagen", { row, error });
+    await insertRowAdaptive(supabase, "assignments", row, []);
+  }
+}
+
+export async function deleteSupabaseAssignment(documentId: string): Promise<void> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Zuordnung konnte nicht geloescht werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+  const { error } = await supabase
+    .from("assignments")
+    .delete()
+    .eq("document_id", documentId);
+
+  if (error) {
+    console.warn("[Supabase] Zuordnung konnte nicht per document_id geloescht werden.", { documentId, error });
+  }
+}
+
+export async function deleteSupabaseDocument(documentId: string): Promise<void> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Dokument konnte nicht geloescht werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+
+  const resolvedDocumentId = await resolveSupabaseIdByLocalId(supabase, "documents", documentId, "local_document_id");
+  if (resolvedDocumentId) {
+    const costItemsResult = await supabase.from("cost_items").delete().eq("document_id", resolvedDocumentId);
+    if (costItemsResult.error) {
+      console.warn("[Supabase] Kostenpositionen konnten nicht geloescht werden.", { documentId, error: costItemsResult.error });
+    }
+    const documentResult = await supabase.from("documents").delete().eq("id", resolvedDocumentId);
+    if (documentResult.error) {
+      throw new Error(`Supabase-Dokument konnte nicht geloescht werden: ${formatSupabaseError(documentResult.error)}`);
+    }
+    return;
+  }
+
+  const { error } = await supabase.from("documents").delete().eq("local_document_id", documentId);
+  if (error) {
+    throw new Error(`Supabase-Dokument konnte nicht geloescht werden: ${formatSupabaseError(error)}`);
+  }
+}
+
+export async function loadSupabaseOnlineData(): Promise<SupabaseOnlineData> {
+  const [objects, documents, projects, assignments] = await Promise.all([
+    loadSupabaseObjects(),
+    loadSupabaseDocumentsWithCostItems(),
+    loadSupabaseProjects(),
+    loadSupabaseAssignments()
+  ]);
+
+  return { objects, documents, projects, assignments };
 }
 
 export async function loadSupabaseDocumentsWithCostItems(): Promise<SupabaseDocumentLoadResult> {
@@ -1055,6 +1202,94 @@ function objectRowFromSupabase(row: SupabaseObjectRow, fallback?: StoredObjectRe
   };
 }
 
+function projectRowToSupabase(project: StoredProjectRecord, options: { includeId?: boolean } = {}): GenericSupabaseRow {
+  const row: GenericSupabaseRow = {
+    local_project_id: project.id,
+    project_name: emptyToNull(project.projectName),
+    name: emptyToNull(project.projectName),
+    project_type: emptyToNull(project.projectType),
+    fund: emptyToNull(project.fund),
+    object_id: isUuid(project.objectId) ? project.objectId : null,
+    object_label: emptyToNull(project.object),
+    entrance_id: emptyToNull(project.entranceId),
+    entrance: emptyToNull(project.entrance),
+    status: emptyToNull(project.status),
+    budget_net: emptyToNull(project.budgetNet),
+    budget_gross: emptyToNull(project.budgetGross),
+    start_date: emptyToNull(project.startDate),
+    end_date: emptyToNull(project.endDate),
+    description: emptyToNull(project.description),
+    apartment_number: emptyToNull(project.apartmentNumber),
+    location: emptyToNull(project.location),
+    renovated_apartment_count: emptyToNull(project.renovatedApartmentCount),
+    living_area_sqm: emptyToNull(project.livingAreaSqm),
+    metadata: {
+      localId: project.id,
+      objectId: project.objectId,
+      object: project.object,
+      entranceId: project.entranceId,
+      entrance: project.entrance,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt
+    }
+  };
+  if (options.includeId) row.id = project.id;
+  return row;
+}
+
+function projectRowFromSupabase(row: GenericSupabaseRow, fallback?: StoredProjectRecord): StoredProjectRecord {
+  const metadata = isRecord(row.metadata) ? row.metadata : {};
+  const id = stringValue(row.id ?? row.local_project_id ?? fallback?.id ?? `project-${Date.now()}`);
+  return {
+    id,
+    projectName: stringValue(row.project_name ?? row.name ?? row.title ?? fallback?.projectName),
+    projectType: stringValue(row.project_type ?? metadata.projectType ?? fallback?.projectType),
+    fund: stringValue(row.fund ?? metadata.fund ?? fallback?.fund),
+    objectId: stringValue(row.object_id ?? metadata.objectId ?? fallback?.objectId),
+    object: stringValue(row.object_label ?? metadata.object ?? fallback?.object),
+    entranceId: stringValue(row.entrance_id ?? metadata.entranceId ?? fallback?.entranceId),
+    entrance: stringValue(row.entrance ?? metadata.entrance ?? fallback?.entrance),
+    status: stringValue(row.status ?? fallback?.status),
+    budgetNet: stringValue(row.budget_net ?? fallback?.budgetNet),
+    budgetGross: stringValue(row.budget_gross ?? fallback?.budgetGross),
+    startDate: stringValue(row.start_date ?? fallback?.startDate),
+    endDate: stringValue(row.end_date ?? fallback?.endDate),
+    description: stringValue(row.description ?? fallback?.description),
+    apartmentNumber: stringValue(row.apartment_number ?? fallback?.apartmentNumber),
+    location: stringValue(row.location ?? fallback?.location),
+    renovatedApartmentCount: stringValue(row.renovated_apartment_count ?? fallback?.renovatedApartmentCount),
+    livingAreaSqm: stringValue(row.living_area_sqm ?? fallback?.livingAreaSqm),
+    createdAt: stringValue(row.created_at ?? metadata.createdAt ?? fallback?.createdAt),
+    updatedAt: stringValue(row.updated_at ?? metadata.updatedAt ?? fallback?.updatedAt)
+  };
+}
+
+function assignmentRowToSupabase(
+  documentId: string,
+  projectId: string | null,
+  resolvedDocumentId: string | null = null,
+  resolvedProjectId: string | null = null
+): GenericSupabaseRow {
+  return {
+    document_id: resolvedDocumentId || (isUuid(documentId) ? documentId : null),
+    project_id: resolvedProjectId || (projectId && isUuid(projectId) ? projectId : null),
+    local_document_id: documentId,
+    local_project_id: projectId,
+    metadata: {
+      localDocumentId: documentId,
+      localProjectId: projectId
+    }
+  };
+}
+
+function assignmentRowFromSupabase(row: GenericSupabaseRow): { documentId: string; projectId: string | null } {
+  const metadata = isRecord(row.metadata) ? row.metadata : {};
+  return {
+    documentId: stringValue(row.local_document_id ?? metadata.localDocumentId ?? row.document_id),
+    projectId: stringValue(row.local_project_id ?? metadata.localProjectId ?? row.project_id) || null
+  };
+}
+
 function backfillObjectRecord(existing: StoredObjectRecord, incoming: StoredObjectRecord): StoredObjectRecord {
   return {
     ...existing,
@@ -1082,6 +1317,10 @@ function firstPresent(primary?: string, fallback?: string): string {
   const primaryValue = primary?.trim() ?? "";
   if (primaryValue) return primaryValue;
   return fallback?.trim() ?? "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function insertRowAdaptive(
@@ -1113,6 +1352,26 @@ async function insertRowAdaptive(
   }
 
   throw new Error(`Supabase-${table}-Datensatz konnte nicht gespeichert werden: zu viele Schema-Anpassungen.`);
+}
+
+async function resolveSupabaseIdByLocalId(
+  supabase: SupabaseClient,
+  table: string,
+  value: string,
+  localColumn: string
+): Promise<string | null> {
+  if (!value) return null;
+  if (isUuid(value)) return value;
+  const { data, error } = await supabase
+    .from(table)
+    .select("id")
+    .eq(localColumn, value)
+    .maybeSingle();
+  if (error) {
+    console.warn(`[Supabase] ${table}.${localColumn} konnte nicht fuer Zuordnung aufgeloest werden.`, { value, error });
+    return null;
+  }
+  return stringValue((data as GenericSupabaseRow | null)?.id) || null;
 }
 
 async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: GenericSupabaseRow): Promise<GenericSupabaseRow> {
