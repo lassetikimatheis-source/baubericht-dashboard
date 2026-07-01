@@ -10,15 +10,6 @@ let runtimeSupabaseStatus: SupabaseRuntimeConfigStatus | null = null;
 const SUPABASE_URL_ENV_NAME = "NEXT_PUBLIC_SUPABASE_URL";
 const SUPABASE_ANON_KEY_ENV_NAME = "NEXT_PUBLIC_SUPABASE_ANON_KEY";
 
-export interface SupabaseEnvironmentStatus {
-  urlVariableName: typeof SUPABASE_URL_ENV_NAME;
-  anonKeyVariableName: typeof SUPABASE_ANON_KEY_ENV_NAME;
-  hasUrl: boolean;
-  hasAnonKey: boolean;
-  runtime: "client" | "server";
-  urlHost: string | null;
-}
-
 export interface SupabaseRuntimeConfigStatus {
   loaded: boolean;
   hasUrl: boolean;
@@ -31,39 +22,7 @@ export interface SupabaseRuntimeConfigStatus {
   error: string | null;
 }
 
-export function getSupabaseEnvironmentStatus(): SupabaseEnvironmentStatus {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  return {
-    urlVariableName: SUPABASE_URL_ENV_NAME,
-    anonKeyVariableName: SUPABASE_ANON_KEY_ENV_NAME,
-    hasUrl: Boolean(supabaseUrl),
-    hasAnonKey: Boolean(supabaseAnonKey),
-    runtime: typeof window === "undefined" ? "server" : "client",
-    urlHost: safeUrlHost(supabaseUrl)
-  };
-}
-
-export function getSupabaseClient(): SupabaseClient | null {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const environment = getSupabaseEnvironmentStatus();
-
-  if (!supabaseUrl || !supabaseAnonKey || !isHttpUrl(supabaseUrl)) {
-    console.warn("[Supabase] Environment Variables fehlen.", environment);
-    return null;
-  }
-
-  if (!browserSupabaseClient) {
-    browserSupabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-  }
-
-  return browserSupabaseClient;
-}
-
 async function getSupabaseClientAsync(): Promise<SupabaseClient | null> {
-  const directClient = getSupabaseClient();
-  if (directClient) return directClient;
   const runtimeConfig = await getRuntimeSupabaseConfig();
   if (!runtimeConfig) return null;
   if (!browserSupabaseClient) {
@@ -192,24 +151,20 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
 export async function runSupabaseConnectionTest(): Promise<void> {
   console.log("[Supabase] Test wird ausgeführt");
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  const environment = getSupabaseEnvironmentStatus();
+  await getRuntimeSupabaseConfig({ forceRefresh: true });
+  const runtimeStatus = await getSupabaseRuntimeConfigStatus();
 
   console.log("[Supabase] Verbindungstest gestartet", {
-    [environment.urlVariableName]: environment.hasUrl ? "vorhanden" : "fehlt",
-    [environment.anonKeyVariableName]: environment.hasAnonKey ? "vorhanden" : "fehlt",
-    runtime: environment.runtime,
-    urlHost: environment.urlHost
+    runtimeConfigLoaded: runtimeStatus.loaded ? "Ja" : "Nein",
+    runtimeHasUrl: runtimeStatus.hasUrl ? "Ja" : "Nein",
+    runtimeHasAnonKey: runtimeStatus.hasAnonKey ? "Ja" : "Nein",
+    runtimeHttpStatus: runtimeStatus.httpStatus,
+    runtime: runtimeStatus.runtime
   });
 
   const supabase = await getSupabaseClientAsync();
   if (!supabase) {
-    console.error("[Supabase] Verbindungstest abgebrochen: Environment Variables fehlen.", {
-      NEXT_PUBLIC_SUPABASE_URL: Boolean(supabaseUrl),
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: Boolean(supabaseAnonKey),
-      environment
-    });
+    console.error("[Supabase] Verbindungstest abgebrochen: Runtime-Konfiguration konnte nicht geladen werden.", runtimeStatus);
     return;
   }
 
@@ -1281,23 +1236,13 @@ function normalizeObjectNumber(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function safeUrlHost(value: string | undefined): string | null {
-  if (!value) return null;
-  try {
-    return new URL(value).host;
-  } catch {
-    return null;
-  }
-}
-
 function isHttpUrl(value: string | undefined): boolean {
   return Boolean(value && /^https?:\/\//i.test(value));
 }
 
 function formatMissingSupabaseEnvironment(): string {
-  const environment = getSupabaseEnvironmentStatus();
   const runtime = runtimeSupabaseStatus;
-  return `Supabase-Konfiguration fehlt (Client ${environment.urlVariableName}: ${environment.hasUrl ? "vorhanden" : "fehlt"}, Client ${environment.anonKeyVariableName}: ${environment.hasAnonKey ? "vorhanden" : "fehlt"}, Runtime Config geladen: ${runtime?.loaded ? "Ja" : "Nein"}, Runtime hasAnonKey: ${runtime?.hasAnonKey ? "Ja" : "Nein"}, Laufzeit: ${environment.runtime}).`;
+  return `Supabase-Konfiguration fehlt (Runtime Config geladen: ${runtime?.loaded ? "Ja" : "Nein"}, Runtime hasUrl: ${runtime?.hasUrl ? "Ja" : "Nein"}, Runtime hasAnonKey: ${runtime?.hasAnonKey ? "Ja" : "Nein"}, HTTP Status: ${runtime?.httpStatus ?? "k.A."}, Laufzeit: ${runtime?.runtime ?? "k.A."}).`;
 }
 
 function isUuid(value: string): boolean {

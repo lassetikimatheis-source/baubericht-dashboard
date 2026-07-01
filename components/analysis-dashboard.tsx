@@ -23,7 +23,6 @@ import { fieldOrUnknown, formatCurrency, formatNumber, formatSqm, sourceLabel, u
 import {
   createSupabaseObject,
   deleteSupabaseObject,
-  getSupabaseEnvironmentStatus,
   getRuntimeSupabaseConfig,
   getSupabaseRuntimeConfigStatus,
   importDocumentsAndCostItemsToSupabase,
@@ -803,19 +802,16 @@ export function AnalysisDashboard() {
   }
 
   async function importLocalObjectsToSupabase() {
-    const supabaseEnvironment = getSupabaseEnvironmentStatus();
     await getRuntimeSupabaseConfig({ forceRefresh: true });
     const supabaseRuntime = await getSupabaseRuntimeConfigStatus();
     const runtimeMessage = `Runtime Config geladen: ${supabaseRuntime.loaded ? "Ja" : "Nein"}, Runtime hasAnonKey: ${supabaseRuntime.hasAnonKey ? "Ja" : "Nein"}, HTTP Status: ${supabaseRuntime.httpStatus ?? "k.A."}.`;
     console.log("[Supabase] Objektimport startet", {
-      [supabaseEnvironment.urlVariableName]: supabaseEnvironment.hasUrl ? "Ja" : "Nein",
-      [supabaseEnvironment.anonKeyVariableName]: supabaseEnvironment.hasAnonKey ? "Ja" : "Nein",
       runtimeConfigLoaded: supabaseRuntime.loaded ? "Ja" : "Nein",
+      runtimeHasUrl: supabaseRuntime.hasUrl ? "Ja" : "Nein",
       runtimeHasAnonKey: supabaseRuntime.hasAnonKey ? "Ja" : "Nein",
       runtimeHttpStatus: supabaseRuntime.httpStatus,
       runtimeResponseText: supabaseRuntime.responseText,
-      runtime: supabaseEnvironment.runtime,
-      urlHost: supabaseEnvironment.urlHost
+      runtime: supabaseRuntime.runtime
     });
     if (!supabaseRuntime.loaded || !supabaseRuntime.hasUrl || !supabaseRuntime.hasAnonKey) {
       setSupabaseObjectImportStatus({
@@ -860,7 +856,7 @@ export function AnalysisDashboard() {
 
     setSupabaseObjectImportStatus({
       kind: "idle",
-      message: `Supabase-Import laeuft... Client URL vorhanden: ${supabaseEnvironment.hasUrl ? "Ja" : "Nein"}, Client Anon Key vorhanden: ${supabaseEnvironment.hasAnonKey ? "Ja" : "Nein"}, ${runtimeMessage}`,
+      message: `Supabase-Import laeuft... ${runtimeMessage}`,
       summary: null
     });
 
