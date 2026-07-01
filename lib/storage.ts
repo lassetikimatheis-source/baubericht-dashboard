@@ -117,10 +117,19 @@ export function deleteObject(id: string): void {
 }
 
 export function getObjects(): StoredObjectRecord[] {
-  return readCollection<StoredObjectRecord>(STORAGE_KEYS.objects).map((object) => ({
+  const objects = readCollection<StoredObjectRecord>(STORAGE_KEYS.objects).map((object) => ({
     ...object,
     wohnflaecheSanierteWohnung: object.wohnflaecheSanierteWohnung ?? ""
   }));
+  const deduped = dedupeStoredObjects(objects);
+  if (deduped.length !== objects.length) {
+    console.warn("[Storage] Doppelte Objekte im localStorage bereinigt", {
+      vorher: objects.length,
+      nachher: deduped.length
+    });
+    writeJson(STORAGE_KEYS.objects, deduped);
+  }
+  return deduped;
 }
 
 export function saveEntrance(entrance: StoredEntranceRecord): StoredEntranceRecord {
@@ -341,6 +350,41 @@ function dedupeStoredDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
     }
   });
   return Array.from(byKey.values());
+}
+
+function dedupeStoredObjects(objects: StoredObjectRecord[]): StoredObjectRecord[] {
+  const byKey = new Map<string, StoredObjectRecord>();
+  objects.forEach((object) => {
+    const key = storedObjectDedupeKey(object);
+    if (!key) return;
+    const existing = byKey.get(key);
+    if (!existing || storedObjectCompletenessScore(object) > storedObjectCompletenessScore(existing)) {
+      byKey.set(key, object);
+    }
+  });
+  return Array.from(byKey.values());
+}
+
+function storedObjectDedupeKey(object: StoredObjectRecord): string {
+  const number = object.objectNumber?.trim().toLowerCase();
+  if (number) return `number:${number}`;
+  const address = [object.address, object.postalCode, object.city].map((value) => value?.trim().toLowerCase()).filter(Boolean).join("|");
+  return address ? `address:${address}` : `id:${object.id}`;
+}
+
+function storedObjectCompletenessScore(object: StoredObjectRecord): number {
+  return [
+    object.objectNumber,
+    object.address,
+    object.postalCode,
+    object.city,
+    object.constructionYear,
+    object.unitCount,
+    object.totalLivingAreaSqm,
+    object.wohnflaecheSanierteWohnung,
+    object.latitude,
+    object.longitude
+  ].filter((value) => value && value.trim()).length;
 }
 
 function storedDocumentDedupeKey(document: ObjectAnalysis): string {

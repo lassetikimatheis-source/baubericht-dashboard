@@ -516,7 +516,7 @@ export function AnalysisDashboard() {
     const storedProjects = getProjects();
     const storedDocuments = getDocuments();
     const storedAssignments = getAssignments();
-    const effectiveObjects = buildObjectsFromStoredData(storedObjects, storedDocuments, storedProjects);
+    const effectiveObjects = buildObjectsFromStoredData(storedObjects, storedDocuments, storedProjects, { deriveFallbackObjects: storedObjects.length === 0 });
     if (!storedObjects.length && effectiveObjects.length) {
       effectiveObjects.forEach(saveObject);
     }
@@ -577,18 +577,6 @@ export function AnalysisDashboard() {
         assignments: supabaseAssignments
       } = await loadSupabaseOnlineData();
       const supabaseAssignmentCount = Object.keys(supabaseAssignments).length;
-      const objectSource = supabaseObjects.length ? "supabase" : "localStorage";
-      const useSupabaseDocuments = shouldUseSupabaseDocumentLoad(localDocuments, supabaseDocuments, "App-Load");
-      const documentSource = useSupabaseDocuments ? "supabase" : "localStorage";
-      const costItemSource = supabaseDocuments.supabaseCostItemCount > 0 ? "supabase" : "localStorage";
-      const projectSource = supabaseProjects.length ? "supabase" : "localStorage";
-      const assignmentSource = supabaseAssignmentCount > 0 ? "supabase" : "localStorage";
-      const nextDocuments = documentSource === "supabase" ? supabaseDocuments.documents : localDocuments;
-      const nextProjects = projectSource === "supabase" ? supabaseProjects : localProjects;
-      const nextAssignments = assignmentSource === "supabase" ? supabaseAssignments : localAssignments;
-      const nextObjects = objectSource === "supabase"
-        ? buildObjectsFromStoredData(supabaseObjects, nextDocuments, nextProjects)
-        : buildObjectsFromStoredData(localObjects, nextDocuments, nextProjects);
       setSupabaseOnlineStatus({
         objectCount: supabaseObjects.length,
         documentCount: supabaseDocuments.supabaseDocumentCount,
@@ -596,6 +584,10 @@ export function AnalysisDashboard() {
         projectCount: supabaseProjects.length,
         assignmentCount: supabaseAssignmentCount
       });
+      console.log("[Diagnose] localStorage objects count", localObjects.length);
+      console.log("[Diagnose] localStorage documents count", localDocuments.length);
+      console.log("[Diagnose] Supabase objects count", supabaseObjects.length);
+      console.log("[Diagnose] Supabase documents count", supabaseDocuments.supabaseDocumentCount);
       console.log("[Supabase] lokale Dokumente im App-Load", localDocumentsTotal);
       console.log("[Supabase] objects im App-Load", supabaseObjects.length);
       console.log("[Supabase] documents im App-Load", supabaseDocuments.supabaseDocumentCount);
@@ -607,16 +599,16 @@ export function AnalysisDashboard() {
       console.log("[Supabase] clusters im App-Load", supabaseDocuments.clustersCount);
       console.log("[Online-Modus] lokale documents count", localDocuments.length);
       console.log("[Online-Modus] Supabase documents count", supabaseDocuments.supabaseDocumentCount);
-      console.log("[Online-Modus] verwendete documents-Quelle", documentSource);
+      console.log("[Online-Modus] verwendete documents-Quelle", "localStorage");
       console.log("[Online-Modus] Datenquelle App-Load", {
-        objects: objectSource,
-        documents: documentSource,
-        costItems: costItemSource,
-        projects: projectSource,
-        assignments: assignmentSource
+        objects: "localStorage",
+        documents: "localStorage",
+        costItems: "localStorage",
+        projects: "localStorage",
+        assignments: "localStorage"
       });
       setSupabaseDocumentLoadDiagnosis({
-        message: diagnoseSupabaseDocumentLoad(supabaseDocuments),
+        message: `Diagnose: localStorage bleibt aktiv. Local objects: ${localObjects.length}, local documents: ${localDocuments.length}, Supabase objects: ${supabaseObjects.length}, Supabase documents: ${supabaseDocuments.supabaseDocumentCount}.`,
         localDocumentsTotal,
         supabaseDocumentCount: supabaseDocuments.supabaseDocumentCount,
         supabaseCostItemCount: supabaseDocuments.supabaseCostItemCount,
@@ -624,19 +616,6 @@ export function AnalysisDashboard() {
         measureDetailsCount: supabaseDocuments.measureDetailsCount,
         clustersCount: supabaseDocuments.clustersCount
       });
-      if (objectSource === "supabase") supabaseObjects.forEach(saveObject);
-      if (documentSource === "supabase") supabaseDocuments.documents.forEach(saveDocument);
-      if (projectSource === "supabase") supabaseProjects.forEach(saveProject);
-      if (assignmentSource === "supabase") saveAssignments(supabaseAssignments);
-
-      setObjects(nextObjects);
-      if (documentSource === "supabase") {
-        applySupabaseDocumentsToState(nextDocuments, "App-Load");
-      }
-      setProjects(nextProjects);
-      setAssignments(nextAssignments);
-      setSelectedObjectId((current) => nextObjects.some((object) => object.id === current) ? current : nextObjects[0]?.id ?? null);
-      setSelectedProjectId((current) => nextProjects.some((project) => project.id === current) ? current : nextProjects[0]?.id ?? null);
     } catch (error) {
       console.error("[Supabase] Daten konnten nicht geladen werden:", error);
       setMessage(error instanceof Error ? error.message : "Supabase-Daten konnten nicht geladen werden.");
@@ -5182,7 +5161,8 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
 function buildObjectsFromStoredData(
   storedObjects: ObjectRecord[],
   documents: ObjectAnalysis[],
-  projects: ProjectRecord[]
+  projects: ProjectRecord[],
+  options: { deriveFallbackObjects?: boolean } = {}
 ): ObjectRecord[] {
   const byKey = new Map<string, ObjectRecord>();
   const addObject = (object: ObjectRecord) => {
@@ -5193,33 +5173,35 @@ function buildObjectsFromStoredData(
   };
 
   storedObjects.forEach(addObject);
-  documents.forEach((document, index) => {
-    const object = objectFromDocument(document);
-    object.id = object.objectNumber ? `object-${object.objectNumber}` : `object-document-${index}`;
-    addObject(object);
-  });
-  projects.forEach((project, index) => {
-    const objectNumber = extractObjectNumber(project.object);
-    if (!objectNumber && !project.object.trim()) return;
-    addObject({
-      id: project.objectId || `object-project-${index}`,
-      fund: project.fund,
-      objectNumber,
-      objectName: "",
-      address: objectNumber ? project.object.replace(objectNumber, "").trim() : project.object,
-      postalCode: "",
-      city: "",
-      federalState: "",
-      constructionYear: "",
-      unitCount: "",
-      totalLivingAreaSqm: "",
-      wohnflaecheSanierteWohnung: "",
-      assetManager: "",
-      portfolioManager: "",
-      latitude: "",
-      longitude: ""
+  if (options.deriveFallbackObjects ?? true) {
+    documents.forEach((document, index) => {
+      const object = objectFromDocument(document);
+      object.id = object.objectNumber ? `object-${object.objectNumber}` : `object-document-${index}`;
+      addObject(object);
     });
-  });
+    projects.forEach((project, index) => {
+      const objectNumber = extractObjectNumber(project.object);
+      if (!objectNumber && !project.object.trim()) return;
+      addObject({
+        id: project.objectId || `object-project-${index}`,
+        fund: project.fund,
+        objectNumber,
+        objectName: "",
+        address: objectNumber ? project.object.replace(objectNumber, "").trim() : project.object,
+        postalCode: "",
+        city: "",
+        federalState: "",
+        constructionYear: "",
+        unitCount: "",
+        totalLivingAreaSqm: "",
+        wohnflaecheSanierteWohnung: "",
+        assetManager: "",
+        portfolioManager: "",
+        latitude: "",
+        longitude: ""
+      });
+    });
+  }
 
   return Array.from(byKey.values()).sort((left, right) =>
     firstKnown(left.objectNumber, left.address, left.id).localeCompare(firstKnown(right.objectNumber, right.address, right.id), "de")
