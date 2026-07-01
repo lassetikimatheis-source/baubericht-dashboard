@@ -44,7 +44,7 @@ export function getSupabaseClient(): SupabaseClient | null {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const environment = getSupabaseEnvironmentStatus();
 
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !isHttpUrl(supabaseUrl)) {
     console.warn("[Supabase] Environment Variables fehlen.", environment);
     return null;
   }
@@ -79,8 +79,8 @@ export async function getSupabaseRuntimeConfigStatus(): Promise<SupabaseRuntimeC
   };
 }
 
-async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supabaseAnonKey: string } | null> {
-  if (runtimeSupabaseConfig) {
+export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean } = {}): Promise<{ supabaseUrl: string; supabaseAnonKey: string } | null> {
+  if (runtimeSupabaseConfig && !options.forceRefresh) {
     runtimeSupabaseStatus = {
       ...(runtimeSupabaseStatus ?? {
         hasNextPublicAnonKey: false,
@@ -107,6 +107,8 @@ async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supaba
       hasAnonKey?: boolean;
       hasNextPublicAnonKey?: boolean;
       hasServerAnonKey?: boolean;
+      resolvedUrlFrom?: string | null;
+      resolvedAnonKeyFrom?: string | null;
       urlVariableName?: string;
       anonKeyVariableName?: string;
       runtime?: string;
@@ -124,9 +126,11 @@ async function getRuntimeSupabaseConfig(): Promise<{ supabaseUrl: string; supaba
       [data.anonKeyVariableName ?? SUPABASE_ANON_KEY_ENV_NAME]: data.hasAnonKey ? "vorhanden" : "fehlt",
       NEXT_PUBLIC_SUPABASE_ANON_KEY_server: data.hasNextPublicAnonKey ? "vorhanden" : "fehlt",
       SUPABASE_ANON_KEY_serverFallback: data.hasServerAnonKey ? "vorhanden" : "fehlt",
+      resolvedUrlFrom: data.resolvedUrlFrom ?? null,
+      resolvedAnonKeyFrom: data.resolvedAnonKeyFrom ?? null,
       runtime: data.runtime ?? "server"
     });
-    if (!data.supabaseUrl || !data.supabaseAnonKey) return null;
+    if (!data.supabaseUrl || !data.supabaseAnonKey || !isHttpUrl(data.supabaseUrl)) return null;
     runtimeSupabaseConfig = {
       supabaseUrl: data.supabaseUrl,
       supabaseAnonKey: data.supabaseAnonKey
@@ -268,6 +272,15 @@ export async function createSupabaseObject(object: StoredObjectRecord): Promise<
 }
 
 export async function importMissingObjectsToSupabase(objects: StoredObjectRecord[]): Promise<SupabaseObjectImportSummary> {
+  await getRuntimeSupabaseConfig({ forceRefresh: true });
+  console.log("[Supabase Import] Runtime Config vor Import", runtimeSupabaseStatus ?? {
+    loaded: false,
+    hasUrl: false,
+    hasAnonKey: false,
+    hasNextPublicAnonKey: false,
+    hasServerAnonKey: false,
+    runtime: "server"
+  });
   const existingObjects = await loadSupabaseObjects();
   const existingObjectNumbers = new Set(existingObjects.map((object) => normalizeObjectNumber(object.objectNumber)).filter(Boolean));
   const processedObjectNumbers = new Set<string>();
@@ -406,6 +419,10 @@ function safeUrlHost(value: string | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+function isHttpUrl(value: string | undefined): boolean {
+  return Boolean(value && /^https?:\/\//i.test(value));
 }
 
 function formatMissingSupabaseEnvironment(): string {

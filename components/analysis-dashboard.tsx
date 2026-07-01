@@ -24,6 +24,7 @@ import {
   createSupabaseObject,
   deleteSupabaseObject,
   getSupabaseEnvironmentStatus,
+  getRuntimeSupabaseConfig,
   getSupabaseRuntimeConfigStatus,
   importMissingObjectsToSupabase,
   loadSupabaseObjects,
@@ -745,6 +746,7 @@ export function AnalysisDashboard() {
 
   async function importLocalObjectsToSupabase() {
     const supabaseEnvironment = getSupabaseEnvironmentStatus();
+    await getRuntimeSupabaseConfig({ forceRefresh: true });
     const supabaseRuntime = await getSupabaseRuntimeConfigStatus();
     console.log("[Supabase] Objektimport startet", {
       [supabaseEnvironment.urlVariableName]: supabaseEnvironment.hasUrl ? "Ja" : "Nein",
