@@ -855,7 +855,16 @@ export function AnalysisDashboard() {
       setSupabaseDocumentImportStatus({
         kind: "error",
         message: "Keine lokalen Dokumentdaten im Browser-Speicher gefunden.",
-        summary: { documentsImported: 0, costItemsImported: 0, skipped: 0, errors: ["localStorage-Key paribus-baukosten.documents.v1 enthaelt keine Dokumente."] }
+        summary: {
+          localDocumentsTotal: 0,
+          documentsImported: 0,
+          costItemsImported: 0,
+          skipped: 0,
+          skippedMissingObject: 0,
+          skippedDuplicate: 0,
+          skippedEmpty: 0,
+          errors: ["localStorage-Key paribus-baukosten.documents.v1 enthaelt keine Dokumente."]
+        }
       });
       return;
     }
@@ -889,9 +898,13 @@ export function AnalysisDashboard() {
         kind: "error",
         message: error instanceof Error ? error.message : "Supabase-Dokumentimport fehlgeschlagen.",
         summary: {
+          localDocumentsTotal: storedDocuments.length,
           documentsImported: 0,
           costItemsImported: 0,
           skipped: 0,
+          skippedMissingObject: 0,
+          skippedDuplicate: 0,
+          skippedEmpty: 0,
           errors: [error instanceof Error ? error.message : "Unbekannter Fehler"]
         }
       });
@@ -4314,14 +4327,27 @@ function SupabaseObjectImportSummaryView({ status }: { status: SupabaseObjectImp
 
 function SupabaseDocumentImportSummaryView({ status }: { status: SupabaseDocumentImportStatus }) {
   if (status.kind === "idle" && !status.message) return null;
-  const summary = status.summary ?? { documentsImported: 0, costItemsImported: 0, skipped: 0, errors: [] };
+  const summary = status.summary ?? {
+    localDocumentsTotal: 0,
+    documentsImported: 0,
+    costItemsImported: 0,
+    skipped: 0,
+    skippedMissingObject: 0,
+    skippedDuplicate: 0,
+    skippedEmpty: 0,
+    errors: []
+  };
   return (
     <div className={`dataTransferSummary ${status.kind === "error" ? "dataTransferError" : ""}`}>
       <strong>{status.message}</strong>
       <div>
+        <span>Lokale Dokumente: {formatNumber(summary.localDocumentsTotal)}</span>
         <span>Dokumente importiert: {formatNumber(summary.documentsImported)}</span>
         <span>Kostenpositionen importiert: {formatNumber(summary.costItemsImported)}</span>
         <span>Uebersprungen: {formatNumber(summary.skipped)}</span>
+        <span>Ohne Objekt: {formatNumber(summary.skippedMissingObject)}</span>
+        <span>Duplikate: {formatNumber(summary.skippedDuplicate)}</span>
+        <span>Leer: {formatNumber(summary.skippedEmpty)}</span>
         <span>Fehler: {formatNumber(summary.errors.length)}</span>
       </div>
       {summary.errors.length ? <small>{summary.errors.slice(0, 3).join(" | ")}</small> : null}

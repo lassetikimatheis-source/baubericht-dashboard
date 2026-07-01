@@ -270,9 +270,13 @@ export interface SupabaseObjectImportSummary {
 }
 
 export interface SupabaseDocumentCostImportSummary {
+  localDocumentsTotal: number;
   documentsImported: number;
   costItemsImported: number;
   skipped: number;
+  skippedMissingObject: number;
+  skippedDuplicate: number;
+  skippedEmpty: number;
   errors: string[];
 }
 
@@ -482,11 +486,16 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
   }
 
   const summary: SupabaseDocumentCostImportSummary = {
+    localDocumentsTotal: documents.length,
     documentsImported: 0,
     costItemsImported: 0,
     skipped: 0,
+    skippedMissingObject: 0,
+    skippedDuplicate: 0,
+    skippedEmpty: 0,
     errors: []
   };
+  console.log("[Supabase Dokumentimport] Lokale Dokumente gesamt", documents.length);
 
   const [objectsResult, documentsResult, costItemsResult, tradesResult] = await Promise.all([
     supabase.from("objects").select("*"),
@@ -517,7 +526,9 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
     });
   });
 
-  const existingDocumentKeys = new Set((documentsResult.data ?? []).map((row) => documentDuplicateKey(row as GenericSupabaseRow)));
+  const existingDocumentKeys = new Set((documentsResult.data ?? [])
+    .map((row) => documentDuplicateKey(row as GenericSupabaseRow))
+    .filter(Boolean));
   const documentIdByKey = new Map<string, string>();
   (documentsResult.data ?? []).forEach((row) => {
     const documentRow = row as GenericSupabaseRow;
@@ -525,7 +536,9 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
     const id = stringValue(documentRow.id);
     if (key && id) documentIdByKey.set(key, id);
   });
-  const existingCostItemKeys = new Set((costItemsResult.data ?? []).map((row) => costItemDuplicateKey(row as GenericSupabaseRow)));
+  const existingCostItemKeys = new Set((costItemsResult.data ?? [])
+    .map((row) => costItemDuplicateKey(row as GenericSupabaseRow))
+    .filter(Boolean));
 
   const sampleDocument = documents.find((document) => normalizeObjectNumber(unwrapTextField(document.objectNumber))) ?? documents[0] ?? null;
   if (sampleDocument) {
@@ -537,11 +550,18 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
   }
 
   for (const document of documents) {
+    if (isEmptyImportDocument(document)) {
+      summary.skipped += 1;
+      summary.skippedEmpty += 1;
+      logSkippedSupabaseDocument(document, "Leeres Dokument ohne verwertbare Stammdaten oder Kostenpositionen.", null);
+      continue;
+    }
+
     const resolvedObject = resolveSupabaseObjectForDocument(document, objectsByNumber, supabaseObjects);
     if (!resolvedObject.objectRow) {
       summary.skipped += 1;
-      logSkippedSupabaseDocument(document, resolvedObject.reason);
-      summary.errors.push(`${documentLabel(document)}: ${resolvedObject.reason}`);
+      summary.skippedMissingObject += 1;
+      logSkippedSupabaseDocument(document, resolvedObject.reason, resolvedObject);
       continue;
     }
 
@@ -553,23 +573,26 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
     try {
       if (existingDocumentKeys.has(documentKey) && supabaseDocumentId) {
         summary.skipped += 1;
+        summary.skippedDuplicate += 1;
+        logSkippedSupabaseDocument(document, `Duplikat erkannt (${documentKey}).`, resolvedObject);
       } else {
         const insertedDocument = await insertRowAdaptive(supabase, "documents", documentRow, ["object_id"]);
         supabaseDocumentId = stringValue(insertedDocument.id);
-        existingDocumentKeys.add(documentKey);
-        if (supabaseDocumentId) documentIdByKey.set(documentKey, supabaseDocumentId);
+        if (documentKey) existingDocumentKeys.add(documentKey);
+        if (documentKey && supabaseDocumentId) documentIdByKey.set(documentKey, supabaseDocumentId);
         summary.documentsImported += 1;
       }
 
       const costRows = costItemRowsToSupabase(document, objectId, supabaseDocumentId, tradeIdByName);
       for (const costRow of costRows) {
         const costKey = costItemDuplicateKey(costRow);
-        if (existingCostItemKeys.has(costKey)) {
+        if (costKey && existingCostItemKeys.has(costKey)) {
           summary.skipped += 1;
+          summary.skippedDuplicate += 1;
           continue;
         }
         await insertRowAdaptive(supabase, "cost_items", costRow, ["object_id", "document_id"]);
-        existingCostItemKeys.add(costKey);
+        if (costKey) existingCostItemKeys.add(costKey);
         summary.costItemsImported += 1;
       }
     } catch (error) {
@@ -829,11 +852,28 @@ function normalizeAddressText(value: string): string {
     .trim();
 }
 
-function logSkippedSupabaseDocument(document: ObjectAnalysis, reason: string): void {
+function isEmptyImportDocument(document: ObjectAnalysis): boolean {
+  return !document.id
+    && !documentLabel(document)
+    && !documentAddressValue(document)
+    && !unwrapTextField(document.objectNumber)
+    && document.totalCost.value === null
+    && document.netCost.value === null
+    && document.vatCost.value === null
+    && document.clusters.length === 0
+    && !document.measureDetails?.length;
+}
+
+function logSkippedSupabaseDocument(
+  document: ObjectAnalysis,
+  reason: string,
+  resolution: SupabaseDocumentObjectResolution | null
+): void {
   console.warn("[Supabase Dokumentimport] Dokument uebersprungen", {
     dokumentname: documentLabel(document),
     erkannteAdresse: documentAddressValue(document) || "k.A.",
     erkannteObjektnummer: unwrapTextField(document.objectNumber) || "k.A.",
+    erkannterObjectIdTreffer: resolution?.objectRow?.id ? stringValue(resolution.objectRow.id) : "k.A.",
     grund: reason
   });
 }
@@ -1041,18 +1081,21 @@ function extractMissingColumn(message: string): string | null {
 function documentDuplicateKey(row: GenericSupabaseRow): string {
   const objectId = stringValue(row.object_id);
   const documentNumber = stringValue(row.document_number);
-  const fileName = stringValue(row.file_name || row.document_name || row.source_document_id || row.local_document_id);
-  return normalizeGenericKey([objectId, documentNumber || fileName]);
+  const sourceIdentifier = stringValue(row.local_document_id || row.source_document_id || row.file_name || row.document_name || row.name);
+  const identifier = documentNumber || sourceIdentifier;
+  if (!objectId || !identifier) return "";
+  return normalizeGenericKey([objectId, identifier]);
 }
 
 function costItemDuplicateKey(row: GenericSupabaseRow): string {
-  return normalizeGenericKey([
+  const key = normalizeGenericKey([
     stringValue(row.object_id),
     stringValue(row.document_id),
     stringValue(row.local_cost_item_id) || stringValue(row.description),
     stringValue(row.amount ?? row.gross_amount),
     stringValue(row.trade_id ?? row.trade_name)
   ]);
+  return key;
 }
 
 function normalizeGenericKey(parts: string[]): string {
