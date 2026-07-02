@@ -343,13 +343,15 @@ function parseAppDataBackup(value: unknown): AppDataBackup {
 function dedupeStoredDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
   const byKey = new Map<string, ObjectAnalysis>();
   documents.forEach((document) => {
-    const key = storedDocumentDedupeKey(document);
-    const existing = byKey.get(key);
+    const keys = storedDocumentDedupeKeys(document);
+    const existing = keys.map((key) => byKey.get(key)).find(Boolean);
     if (!existing || storedDocumentCompletenessScore(document) > storedDocumentCompletenessScore(existing)) {
-      byKey.set(key, document);
+      keys.forEach((key) => byKey.set(key, document));
+    } else {
+      keys.forEach((key) => byKey.set(key, existing));
     }
   });
-  return Array.from(byKey.values());
+  return Array.from(new Set(byKey.values()));
 }
 
 function dedupeStoredObjects(objects: StoredObjectRecord[]): StoredObjectRecord[] {
@@ -387,15 +389,20 @@ function storedObjectCompletenessScore(object: StoredObjectRecord): number {
   ].filter((value) => value && value.trim()).length;
 }
 
-function storedDocumentDedupeKey(document: ObjectAnalysis): string {
+function storedDocumentDedupeKeys(document: ObjectAnalysis): string[] {
+  const keys: string[] = [];
   const sourceId = document.sourceDocumentIds?.[0]?.trim();
-  if (sourceId) return `source:${sourceId.toLowerCase()}`;
+  if (sourceId) keys.push(`source:${sourceId.toLowerCase()}`);
   const documentNumber = stringFieldValue(document.documentNumber);
   const objectNumber = stringFieldValue(document.objectNumber);
   const address = stringFieldValue(document.objectAddress);
+  const provider = stringFieldValue(document.provider);
+  const date = stringFieldValue(document.documentDate);
   const total = document.totalCost?.value ?? "";
-  const fallback = [documentNumber, objectNumber || address, total].map((value) => String(value).trim().toLowerCase()).filter(Boolean).join("|");
-  return fallback || `id:${document.id}`;
+  const semantic = [documentNumber, objectNumber || address, provider, date, total].map((value) => String(value).trim().toLowerCase()).filter(Boolean).join("|");
+  if (semantic) keys.push(`semantic:${semantic}`);
+  if (!keys.length) keys.push(`id:${document.id}`);
+  return keys;
 }
 
 function storedDocumentCompletenessScore(document: ObjectAnalysis): number {

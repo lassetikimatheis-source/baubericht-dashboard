@@ -2144,7 +2144,7 @@ function SelectedPortfolioDetail({ document }: { document: ObjectAnalysis | null
               <tr><td colSpan={5}>k.A.</td></tr>
             ) : document.clusters.map((cluster) => (
               <tr key={cluster.id}>
-                <td>{fieldOrUnknown(cluster.cluster)}</td>
+                <td>{displayTradeName(fieldOrUnknown(cluster.cluster))}</td>
                 <td>{fieldOrUnknown(cluster.description)}</td>
                 <td>{formatCurrency(cluster.totalCost)}</td>
                 <td>{fieldOrUnknown(cluster.allocation as ExtractedField<string>)}</td>
@@ -2921,7 +2921,7 @@ function ObjectOverviewTab({
   const totalGross = sumValues(rows.map((row) => row.grossCost));
   const chartRows: TradeCostChartRow[] = rows.map((row) => ({
     id: row.id,
-    cluster: row.cluster,
+    cluster: displayTradeName(row.cluster),
     beschreibung: row.description,
     kosten_brutto: row.grossCost,
     anteil_prozent: row.grossCost !== null && totalGross ? (row.grossCost / totalGross) * 100 : null,
@@ -2946,7 +2946,7 @@ function ObjectOverviewTab({
         {rows.length === 0 ? <p className="muted">k.A.</p> : (
           <div className="measurePillGrid">
             {rows.slice(0, 8).map((row) => (
-              <span key={row.id}>{tradeIcon(row.cluster)} {row.cluster} <strong>{formatNullableCurrency(row.grossCost)}</strong></span>
+              <span key={row.id}>{tradeIcon(row.cluster)} {displayTradeName(row.cluster)} <strong>{formatNullableCurrency(row.grossCost)}</strong></span>
             ))}
           </div>
         )}
@@ -3353,7 +3353,7 @@ function ObjectMeasuresTab({
           <tbody>
             {rows.length === 0 ? <tr><td colSpan={8}>k.A.</td></tr> : rows.map((row) => (
               <tr key={row.id} onClick={() => setSelectedMeasureId(row.id)}>
-                <td>{tradeIcon(row.cluster)} {row.cluster}</td>
+                <td>{tradeIcon(row.cluster)} {displayTradeName(row.cluster)}</td>
                 <td>{row.description}</td>
                 <td>{extractYearFromMeasure(row, documents)}</td>
                 <td>{collectApartments(documentsForMeasure(row, documents))}</td>
@@ -3399,7 +3399,7 @@ function MeasureDetailPanel({
       <div className="slideOverHeader">
         <div>
           <span className="eyebrow">Detail</span>
-          <h3>{row.cluster}</h3>
+          <h3>{displayTradeName(row.cluster)}</h3>
         </div>
         <button type="button" onClick={onClose}>Schliessen</button>
       </div>
@@ -3539,7 +3539,7 @@ function ObjectCostsTab({
             <thead><tr><th>Gewerk</th><th>Dokumente</th><th>Kosten brutto</th></tr></thead>
             <tbody>
               {byCluster.length === 0 ? <tr><td colSpan={3}>k.A.</td></tr> : byCluster.map((entry) => (
-                <tr key={entry.cluster}><td>{entry.cluster}</td><td>{entry.count}</td><td>{formatNullableCurrency(entry.total)}</td></tr>
+                <tr key={entry.cluster}><td>{displayTradeName(entry.cluster)}</td><td>{entry.count}</td><td>{formatNullableCurrency(entry.total)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -3569,7 +3569,7 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
   const totalGross = groups.reduce((sum, row) => sum + row.total, 0);
   const chartRows: TradeCostChartRow[] = groups.map((row) => ({
     id: row.cluster,
-    cluster: row.cluster,
+    cluster: displayTradeName(row.cluster),
     beschreibung: row.count > 0 ? `${formatNumber(row.count)} Dokument(e) zugeordnet` : "Kein Dokument zugeordnet",
     kosten_brutto: row.total,
     anteil_prozent: row.share,
@@ -3613,7 +3613,7 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
                 onClick={() => setSelectedMeasureId(entry.cluster)}
               >
                 <span className="tradeLegendDot" style={{ backgroundColor: tradeChartColor(index) }} />
-                <span className="tradeLegendName">{entry.cluster}</span>
+                <span className="tradeLegendName">{displayTradeName(entry.cluster)}</span>
                 <strong>{entry.share === null ? "k.A." : `${formatNullableNumber(roundMoney(entry.share))} %`}</strong>
               </button>
             ))}
@@ -3633,7 +3633,7 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
             <tbody>
               {groups.map((entry) => (
                 <tr key={entry.cluster} onClick={() => setSelectedMeasureId(entry.cluster)}>
-                  <td>{tradeIcon(entry.cluster)} {entry.cluster}</td>
+                  <td>{tradeIcon(entry.cluster)} {displayTradeName(entry.cluster)}</td>
                   <td>{formatNumber(entry.count)}</td>
                   <td>{formatNullableCurrency(entry.total)}</td>
                   <td className="averageCostColumn">{entry.averagePerDocument === null ? "0 €" : formatNullableCurrency(entry.averagePerDocument)}</td>
@@ -3667,7 +3667,8 @@ function AverageTradeCostBarChart({
 }) {
   const chartRows = rows
     .filter((row) => row.averagePerDocument !== null && row.averagePerDocument > 0)
-    .sort((a, b) => (b.averagePerDocument ?? 0) - (a.averagePerDocument ?? 0));
+    .sort((a, b) => (b.averagePerDocument ?? 0) - (a.averagePerDocument ?? 0))
+    .map((row) => ({ ...row, clusterLabel: displayTradeName(row.cluster) }));
   const chartHeight = Math.max(360, chartRows.length * 42);
 
   if (chartRows.length === 0) {
@@ -3711,7 +3712,7 @@ function AverageTradeCostBarChart({
             />
             <YAxis
               type="category"
-              dataKey="cluster"
+              dataKey="clusterLabel"
               width={230}
               axisLine={{ stroke: "#DCE2E8" }}
               tickLine={false}
@@ -3725,7 +3726,7 @@ function AverageTradeCostBarChart({
                 const row = payload[0].payload as TradeGroupRow;
                 return (
                   <div className="tradeTooltip">
-                    <strong>{row.cluster}</strong>
+                    <strong>{displayTradeName(row.cluster)}</strong>
                     <span>{formatNullableCurrency(row.averagePerDocument)} pro Wohnung</span>
                     <span>{formatNullableCurrency(row.total)} / {formatNumber(getDocumentCountByTrade(row))} eindeutige Dokument(e)</span>
                   </div>
@@ -4231,7 +4232,7 @@ function ProjectMeasuresTab({ documents }: { documents: ObjectAnalysis[] }) {
             <tr><td colSpan={6}>k.A.</td></tr>
           ) : byCluster.map((entry) => (
             <tr key={entry.cluster}>
-              <td>{entry.cluster}</td>
+              <td>{displayTradeName(entry.cluster)}</td>
               <td>{entry.count}</td>
               <td>{formatNullableCurrency(entry.offer)}</td>
               <td>{formatNullableCurrency(entry.progress)}</td>
@@ -4376,7 +4377,7 @@ function ReportsView({
           <tbody>
             {byCluster.map((entry) => (
               <tr key={entry.cluster}>
-                <td>{entry.cluster}</td>
+                <td>{displayTradeName(entry.cluster)}</td>
                 <td>{entry.count}</td>
                 <td>{formatNullableCurrency(entry.total)}</td>
               </tr>
@@ -4955,7 +4956,7 @@ function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
           <strong>Cluster-Mapping</strong>
           <ul>
             {debug?.mappings.length ? debug.mappings.map((entry) => (
-              <li key={`mapping-${entry.section}-${entry.actualSection ?? entry.section}`}>{entry.heading} - {entry.cluster} - {formatNullableCurrency(entry.value)}</li>
+              <li key={`mapping-${entry.section}-${entry.actualSection ?? entry.section}`}>{entry.heading} - {displayTradeName(entry.cluster)} - {formatNullableCurrency(entry.value)}</li>
             )) : <li>k.A.</li>}
           </ul>
         </div>
@@ -5498,33 +5499,41 @@ function buildAnalysisFromDocuments(
 function dedupeAnalysisDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
   const byKey = new Map<string, ObjectAnalysis>();
   documents.forEach((document) => {
-    const key = documentDedupeKey(document);
-    const existing = byKey.get(key);
+    const keys = documentDedupeKeys(document);
+    const existing = keys.map((key) => byKey.get(key)).find(Boolean);
     if (!existing || documentCompletenessScore(document) > documentCompletenessScore(existing)) {
-      byKey.set(key, document);
+      keys.forEach((key) => byKey.set(key, document));
+    } else {
+      keys.forEach((key) => byKey.set(key, existing));
     }
   });
-  if (byKey.size !== documents.length) {
+  const deduped = Array.from(new Set(byKey.values()));
+  if (deduped.length !== documents.length) {
     console.warn("[Analyse] Doppelte Dokumente fuer Anzeige bereinigt", {
       vorher: documents.length,
-      nachher: byKey.size
+      nachher: deduped.length
     });
   }
-  return Array.from(byKey.values());
+  return deduped;
 }
 
-function documentDedupeKey(document: ObjectAnalysis): string {
+function documentDedupeKeys(document: ObjectAnalysis): string[] {
+  const keys: string[] = [];
   const sourceId = document.sourceDocumentIds?.[0]?.trim();
-  if (sourceId) return `source:${sourceId.toLowerCase()}`;
+  if (sourceId) keys.push(`source:${sourceId.toLowerCase()}`);
   const documentNumber = fieldOrUnknown(document.documentNumber);
   const objectNumber = fieldOrUnknown(document.objectNumber);
   const address = fieldOrUnknown(document.objectAddress);
+  const provider = fieldOrUnknown(document.provider);
+  const date = fieldOrUnknown(document.documentDate);
   const total = document.totalCost.value ?? "";
-  const fallback = [documentNumber, objectNumber !== "k.A." ? objectNumber : address, total]
+  const semantic = [documentNumber, objectNumber !== "k.A." ? objectNumber : address, provider, date, total]
     .map((value) => String(value).trim().toLowerCase())
     .filter((value) => value && value !== "k.a.")
     .join("|");
-  return fallback || `id:${document.id}`;
+  if (semantic) keys.push(`semantic:${semantic}`);
+  if (!keys.length) keys.push(`id:${document.id}`);
+  return keys;
 }
 
 function documentCompletenessScore(document: ObjectAnalysis): number {
@@ -6101,11 +6110,11 @@ function buildReanalysisFindings(previousDocuments: ObjectAnalysis[], documents:
 function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: ObjectAnalysis[]): ObjectAnalysis[] {
   const normalizedExisting = existing.map((document) => normalizeDocumentTrades(document).document);
   const normalizedIncoming = incoming.map((document) => normalizeDocumentTrades(document).document);
-  const byKey = new Map(normalizedExisting.map((document) => [documentDedupeKey(document), document]));
+  const byKey = new Map(normalizedExisting.flatMap((document) => documentDedupeKeys(document).map((key) => [key, document] as const)));
   const merged = [...normalizedExisting];
 
   normalizedIncoming.forEach((document) => {
-    const match = byKey.get(documentDedupeKey(document));
+    const match = documentDedupeKeys(document).map((key) => byKey.get(key)).find(Boolean);
     if (!match) {
       merged.push(document);
       return;
@@ -7480,8 +7489,12 @@ function formatApartment(document: ObjectAnalysis): string {
 }
 
 function formatClusters(document: ObjectAnalysis): string {
-  const clusters = Array.from(new Set(document.clusters.map((cluster) => cluster.cluster.value ? germanizeUiText(cluster.cluster.value) : null).filter(Boolean)));
+  const clusters = Array.from(new Set(document.clusters.map((cluster) => cluster.cluster.value ? displayTradeName(cluster.cluster.value) : null).filter(Boolean)));
   return clusters.length === 0 ? "k.A." : clusters.join(", ");
+}
+
+function displayTradeName(value: string): string {
+  return germanizeUiText(value);
 }
 
 function formatKiStatus(document: ObjectAnalysis): string {
@@ -7493,6 +7506,7 @@ function formatKiStatus(document: ObjectAnalysis): string {
 
 function germanizeUiText(value: string): string {
   return value
+    .replace(/Schadstoffsanierung \/ Asbest/g, "Asbest")
     .replace(/Sanitaer/g, "Sanitär")
     .replace(/sanitaer/g, "sanitär")
     .replace(/Tueren/g, "Türen")
@@ -8780,7 +8794,7 @@ function reportBarChart(rows: TradeGroupRow[], gross: number | null): string {
     const width = Math.max((row.total / max) * 100, 1);
     const share = gross && gross > 0 ? ` · ${formatNullableNumber(roundMoney((row.total / gross) * 100))} %` : "";
     return `<div class="barRow">
-      <strong>${escapeReportHtml(row.cluster)}</strong>
+      <strong>${escapeReportHtml(displayTradeName(row.cluster))}</strong>
       <div class="barTrack"><div class="barFill" style="width:${width}%"></div></div>
       <span class="barValue">${escapeReportHtml(formatNullableCurrency(row.total))}${escapeReportHtml(share)}</span>
     </div>`;
@@ -8792,7 +8806,7 @@ function reportShareList(rows: TradeGroupRow[]): string {
   return `<div class="shareList">${rows.map((row) => `
     <div class="shareRow">
       <span class="dot"></span>
-      <strong>${escapeReportHtml(row.cluster)}</strong>
+      <strong>${escapeReportHtml(displayTradeName(row.cluster))}</strong>
       <span class="barValue">${row.share === null ? "k.A." : `${escapeReportHtml(formatNullableNumber(roundMoney(row.share)))} %`}</span>
     </div>`).join("")}</div>`;
 }
@@ -8802,7 +8816,7 @@ function reportTradeTable(rows: TradeGroupRow[]): string {
   return `<table>
     <thead><tr><th>Gewerk</th><th class="number">Gesamtkosten</th><th class="number">Anteil</th><th class="number">Dokumente</th><th>Status</th></tr></thead>
     <tbody>${rows.map((row) => `<tr>
-      <td>${escapeReportHtml(row.cluster)}</td>
+      <td>${escapeReportHtml(displayTradeName(row.cluster))}</td>
       <td class="number">${escapeReportHtml(formatNullableCurrency(row.total))}</td>
       <td class="number">${row.share === null ? "k.A." : `${escapeReportHtml(formatNullableNumber(roundMoney(row.share)))} %`}</td>
       <td class="number">${escapeReportHtml(formatNumber(row.count))}</td>
