@@ -597,21 +597,7 @@ export async function createSupabaseObject(object: StoredObjectRecord): Promise<
   console.log("[Supabase Import] Lokales Objekt vor Insert", object);
   console.log("[Supabase Import] Supabase-Datensatz vor Insert", insertRow);
 
-  const { data, error } = await supabase
-    .from("objects")
-    .insert(insertRow)
-    .select("*")
-    .single();
-
-  if (error) {
-    console.error("[Supabase] Insert public.objects fehlgeschlagen", { row: insertRow, error });
-    throw new Error(`Supabase-Objekt konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
-  }
-  if (!data) {
-    console.error("[Supabase] Insert public.objects ohne Rueckgabedaten", { row: insertRow });
-    throw new Error("Supabase-Objekt konnte nicht gespeichert werden: Insert lieferte keinen Datensatz zurueck.");
-  }
-
+  const data = await insertRowAdaptive(supabase, "objects", insertRow, ["object_number", "address"]);
   return objectRowFromSupabase(data as SupabaseObjectRow, object);
 }
 
@@ -660,8 +646,8 @@ export async function importMissingObjectsToSupabase(objects: StoredObjectRecord
       const existingObject = objectKeys.map((key) => existingByObjectKey.get(key)).find(Boolean);
       if (existingObject) {
         const backfilledObject = backfillObjectRecord(existingObject, object);
-        await updateSupabaseObject(backfilledObject);
-        objectImportKeys(backfilledObject).forEach((key) => existingByObjectKey.set(key, backfilledObject));
+        const updatedObject = await updateSupabaseObjectIfPossible(backfilledObject);
+        objectImportKeys(updatedObject).forEach((key) => existingByObjectKey.set(key, updatedObject));
         summary.skipped += 1;
       } else {
         const createdObject = await createSupabaseObject(object);
@@ -689,18 +675,25 @@ export async function updateSupabaseObject(object: StoredObjectRecord): Promise<
   console.log("[Supabase Import] Lokales Objekt vor Update", object);
   console.log("[Supabase Import] Supabase-Datensatz vor Update", updateRow);
 
-  const { data, error } = await supabase
-    .from("objects")
-    .update(updateRow)
-    .eq("id", object.id)
-    .select("*")
-    .single();
-
-  if (error) {
-    throw new Error(`Supabase-Objekt konnte nicht aktualisiert werden: ${formatSupabaseError(error)}`);
-  }
-
+  const data = await updateObjectRowAdaptive(supabase, object.id, updateRow);
   return objectRowFromSupabase(data as SupabaseObjectRow, object);
+}
+
+async function updateSupabaseObjectIfPossible(object: StoredObjectRecord): Promise<StoredObjectRecord> {
+  try {
+    return await updateSupabaseObject(object);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("PGRST116") || message.includes("result contains 0 rows")) {
+      console.warn("[Supabase Import] Bestehendes Objekt konnte nicht aktualisiert werden, wird fuer Rettungsimport als vorhanden uebersprungen.", {
+        objectId: object.id,
+        objectNumber: object.objectNumber,
+        error
+      });
+      return object;
+    }
+    throw error;
+  }
 }
 
 export async function deleteSupabaseObject(id: string): Promise<void> {
@@ -1741,8 +1734,8 @@ function documentRowToSupabase(
     type: emptyToNull(documentTypeName),
     provider: emptyToNull(companyName),
     supplier: emptyToNull(companyName),
-    document_date: emptyToNull(unwrapTextField(document.documentDate)),
-    date: emptyToNull(unwrapTextField(document.documentDate)),
+    document_date: emptyToNull(toSupabaseDateString(unwrapTextField(document.documentDate))),
+    date: emptyToNull(toSupabaseDateString(unwrapTextField(document.documentDate))),
     object_number: emptyToNull(firstPresent(unwrapTextField(document.objectNumber), resolvedObjectNumber)),
     apartment_number: emptyToNull(unwrapTextField(document.apartmentNumber)),
     net_amount: document.netCost.value,
@@ -2342,10 +2335,14 @@ function entranceRowToSupabase(entrance: StoredEntranceRecord): GenericSupabaseR
 }
 
 function projectRowToSupabase(project: StoredProjectRecord, options: { includeId?: boolean } = {}): GenericSupabaseRow {
+  const projectName = firstPresent(
+    project.projectName,
+    firstPresent(project.projectType, firstPresent(project.object, firstPresent(project.location, project.id)))
+  );
   const row: GenericSupabaseRow = {
     local_project_id: project.id,
-    project_name: emptyToNull(project.projectName),
-    name: emptyToNull(project.projectName),
+    project_name: emptyToNull(projectName),
+    name: emptyToNull(projectName),
     project_type: emptyToNull(project.projectType),
     fund: emptyToNull(project.fund),
     object_id: isUuid(project.objectId) ? project.objectId : null,
@@ -2355,8 +2352,8 @@ function projectRowToSupabase(project: StoredProjectRecord, options: { includeId
     status: emptyToNull(project.status),
     budget_net: emptyToNull(project.budgetNet),
     budget_gross: emptyToNull(project.budgetGross),
-    start_date: emptyToNull(project.startDate),
-    end_date: emptyToNull(project.endDate),
+    start_date: emptyToNull(toSupabaseDateString(project.startDate)),
+    end_date: emptyToNull(toSupabaseDateString(project.endDate)),
     description: emptyToNull(project.description),
     apartment_number: emptyToNull(project.apartmentNumber),
     location: emptyToNull(project.location),
@@ -2409,9 +2406,12 @@ function assignmentRowToSupabase(
   resolvedDocumentId: string | null = null,
   resolvedProjectId: string | null = null
 ): GenericSupabaseRow {
+  const localAssignmentId = `${documentId}:${projectId ?? "unassigned"}`;
   return {
+    id: createBrowserUuid(),
     document_id: resolvedDocumentId || (isUuid(documentId) ? documentId : null),
     project_id: resolvedProjectId || (projectId && isUuid(projectId) ? projectId : null),
+    local_assignment_id: localAssignmentId,
     local_document_id: documentId,
     local_project_id: projectId,
     metadata: {
@@ -2656,6 +2656,10 @@ async function insertRowAdaptive(
     if (!error) return data as GenericSupabaseRow;
 
     const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && isImportIdentityColumn(missingColumn)) {
+      throw new Error(formatMissingImportColumnError(table, missingColumn, error));
+    }
+
     if (missingColumn && !requiredColumns.includes(missingColumn) && missingColumn in row) {
       console.warn(`[Supabase Import] Optionale Spalte ${table}.${missingColumn} existiert nicht und wird ausgelassen.`, { row, error });
       const { [missingColumn]: _removed, ...nextRow } = row;
@@ -2668,6 +2672,39 @@ async function insertRowAdaptive(
   }
 
   throw new Error(`Supabase-${table}-Datensatz konnte nicht gespeichert werden: zu viele Schema-Anpassungen.`);
+}
+
+async function updateObjectRowAdaptive(
+  supabase: SupabaseClient,
+  objectId: string,
+  originalRow: GenericSupabaseRow
+): Promise<GenericSupabaseRow> {
+  let row = { ...originalRow };
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const { data, error } = await supabase
+      .from("objects")
+      .update(row)
+      .eq("id", objectId)
+      .select("*")
+      .single();
+
+    if (!error) return data as GenericSupabaseRow;
+
+    const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && isImportIdentityColumn(missingColumn)) {
+      throw new Error(formatMissingImportColumnError("objects", missingColumn, error));
+    }
+    if (missingColumn && missingColumn in row) {
+      console.warn(`[Supabase Import] Optionale Spalte objects.${missingColumn} existiert nicht und wird beim Update ausgelassen.`, { row, error });
+      const { [missingColumn]: _removed, ...nextRow } = row;
+      row = nextRow;
+      continue;
+    }
+
+    throw new Error(`Supabase-Objekt konnte nicht aktualisiert werden: ${formatSupabaseError(error)}`);
+  }
+
+  throw new Error("Supabase-Objekt konnte nicht aktualisiert werden: zu viele Schema-Anpassungen.");
 }
 
 async function resolveSupabaseIdByLocalId(
@@ -2684,6 +2721,11 @@ async function resolveSupabaseIdByLocalId(
     .eq(localColumn, value)
     .maybeSingle();
   if (error) {
+    const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && isImportIdentityColumn(missingColumn)) {
+      console.error(`[Supabase] ${table}.${localColumn} fehlt fuer Import-Zuordnung.`, { value, error });
+      throw new Error(formatMissingImportColumnError(table, missingColumn, error));
+    }
     console.warn(`[Supabase] ${table}.${localColumn} konnte nicht fuer Zuordnung aufgeloest werden.`, { value, error });
     return null;
   }
@@ -2727,6 +2769,9 @@ async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: 
     });
 
     const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && isImportIdentityColumn(missingColumn)) {
+      throw new Error(formatMissingImportColumnError("documents", missingColumn, error));
+    }
     if (missingColumn && missingColumn !== "object_id" && missingColumn in row) {
       console.warn(`[Supabase Dokumentimport] Optionale Spalte documents.${missingColumn} existiert nicht und wird ausgelassen.`, { row, error });
       const { [missingColumn]: _removed, ...nextRow } = row;
@@ -2788,6 +2833,9 @@ async function updateDocumentRowAdaptive(
     });
 
     const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && isImportIdentityColumn(missingColumn)) {
+      throw new Error(formatMissingImportColumnError("documents", missingColumn, error));
+    }
     if (missingColumn && missingColumn !== "object_id" && missingColumn in row) {
       console.warn(`[Supabase Dokumentimport] Optionale Spalte documents.${missingColumn} existiert nicht und wird beim UPDATE ausgelassen.`, { row, error });
       const { [missingColumn]: _removed, ...nextRow } = row;
@@ -2803,6 +2851,23 @@ async function updateDocumentRowAdaptive(
 
 function extractMissingColumn(message: string): string | null {
   return message.match(/'([^']+)'\s+column/i)?.[1] ?? message.match(/column\s+"([^"]+)"/i)?.[1] ?? null;
+}
+
+function isImportIdentityColumn(column: string): boolean {
+  return column.startsWith("local_") || column.startsWith("source_");
+}
+
+function formatMissingImportColumnError(
+  table: string,
+  column: string,
+  error: { code?: string | null; message?: string; details?: string | null; hint?: string | null }
+): string {
+  return [
+    `Supabase Import abgebrochen: public.${table}.${column} fehlt im Schema Cache.`,
+    `Bitte zuerst supabase/fix-import-local-id-columns.sql im Supabase SQL Editor ausfuehren.`,
+    "Danach App neu laden; falls der Fehler bleibt, Supabase/PostgREST Schema Cache bzw. Vercel Deployment neu laden.",
+    `Supabase Fehler: ${formatSupabaseError(error)}`
+  ].join(" ");
 }
 
 function documentDuplicateKey(row: GenericSupabaseRow): string {
@@ -2869,6 +2934,25 @@ function unwrapTextField(field: { value: unknown } | null | undefined): string {
 function emptyToNull(value: string | undefined): string | null {
   const next = value?.trim() ?? "";
   return next ? next : null;
+}
+
+function toSupabaseDateString(value: string | undefined): string {
+  const raw = value?.trim() ?? "";
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const german = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (german) {
+    const day = german[1].padStart(2, "0");
+    const month = german[2].padStart(2, "0");
+    return `${german[3]}-${month}-${day}`;
+  }
+  const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slash) {
+    const day = slash[1].padStart(2, "0");
+    const month = slash[2].padStart(2, "0");
+    return `${slash[3]}-${month}-${day}`;
+  }
+  return raw;
 }
 
 function stringValue(value: unknown): string {
