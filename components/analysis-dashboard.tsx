@@ -456,7 +456,7 @@ export function AnalysisDashboard() {
   const auth = useAuth();
   const canEdit = auth.canEdit;
   const canAdmin = auth.canAdmin;
-  const localDocumentBackfillAttemptedRef = useRef(false);
+  const localDataBackfillAttemptedRef = useRef(false);
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("objects");
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
@@ -654,26 +654,25 @@ export function AnalysisDashboard() {
         assignments: supabaseAssignmentCount > 0 ? "Supabase" : "localStorage fallback",
         objectImages: supabaseImageCount > 0 ? "Supabase" : "localStorage fallback"
       });
-      if (
+      const shouldBackfillLocalData =
         canEdit &&
         supabaseActive &&
-        localDocuments.length > 0 &&
-        supabaseDocuments.documents.length < localDocuments.length &&
-        !localDocumentBackfillAttemptedRef.current
-      ) {
-        localDocumentBackfillAttemptedRef.current = true;
-        console.log("[Supabase Backfill] Lokale Dokumente werden einmalig nach Supabase synchronisiert", {
-          localDocuments: localDocuments.length,
-          supabaseDocuments: supabaseDocuments.documents.length
+        !localDataBackfillAttemptedRef.current &&
+        (
+          localObjects.length > supabaseObjects.length ||
+          localProjects.length > supabaseProjects.length ||
+          localDocuments.length > supabaseDocuments.documents.length
+        );
+      if (shouldBackfillLocalData) {
+        localDataBackfillAttemptedRef.current = true;
+        void backfillLocalDataToSupabase({
+          localObjects,
+          localDocuments,
+          localProjects,
+          supabaseObjectsCount: supabaseObjects.length,
+          supabaseProjectsCount: supabaseProjects.length,
+          supabaseDocumentsCount: supabaseDocuments.documents.length
         });
-        importDocumentsAndCostItemsToSupabase(localDocuments)
-          .then((summary) => {
-            console.log("[Supabase Backfill] Lokale Dokumente synchronisiert", summary);
-            return loadSupabaseObjectData();
-          })
-          .catch((backfillError) => {
-            console.error("[Supabase Backfill] Lokale Dokumente konnten nicht synchronisiert werden", backfillError);
-          });
       }
       if (hasSupabaseAppData) {
         const nextObjects = supabaseObjects.length > 0
@@ -712,6 +711,61 @@ export function AnalysisDashboard() {
     } catch (error) {
       console.error("[Supabase] Daten konnten nicht geladen werden:", error);
       setMessage(error instanceof Error ? error.message : "Supabase-Daten konnten nicht geladen werden.");
+    }
+  }
+
+  async function backfillLocalDataToSupabase({
+    localObjects,
+    localDocuments,
+    localProjects,
+    supabaseObjectsCount,
+    supabaseProjectsCount,
+    supabaseDocumentsCount
+  }: {
+    localObjects: ObjectRecord[];
+    localDocuments: ObjectAnalysis[];
+    localProjects: ProjectRecord[];
+    supabaseObjectsCount: number;
+    supabaseProjectsCount: number;
+    supabaseDocumentsCount: number;
+  }) {
+    try {
+      const importObjects = buildObjectsFromStoredData(localObjects, localDocuments, localProjects, {
+        deriveFallbackObjects: true
+      });
+      console.log("[Supabase Backfill] Lokale Daten werden einmalig nach Supabase synchronisiert", {
+        localObjects: localObjects.length,
+        importObjects: importObjects.length,
+        localProjects: localProjects.length,
+        localDocuments: localDocuments.length,
+        supabaseObjects: supabaseObjectsCount,
+        supabaseProjects: supabaseProjectsCount,
+        supabaseDocuments: supabaseDocumentsCount
+      });
+
+      if (importObjects.length > 0) {
+        const objectSummary = await importMissingObjectsToSupabase(importObjects);
+        console.log("[Supabase Backfill] Objekte synchronisiert", objectSummary);
+      }
+
+      if (localProjects.length > 0) {
+        const projectResults = await Promise.allSettled(localProjects.map((project) => upsertSupabaseProject(project)));
+        console.log("[Supabase Backfill] Projekte synchronisiert", {
+          total: localProjects.length,
+          fulfilled: projectResults.filter((result) => result.status === "fulfilled").length,
+          rejected: projectResults.filter((result) => result.status === "rejected").map((result) => result.reason)
+        });
+      }
+
+      if (localDocuments.length > 0) {
+        const documentSummary = await importDocumentsAndCostItemsToSupabase(localDocuments);
+        console.log("[Supabase Backfill] Dokumente synchronisiert", documentSummary);
+      }
+
+      await loadSupabaseObjectData();
+    } catch (backfillError) {
+      console.error("[Supabase Backfill] Lokale Daten konnten nicht synchronisiert werden", backfillError);
+      setMessage(backfillError instanceof Error ? `Lokale Daten konnten nicht nach Supabase synchronisiert werden: ${backfillError.message}` : "Lokale Daten konnten nicht nach Supabase synchronisiert werden.");
     }
   }
 
