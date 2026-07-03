@@ -30,6 +30,102 @@ body {
   font-family: "Segoe UI", Arial, Helvetica, sans-serif;
 }
 
+.authShell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background:
+    linear-gradient(135deg, rgba(7, 28, 52, 0.92), rgba(70, 99, 137, 0.78)),
+    var(--bg);
+}
+
+.authPanel {
+  width: min(100%, 520px);
+}
+
+.authBrand {
+  margin-bottom: 18px;
+  color: #fff;
+}
+
+.authBrand strong,
+.authBrand span {
+  display: block;
+}
+
+.authBrand strong {
+  font-size: 28px;
+  letter-spacing: 0.16em;
+}
+
+.authBrand span {
+  color: rgba(255, 255, 255, 0.78);
+  font-weight: 700;
+}
+
+.authCard {
+  display: grid;
+  gap: 16px;
+  border: 1px solid rgba(220, 226, 232, 0.9);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 28px 70px rgba(7, 28, 52, 0.24);
+  padding: 30px;
+}
+
+.authCard h1 {
+  color: var(--navy-dark);
+}
+
+.authField {
+  display: grid;
+  gap: 7px;
+  color: var(--navy-dark);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.authField input {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+}
+
+.authLinks {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.authLinks button {
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--navy);
+  padding: 0;
+}
+
+.authMessage {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+
+.authMessageError {
+  border-color: #ffd2c4;
+  background: var(--orange-soft);
+  color: #9b2d12;
+}
+
+.authMessageSuccess {
+  border-color: #cfe8d5;
+  background: var(--green-soft);
+  color: #236438;
+}
+
 a {
   color: inherit;
 }
@@ -189,6 +285,87 @@ button:disabled {
 
 .sideNote p {
   margin-bottom: 0;
+}
+
+.adminPanel {
+  display: grid;
+  gap: 18px;
+}
+
+.adminTabs,
+.adminFilters,
+.adminActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.adminTabs button.active {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fff;
+}
+
+.adminStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.adminFilters input,
+.adminActions select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 10px;
+}
+
+.adminBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.adminBadge-role-owner {
+  background: var(--navy-dark);
+  color: #fff;
+}
+
+.adminBadge-role-admin {
+  background: var(--navy);
+  color: #fff;
+}
+
+.adminBadge-role-editor {
+  background: var(--orange-soft);
+  color: #b5431f;
+}
+
+.adminBadge-role-viewer {
+  background: var(--soft);
+  color: var(--navy-dark);
+}
+
+.adminBadge-status-active {
+  background: var(--green-soft);
+  color: #236438;
+}
+
+.adminBadge-status-pending {
+  background: #fff8e8;
+  color: #8b5a00;
+}
+
+.adminBadge-status-blocked {
+  background: #ffeceb;
+  color: #a62a22;
 }
 
 .content {
@@ -5387,5 +5564,340 @@ video {
   .dashboardMapGrid .leafletCard {
     height: 340px;
     min-height: 340px;
+  }
+}
+
+/* Quartalsbericht-Generator */
+.quarterlyReports {
+  display: grid;
+  gap: 16px;
+}
+
+.quarterlySetup {
+  margin-bottom: 0;
+}
+
+.quarterlyForm {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.quarterlyForm select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.quarterlyActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
+.quarterlyFileSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quarterlyFileSummary span {
+  border-radius: 999px;
+  background: #f1f4f7;
+  padding: 7px 10px;
+}
+
+.quarterlyStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.quarterlyStatus {
+  display: grid;
+  gap: 8px;
+  min-height: 84px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.quarterlyStatus span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.quarterlyStatus strong {
+  color: #2c333a;
+  font-size: 18px;
+}
+
+.quarterlyStatus-done {
+  border-color: rgba(79, 155, 98, 0.35);
+  background: var(--green-soft);
+}
+
+.quarterlyStatus-warning {
+  border-color: rgba(255, 110, 66, 0.35);
+  background: var(--orange-soft);
+}
+
+.quarterlyLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+.quarterlyPreviewTable table {
+  min-width: 980px;
+}
+
+.quarterlyPreviewTable td small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.quarterlyReview {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 0;
+}
+
+.quarterlySectionList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quarterlySectionList span {
+  border-radius: 999px;
+  background: #eef2f6;
+  color: #24364d;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+@media (max-width: 1180px) {
+  .quarterlyForm,
+  .quarterlyStatusGrid,
+  .quarterlyLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .quarterlyActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.quarterlyProduct {
+  display: grid;
+  gap: 16px;
+}
+
+.quarterlyProductHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.045);
+  padding: 18px;
+}
+
+.quarterlyProductHeader h2 {
+  font-size: 24px;
+}
+
+.quarterlyGeneratorGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 16px;
+  align-items: start;
+}
+
+.quarterlyWorkflowPanel,
+.quarterlyStatusPanel,
+.quarterlyPreviewPanel {
+  margin-bottom: 0;
+}
+
+.quarterlyWorkflowSteps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.quarterlyWorkflowStep {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-height: 124px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.quarterlyWorkflowStep strong,
+.quarterlyStatusCard span,
+.quarterlyFileList strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.quarterlyWorkflowStep span {
+  color: #344054;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.quarterlyWorkflowStep em {
+  align-self: end;
+  color: var(--navy);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.quarterlyWorkflowStep-done,
+.quarterlyStatusCard-done {
+  border-color: rgba(79, 155, 98, 0.35);
+  background: var(--green-soft);
+}
+
+.quarterlyWorkflowStep-warning,
+.quarterlyStatusCard-warning {
+  border-color: rgba(255, 110, 66, 0.35);
+  background: var(--orange-soft);
+}
+
+.quarterlyWorkflowStep-error,
+.quarterlyStatusCard-error {
+  border-color: rgba(185, 28, 28, 0.28);
+  background: #fff1f2;
+}
+
+.quarterlyInputGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.quarterlyInputGrid select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.quarterlyStatusPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.quarterlyStatusCards,
+.quarterlyFileList,
+.quarterlyReviewList,
+.quarterlyLog {
+  display: grid;
+  gap: 8px;
+}
+
+.quarterlyStatusCard,
+.quarterlyFileList span,
+.quarterlyReviewItem,
+.quarterlyLog span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.quarterlyStatusCard strong,
+.quarterlyFileList span {
+  display: block;
+  color: #2c333a;
+  font-size: 14px;
+}
+
+.quarterlyFileList strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.quarterlyReviewItem {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.quarterlyReviewItem strong {
+  font-size: 12px;
+}
+
+.quarterlyReviewItem span,
+.quarterlyLog span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.quarterlyReviewItem-success {
+  background: var(--green-soft);
+}
+
+.quarterlyReviewItem-warning {
+  background: var(--orange-soft);
+}
+
+.quarterlyReviewItem-error {
+  background: #fff1f2;
+}
+
+.quarterlyLog {
+  max-height: 190px;
+  overflow: auto;
+}
+
+@media (max-width: 1400px) {
+  .quarterlyWorkflowSteps {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .quarterlyProductHeader,
+  .quarterlyGeneratorGrid,
+  .quarterlyInputGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .quarterlyProductHeader {
+    flex-direction: column;
   }
 }

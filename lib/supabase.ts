@@ -1,11 +1,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { emptyField } from "./analysis-state";
-import type { StoredObjectRecord, StoredProjectRecord } from "./storage";
-import type { CostAllocation, MeasureCluster, MeasureDetail, ObjectAnalysis } from "../types/analysis";
+import { getDocuments, type StoredObjectRecord, type StoredProjectRecord } from "./storage";
+import type { CostAllocation, FieldSource, MeasureCluster, MeasureDetail, ObjectAnalysis } from "../types/analysis";
 
 let browserSupabaseClient: SupabaseClient | null = null;
 let runtimeSupabaseConfig: { supabaseUrl: string; supabaseAnonKey: string } | null = null;
 let runtimeSupabaseStatus: SupabaseRuntimeConfigStatus | null = null;
+const attemptedAutomaticDocumentRepairIds = new Set<string>();
 
 const SUPABASE_URL_ENV_NAME = "NEXT_PUBLIC_SUPABASE_URL";
 const SUPABASE_ANON_KEY_ENV_NAME = "NEXT_PUBLIC_SUPABASE_ANON_KEY";
@@ -22,7 +23,43 @@ export interface SupabaseRuntimeConfigStatus {
   error: string | null;
 }
 
-async function getSupabaseClientAsync(): Promise<SupabaseClient | null> {
+export type UserRole = "owner" | "admin" | "editor" | "viewer";
+export type UserStatus = "pending" | "active" | "blocked";
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  status: UserStatus;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string;
+}
+
+export interface ActivityLogEntry {
+  id: string;
+  userId: string | null;
+  userEmail: string;
+  action: string;
+  area: string;
+  targetType: string;
+  targetId: string | null;
+  targetLabel: string;
+  details: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ActivityLogInput {
+  action: string;
+  area: string;
+  targetType?: string;
+  targetId?: string | null;
+  targetLabel?: string;
+  details?: Record<string, unknown>;
+}
+
+export async function getSupabaseClientAsync(): Promise<SupabaseClient | null> {
   const runtimeConfig = await getRuntimeSupabaseConfig();
   if (!runtimeConfig) return null;
   if (!browserSupabaseClient) {
@@ -204,6 +241,127 @@ export async function runSupabaseConnectionTest(): Promise<void> {
   console.log("[Supabase] document_types", documentTypesResult.data ?? []);
 }
 
+export async function getCurrentSupabaseProfile(): Promise<UserProfile | null> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return null;
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData.user) return null;
+  const user = authData.user;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[Supabase Auth] Profil konnte nicht geladen werden", error);
+    throw new Error(`Profil konnte nicht geladen werden: ${formatSupabaseError(error)}`);
+  }
+
+  if (data) return profileFromSupabase(data as GenericSupabaseRow, user.email ?? "");
+
+  const email = user.email ?? "";
+  const fullName = String(user.user_metadata?.full_name ?? user.user_metadata?.name ?? email.split("@")[0] ?? "");
+  const insertRow: GenericSupabaseRow = {
+    id: user.id,
+    email,
+    full_name: fullName,
+    role: "viewer",
+    status: "pending",
+    last_login_at: new Date().toISOString()
+  };
+  const { data: created, error: createError } = await supabase
+    .from("profiles")
+    .insert(insertRow)
+    .select("*")
+    .single();
+  if (createError) {
+    console.error("[Supabase Auth] Pending-Profil konnte nicht erstellt werden", { insertRow, error: createError });
+    throw new Error(`Profil konnte nicht erstellt werden: ${formatSupabaseError(createError)}`);
+  }
+  return profileFromSupabase(created as GenericSupabaseRow, email);
+}
+
+export async function touchCurrentProfileLogin(): Promise<void> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return;
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return;
+  const { error } = await supabase
+    .from("profiles")
+    .update({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", data.user.id);
+  if (error) console.warn("[Supabase Auth] last_login_at konnte nicht aktualisiert werden", error);
+}
+
+export async function loadUserProfiles(): Promise<UserProfile[]> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`Nutzer konnten nicht geladen werden: ${formatSupabaseError(error)}`);
+  return (data ?? []).map((row) => profileFromSupabase(row as GenericSupabaseRow));
+}
+
+export async function updateUserProfileAdmin(
+  profileId: string,
+  update: Partial<Pick<UserProfile, "role" | "status" | "fullName">>
+): Promise<UserProfile> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) throw new Error(`Nutzer konnte nicht aktualisiert werden: ${formatMissingSupabaseEnvironment()}`);
+  const row: GenericSupabaseRow = {
+    updated_at: new Date().toISOString()
+  };
+  if (update.role) row.role = update.role;
+  if (update.status) row.status = update.status;
+  if (update.fullName !== undefined) row.full_name = update.fullName;
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(row)
+    .eq("id", profileId)
+    .select("*")
+    .single();
+  if (error) throw new Error(`Nutzer konnte nicht aktualisiert werden: ${formatSupabaseError(error)}`);
+  return profileFromSupabase(data as GenericSupabaseRow);
+}
+
+export async function deactivateUserProfile(profileId: string): Promise<UserProfile> {
+  return updateUserProfileAdmin(profileId, { status: "blocked" });
+}
+
+export async function loadActivityLogs(options: { limit?: number } = {}): Promise<ActivityLogEntry[]> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("activity_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(options.limit ?? 200);
+  if (error) throw new Error(`Aktivitaeten konnten nicht geladen werden: ${formatSupabaseError(error)}`);
+  return (data ?? []).map((row) => activityLogFromSupabase(row as GenericSupabaseRow));
+}
+
+export async function logActivity(input: ActivityLogInput): Promise<void> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return;
+  const { data } = await supabase.auth.getUser();
+  const user = data.user;
+  const row: GenericSupabaseRow = {
+    user_id: user?.id ?? null,
+    user_email: user?.email ?? "",
+    action: input.action,
+    area: input.area,
+    target_type: input.targetType ?? "",
+    target_id: input.targetId ?? null,
+    target_label: input.targetLabel ?? "",
+    details: input.details ?? {}
+  };
+  const { error } = await supabase.from("activity_logs").insert(row);
+  if (error) console.warn("[Supabase Activity] Aktivitaet konnte nicht gespeichert werden", { row, error });
+}
+
 type SupabaseObjectRow = {
   id?: string | number | null;
   object_number?: string | null;
@@ -248,6 +406,21 @@ export interface SupabaseDocumentLoadResult {
   appDocumentCount: number;
   measureDetailsCount: number;
   clustersCount: number;
+  autoRepair: SupabaseDocumentAutoRepairSummary;
+}
+
+export interface SupabaseDocumentAutoRepairSummary {
+  enabled: boolean;
+  loaded: number;
+  incomplete: number;
+  repaired: number;
+  skipped: number;
+  failed: number;
+  details: Array<{
+    documentId: string;
+    status: "repaired" | "skipped" | "failed";
+    reason: string;
+  }>;
 }
 
 export interface SupabaseOnlineData {
@@ -545,7 +718,8 @@ export async function loadSupabaseOnlineData(): Promise<SupabaseOnlineData> {
   return { objects, documents, projects, assignments };
 }
 
-export async function loadSupabaseDocumentsWithCostItems(): Promise<SupabaseDocumentLoadResult> {
+export async function loadSupabaseDocumentsWithCostItems(options: { autoRepair?: boolean } = {}): Promise<SupabaseDocumentLoadResult> {
+  const autoRepairEnabled = options.autoRepair !== false;
   const supabase = await getSupabaseClientAsync();
   if (!supabase) {
     return {
@@ -554,7 +728,8 @@ export async function loadSupabaseDocumentsWithCostItems(): Promise<SupabaseDocu
       supabaseCostItemCount: 0,
       appDocumentCount: 0,
       measureDetailsCount: 0,
-      clustersCount: 0
+      clustersCount: 0,
+      autoRepair: emptyDocumentAutoRepairSummary(0, autoRepairEnabled)
     };
   }
 
@@ -567,6 +742,23 @@ export async function loadSupabaseDocumentsWithCostItems(): Promise<SupabaseDocu
   if (objectsResult.error) throw new Error(`Supabase-Objekte konnten nicht geladen werden: ${formatSupabaseError(objectsResult.error)}`);
   if (documentsResult.error) throw new Error(`Supabase-Dokumente konnten nicht geladen werden: ${formatSupabaseError(documentsResult.error)}`);
   if (costItemsResult.error) throw new Error(`Supabase-Kostenpositionen konnten nicht geladen werden: ${formatSupabaseError(costItemsResult.error)}`);
+
+  let autoRepair = emptyDocumentAutoRepairSummary(documentsResult.data?.length ?? 0, autoRepairEnabled);
+  if (autoRepairEnabled) {
+    autoRepair = await autoRepairIncompleteDocumentRows(
+      supabase,
+      documentsResult.data as GenericSupabaseRow[] | null,
+      objectsResult.data as GenericSupabaseRow[] | null
+    );
+    if (autoRepair.repaired > 0) {
+      console.log("[Supabase AutoRepair] Reparaturen abgeschlossen, Dokumentliste wird neu geladen.", autoRepair);
+      const reloaded = await loadSupabaseDocumentsWithCostItems({ autoRepair: false });
+      return {
+        ...reloaded,
+        autoRepair
+      };
+    }
+  }
 
   const objectById = new Map<string, GenericSupabaseRow>();
   (objectsResult.data ?? []).forEach((row) => {
@@ -616,7 +808,8 @@ export async function loadSupabaseDocumentsWithCostItems(): Promise<SupabaseDocu
     supabaseCostItemCount: costItemsResult.data?.length ?? 0,
     appDocumentCount: appDocuments.length,
     measureDetailsCount: appDocuments.reduce((count, document) => count + (document.measureDetails?.length ?? 0), 0),
-    clustersCount: appDocuments.reduce((count, document) => count + document.clusters.length, 0)
+    clustersCount: appDocuments.reduce((count, document) => count + document.clusters.length, 0),
+    autoRepair
   };
 }
 
@@ -701,7 +894,9 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
   const sampleDocument = documents.find((document) => normalizeObjectNumber(unwrapTextField(document.objectNumber))) ?? documents[0] ?? null;
   if (sampleDocument) {
     const sampleObject = resolveSupabaseObjectForDocument(sampleDocument, objectsByNumber, supabaseObjects);
-    const sampleDocumentRow = sampleObject.objectRow ? documentRowToSupabase(sampleDocument, stringValue(sampleObject.objectRow.id), sampleObject.objectNumber, documentTypeIdByName, companyIdByName) : null;
+    const sampleDocumentTypeId = documentTypeIdByName.get(normalizeLookupKey(unwrapTextField(sampleDocument.documentType))) ?? null;
+    const sampleCompanyId = companyIdByName.get(normalizeLookupKey(unwrapTextField(sampleDocument.provider))) ?? null;
+    const sampleDocumentRow = sampleObject.objectRow ? documentRowToSupabase(sampleDocument, stringValue(sampleObject.objectRow.id), sampleObject.objectNumber, sampleDocumentTypeId, sampleCompanyId) : null;
     console.log("[Supabase Dokumentimport] Beispiel lokales Dokument", sampleDocument);
     console.log("[Supabase Dokumentimport] Beispiel documents-Datensatz", sampleDocumentRow);
     console.log("[Supabase Dokumentimport] Beispiel cost_items-Datensaetze", sampleDocumentRow ? costItemRowsToSupabase(sampleDocument, stringValue(sampleObject.objectRow?.id), "document-id", tradeIdByName) : []);
@@ -724,15 +919,28 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
     }
 
     const objectId = stringValue(resolvedObject.objectRow.id);
-    const documentRow = documentRowToSupabase(document, objectId, resolvedObject.objectNumber, documentTypeIdByName, companyIdByName);
+    const documentTypeId = await ensureLookupId(supabase, "document_types", unwrapTextField(document.documentType), documentTypeIdByName, ["name"]);
+    const companyId = await ensureLookupId(supabase, "companies", unwrapTextField(document.provider), companyIdByName, ["name", "company_name"]);
+    const documentRow = documentRowToSupabase(document, objectId, resolvedObject.objectNumber, documentTypeId, companyId);
     const documentKey = documentDuplicateKey(documentRow);
     let supabaseDocumentId = documentIdByKey.get(documentKey) ?? null;
 
     try {
+      console.log("[Supabase Dokumentimport] Persistenzobjekt vor UPSERT/INSERT", {
+        localDocumentId: document.id,
+        objectId,
+        objectNumber: resolvedObject.objectNumber,
+        extractedFields: summarizeDocumentForPersistence(document),
+        documentRow
+      });
       if (existingDocumentKeys.has(documentKey) && supabaseDocumentId) {
-        summary.skipped += 1;
-        summary.skippedDuplicate += 1;
-        logSkippedSupabaseDocument(document, `Duplikat erkannt (${documentKey}).`, resolvedObject);
+        const updatedDocument = await updateDocumentRowAdaptive(supabase, supabaseDocumentId, documentRow);
+        supabaseDocumentId = stringValue(updatedDocument.id) || supabaseDocumentId;
+        console.log("[Supabase Dokumentimport] Bestehendes Dokument per UPSERT aktualisiert", {
+          documentKey,
+          supabaseDocumentId,
+          supabaseResponse: updatedDocument
+        });
       } else {
         const insertedDocument = await insertDocumentRowAdaptive(supabase, documentRow);
         supabaseDocumentId = stringValue(insertedDocument.id);
@@ -770,8 +978,8 @@ function objectAnalysisFromSupabase(
 ): ObjectAnalysis {
   const documentId = stringValue(documentRow.local_document_id || documentRow.id || `supabase-document-${Date.now()}`);
   const sourceDocumentId = stringValue(documentRow.source_document_id || documentRow.file_name || documentRow.document_name || documentRow.name || documentId);
-  const grossAmount = numberValue(documentRow.gross_amount ?? documentRow.amount ?? documentRow.cost_gross) ?? sumNumbers(costItems.map((item) =>
-    numberValue(item.gross_amount ?? item.amount ?? item.cost_gross)
+  const grossAmount = numberValue(documentRow.total_amount ?? documentRow.gross_amount ?? documentRow.amount ?? documentRow.cost_gross) ?? sumNumbers(costItems.map((item) =>
+    numberValue(item.total_amount ?? item.gross_amount ?? item.amount ?? item.cost_gross)
   ));
   const clusters = costItems.map((item, index) => costItemRowToMeasureItem(item, documentId, sourceDocumentId, index));
   const measureDetails = costItems.map((item) => costItemRowToMeasureDetail(item));
@@ -785,7 +993,7 @@ function objectAnalysisFromSupabase(
     documentType: textField(stringValue(documentRow.document_type || documentRow.type)),
     installmentNumber: textField(stringValue(readMetadataValue(documentRow, "installmentNumber"))),
     projectType: textField(stringValue(readMetadataValue(documentRow, "projectType"))),
-    provider: textField(stringValue(documentRow.provider)),
+    provider: textField(stringValue(documentRow.supplier || documentRow.provider || documentRow.company_name)),
     year: numberField(yearFromDate(stringValue(documentRow.document_date))),
     fund: textField(stringValue(objectRow.fund)),
     objectNumber: textField(stringValue(documentRow.object_number || objectRow.object_number)),
@@ -799,8 +1007,8 @@ function objectAnalysisFromSupabase(
     livingAreaSqm: numberField(numberValue(documentRow.living_area_sqm)),
     totalAreaSqm: numberField(numberValue(objectRow.total_area)),
     renovatedAreaSqm: numberField(numberValue(objectRow.renovated_area)),
-    netCost: numberField(numberValue(documentRow.net_amount)),
-    vatCost: numberField(numberValue(documentRow.vat_amount)),
+    netCost: numberField(numberValue(documentRow.net_amount ?? documentRow.subtotal_amount)),
+    vatCost: numberField(numberValue(documentRow.vat_amount ?? documentRow.tax_amount)),
     totalCost: numberField(grossAmount),
     costPerApartment: numberField(null),
     costPerSqm: numberField(null),
@@ -1057,13 +1265,11 @@ function documentRowToSupabase(
   document: ObjectAnalysis,
   objectId: string,
   resolvedObjectNumber: string | undefined,
-  documentTypeIdByName: Map<string, string>,
-  companyIdByName: Map<string, string>
+  documentTypeId: string | null,
+  companyId: string | null
 ): GenericSupabaseRow {
   const documentTypeName = unwrapTextField(document.documentType);
   const companyName = unwrapTextField(document.provider);
-  const documentTypeId = documentTypeIdByName.get(normalizeLookupKey(documentTypeName)) ?? null;
-  const companyId = companyIdByName.get(normalizeLookupKey(companyName)) ?? null;
   console.log("[Supabase Dokumentimport] document_type_id Mapping", {
     documentTypeName: documentTypeName || "k.A.",
     documentTypeId: documentTypeId ?? "NULL"
@@ -1072,35 +1278,64 @@ function documentRowToSupabase(
     companyName: companyName || "k.A.",
     companyId: companyId ?? "NULL"
   });
-  return {
+  const row: GenericSupabaseRow = {
     object_id: objectId,
     document_type_id: documentTypeId,
     company_id: companyId,
     local_document_id: document.id,
     source_document_id: document.sourceDocumentIds[0] ?? document.id,
     document_number: emptyToNull(unwrapTextField(document.documentNumber)),
+    number: emptyToNull(unwrapTextField(document.documentNumber)),
     file_name: emptyToNull(document.sourceDocumentIds[0] ?? document.id),
     document_name: emptyToNull(document.sourceDocumentIds[0] ?? unwrapTextField(document.documentNumber) ?? document.id),
     name: emptyToNull(document.sourceDocumentIds[0] ?? unwrapTextField(document.documentNumber) ?? document.id),
+    file_url: emptyToNull(firstDocumentSource(document).fileName),
     document_type: emptyToNull(documentTypeName),
     type: emptyToNull(documentTypeName),
     provider: emptyToNull(companyName),
+    supplier: emptyToNull(companyName),
     document_date: emptyToNull(unwrapTextField(document.documentDate)),
+    date: emptyToNull(unwrapTextField(document.documentDate)),
     object_number: emptyToNull(firstPresent(unwrapTextField(document.objectNumber), resolvedObjectNumber)),
     apartment_number: emptyToNull(unwrapTextField(document.apartmentNumber)),
     net_amount: document.netCost.value,
     vat_amount: document.vatCost.value,
     gross_amount: document.totalCost.value,
+    total_amount: document.totalCost.value,
+    amount: document.totalCost.value,
+    total_net_amount: document.netCost.value,
+    tax_amount: document.vatCost.value,
     confidence_score: document.confidenceScore.value,
+    analysis: buildDocumentAnalysisPayload(document),
     metadata: {
       localId: document.id,
+      objectId,
+      documentTypeId,
+      companyId,
+      supplier: companyName || null,
       projectType: unwrapTextField(document.projectType),
       installmentNumber: unwrapTextField(document.installmentNumber),
       dataQuality: unwrapTextField(document.dataQuality),
       missingInformation: document.missingInformation.value ?? [],
-      sourceDocumentIds: document.sourceDocumentIds
+      sourceDocumentIds: document.sourceDocumentIds,
+      analysis: buildDocumentAnalysisPayload(document)
     }
   };
+  console.log("[Supabase Dokumentimport] Objekt wird gespeichert", {
+    localDocumentId: document.id,
+    objectId,
+    objectNumber: row.object_number,
+    documentTypeName,
+    documentTypeId: documentTypeId ?? "NULL",
+    companyName: companyName || "k.A.",
+    companyId: companyId ?? "NULL",
+    documentNumber: row.document_number,
+    documentDate: row.document_date,
+    totalAmount: row.total_amount,
+    fileUrl: row.file_url
+  });
+  console.log("[Supabase Dokumentimport] JSON an Supabase documents", JSON.stringify(row, null, 2));
+  return row;
 }
 
 function costItemRowsToSupabase(
@@ -1158,6 +1393,368 @@ function costItemRowsToSupabase(
       }
     };
   });
+}
+
+async function autoRepairIncompleteDocumentRows(
+  supabase: SupabaseClient,
+  rawDocuments: GenericSupabaseRow[] | null,
+  rawObjects: GenericSupabaseRow[] | null
+): Promise<SupabaseDocumentAutoRepairSummary> {
+  const documentRows = rawDocuments ?? [];
+  const summary = emptyDocumentAutoRepairSummary(documentRows.length, true);
+  const incompleteRows = documentRows.filter(isIncompleteDocumentRow);
+  summary.incomplete = incompleteRows.length;
+
+  console.log("[Supabase AutoRepair] Automatische Dokument-Reparatur aktiv", {
+    loaded: summary.loaded,
+    incomplete: summary.incomplete
+  });
+
+  if (!incompleteRows.length) return summary;
+
+  const localDocuments = getDocuments();
+  const localDocumentsByKey = buildLocalDocumentRepairIndex(localDocuments);
+  const objectById = new Map<string, GenericSupabaseRow>();
+  (rawObjects ?? []).forEach((row) => {
+    const id = stringValue(row.id);
+    if (id) objectById.set(id, row);
+  });
+
+  const [documentTypesResult, companiesResult] = await Promise.all([
+    supabase.from("document_types").select("*"),
+    supabase.from("companies").select("*")
+  ]);
+  const documentTypeIdByName = documentTypesResult.error
+    ? new Map<string, string>()
+    : buildLookupIdByName(documentTypesResult.data as GenericSupabaseRow[] | null, ["name", "label", "type", "title", "slug"]);
+  const companyIdByName = companiesResult.error
+    ? new Map<string, string>()
+    : buildLookupIdByName(companiesResult.data as GenericSupabaseRow[] | null, ["name", "company_name", "label", "title", "slug"]);
+
+  if (documentTypesResult.error) {
+    console.warn("[Supabase AutoRepair] document_types konnte nicht fuer Reparatur geladen werden", documentTypesResult.error);
+  }
+  if (companiesResult.error) {
+    console.warn("[Supabase AutoRepair] companies konnte nicht fuer Reparatur geladen werden", companiesResult.error);
+  }
+
+  for (const row of incompleteRows) {
+    const documentId = stringValue(row.id);
+    if (!documentId) {
+      summary.skipped += 1;
+      summary.details.push({ documentId: "k.A.", status: "skipped", reason: "Supabase Row hat keine id." });
+      continue;
+    }
+    if (attemptedAutomaticDocumentRepairIds.has(documentId)) {
+      summary.skipped += 1;
+      summary.details.push({ documentId, status: "skipped", reason: "Reparatur wurde in dieser Sitzung bereits versucht." });
+      continue;
+    }
+    attemptedAutomaticDocumentRepairIds.add(documentId);
+
+    const localDocument = findLocalDocumentForRepair(row, localDocumentsByKey);
+    if (!localDocument) {
+      const reason = "Keine passende lokale Analyse/Metadaten gefunden.";
+      console.warn("[Supabase AutoRepair] Dokument nicht reparierbar", { documentId, reason, row });
+      await markDocumentAutoRepairStatus(supabase, documentId, row, "not_repairable", reason);
+      summary.skipped += 1;
+      summary.details.push({ documentId, status: "skipped", reason });
+      continue;
+    }
+
+    const objectId = stringValue(row.object_id);
+    if (!objectId) {
+      const reason = "Keine object_id in Supabase Row vorhanden.";
+      console.warn("[Supabase AutoRepair] Dokument nicht reparierbar", { documentId, reason, row });
+      await markDocumentAutoRepairStatus(supabase, documentId, row, "not_repairable", reason);
+      summary.skipped += 1;
+      summary.details.push({ documentId, status: "skipped", reason });
+      continue;
+    }
+
+    try {
+      const objectRow = objectById.get(objectId);
+      const documentTypeId = await ensureLookupId(supabase, "document_types", unwrapTextField(localDocument.documentType), documentTypeIdByName, ["name"]);
+      const companyId = await ensureLookupId(supabase, "companies", unwrapTextField(localDocument.provider), companyIdByName, ["name", "company_name"]);
+      const repairRow = documentRowToSupabase(
+        localDocument,
+        objectId,
+        stringValue(objectRow?.object_number || row.object_number || unwrapTextField(localDocument.objectNumber)),
+        documentTypeId,
+        companyId
+      );
+      repairRow.metadata = {
+        ...(isRecord(row.metadata) ? row.metadata : {}),
+        ...(isRecord(repairRow.metadata) ? repairRow.metadata : {}),
+        autoRepair: {
+          status: "repaired",
+          repairedAt: new Date().toISOString(),
+          source: "localStorage analysis",
+          reason: incompleteDocumentReasons(row)
+        }
+      };
+      console.log("[Supabase AutoRepair] Reparatur wird ausgefuehrt", {
+        documentId,
+        reasons: incompleteDocumentReasons(row),
+        localDocument: summarizeDocumentForPersistence(localDocument),
+        repairRow
+      });
+      await updateDocumentRowAdaptive(supabase, documentId, repairRow);
+      summary.repaired += 1;
+      summary.details.push({ documentId, status: "repaired", reason: "Mit lokaler Analyse-Payload aktualisiert." });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Reparatur fehlgeschlagen.";
+      console.error("[Supabase AutoRepair] Dokument-Reparatur fehlgeschlagen", { documentId, reason, row });
+      summary.failed += 1;
+      summary.details.push({ documentId, status: "failed", reason });
+    }
+  }
+
+  console.log("[Supabase AutoRepair] Ergebnis", {
+    loaded: summary.loaded,
+    incomplete: summary.incomplete,
+    repaired: summary.repaired,
+    skipped: summary.skipped,
+    failed: summary.failed,
+    details: summary.details
+  });
+  return summary;
+}
+
+function emptyDocumentAutoRepairSummary(loaded: number, enabled: boolean): SupabaseDocumentAutoRepairSummary {
+  return {
+    enabled,
+    loaded,
+    incomplete: 0,
+    repaired: 0,
+    skipped: 0,
+    failed: 0,
+    details: []
+  };
+}
+
+function isIncompleteDocumentRow(row: GenericSupabaseRow): boolean {
+  return incompleteDocumentReasons(row).length > 0;
+}
+
+function incompleteDocumentReasons(row: GenericSupabaseRow): string[] {
+  const reasons: string[] = [];
+  if (!stringValue(row.document_number ?? row.number)) reasons.push("document_number fehlt");
+  if (numberValue(row.total_amount ?? row.gross_amount ?? row.amount ?? row.cost_gross) === null) reasons.push("total_amount fehlt");
+  if (!stringValue(row.file_url ?? row.file_name ?? row.document_name)) reasons.push("file_url/file_name fehlt");
+  if (!isRecord(row.analysis)) reasons.push("analysis fehlt");
+  if (!stringValue(row.supplier ?? row.provider ?? row.company_name)) reasons.push("supplier/provider fehlt");
+  if (!stringValue(row.document_type ?? row.type) && !stringValue(row.document_type_id)) reasons.push("document_type fehlt");
+  if (!stringValue(row.document_date ?? row.date)) reasons.push("document_date fehlt");
+  return reasons;
+}
+
+function buildLocalDocumentRepairIndex(documents: ObjectAnalysis[]): Map<string, ObjectAnalysis> {
+  const index = new Map<string, ObjectAnalysis>();
+  documents.forEach((document) => {
+    localDocumentRepairKeys(document).forEach((key) => {
+      const existing = index.get(key);
+      if (!existing || storedRepairDocumentCompletenessScore(document) > storedRepairDocumentCompletenessScore(existing)) {
+        index.set(key, document);
+      }
+    });
+  });
+  return index;
+}
+
+function findLocalDocumentForRepair(row: GenericSupabaseRow, index: Map<string, ObjectAnalysis>): ObjectAnalysis | null {
+  const keys = supabaseDocumentRepairKeys(row);
+  return keys.map((key) => index.get(key)).find(Boolean) ?? null;
+}
+
+function localDocumentRepairKeys(document: ObjectAnalysis): string[] {
+  return uniqueRepairKeys([
+    repairKey("local", document.id),
+    ...document.sourceDocumentIds.map((id) => repairKey("source", id)),
+    repairKey("number", unwrapTextField(document.documentNumber)),
+    repairKey("semantic", [
+      unwrapTextField(document.documentNumber),
+      unwrapTextField(document.objectNumber) || unwrapTextField(document.objectAddress),
+      unwrapTextField(document.provider),
+      unwrapTextField(document.documentDate),
+      stringValue(document.totalCost.value)
+    ].join("|"))
+  ]);
+}
+
+function supabaseDocumentRepairKeys(row: GenericSupabaseRow): string[] {
+  return uniqueRepairKeys([
+    repairKey("local", stringValue(row.local_document_id || readMetadataValue(row, "localId"))),
+    repairKey("source", stringValue(row.source_document_id || row.file_name || row.document_name || row.name)),
+    repairKey("number", stringValue(row.document_number || row.number)),
+    repairKey("semantic", [
+      stringValue(row.document_number || row.number),
+      stringValue(row.object_number),
+      stringValue(row.supplier || row.provider || row.company_name),
+      stringValue(row.document_date || row.date),
+      stringValue(row.total_amount ?? row.gross_amount ?? row.amount)
+    ].join("|"))
+  ]);
+}
+
+function repairKey(kind: string, value: string): string {
+  const normalized = value.trim().toLowerCase();
+  return normalized ? `${kind}:${normalized}` : "";
+}
+
+function uniqueRepairKeys(keys: string[]): string[] {
+  return Array.from(new Set(keys.filter(Boolean)));
+}
+
+function storedRepairDocumentCompletenessScore(document: ObjectAnalysis): number {
+  return [
+    unwrapTextField(document.documentNumber),
+    unwrapTextField(document.documentType),
+    unwrapTextField(document.provider),
+    unwrapTextField(document.documentDate),
+    unwrapTextField(document.objectNumber),
+    document.totalCost.value !== null ? "1" : "",
+    document.clusters.length ? "1" : "",
+    document.measureDetails?.length ? "1" : ""
+  ].filter(Boolean).length;
+}
+
+async function markDocumentAutoRepairStatus(
+  supabase: SupabaseClient,
+  documentId: string,
+  row: GenericSupabaseRow,
+  status: "not_repairable",
+  reason: string
+): Promise<void> {
+  const metadata = {
+    ...(isRecord(row.metadata) ? row.metadata : {}),
+    autoRepair: {
+      status,
+      attemptedAt: new Date().toISOString(),
+      reason
+    }
+  };
+  try {
+    const { error } = await supabase
+      .from("documents")
+      .update({ metadata })
+      .eq("id", documentId);
+    if (error) {
+      console.warn("[Supabase AutoRepair] Nicht-reparierbar-Status konnte nicht gespeichert werden", { documentId, reason, error });
+    }
+  } catch (error) {
+    console.warn("[Supabase AutoRepair] Nicht-reparierbar-Status konnte nicht gespeichert werden", { documentId, reason, error });
+  }
+}
+
+async function ensureLookupId(
+  supabase: SupabaseClient,
+  table: string,
+  rawName: string,
+  idByName: Map<string, string>,
+  insertNameColumns: string[]
+): Promise<string | null> {
+  const name = rawName.trim();
+  if (!name) return null;
+  const key = normalizeLookupKey(name);
+  const existingId = idByName.get(key);
+  if (existingId) return existingId;
+
+  const insertRow = insertNameColumns.reduce<GenericSupabaseRow>((row, column) => {
+    row[column] = name;
+    return row;
+  }, {});
+  console.log(`[Supabase Dokumentimport] Lookup ${table} fehlt, Anlage wird versucht`, { name, insertRow });
+
+  try {
+    const created = await insertRowAdaptive(supabase, table, insertRow, [insertNameColumns[0]]);
+    const id = stringValue(created.id);
+    if (id) {
+      idByName.set(key, id);
+      console.log(`[Supabase Dokumentimport] Lookup ${table} angelegt`, { name, id, created });
+      return id;
+    }
+    console.warn(`[Supabase Dokumentimport] Lookup ${table} Insert ohne ID`, { name, created });
+    return null;
+  } catch (error) {
+    console.warn(`[Supabase Dokumentimport] Lookup ${table} konnte nicht angelegt werden`, {
+      name,
+      error: error instanceof Error ? error.message : error
+    });
+    return null;
+  }
+}
+
+function summarizeDocumentForPersistence(document: ObjectAnalysis): GenericSupabaseRow {
+  return {
+    id: document.id,
+    documentType: unwrapTextField(document.documentType),
+    provider: unwrapTextField(document.provider),
+    documentNumber: unwrapTextField(document.documentNumber),
+    documentDate: unwrapTextField(document.documentDate),
+    objectNumber: unwrapTextField(document.objectNumber),
+    objectAddress: unwrapTextField(document.objectAddress),
+    netCost: document.netCost.value,
+    vatCost: document.vatCost.value,
+    totalCost: document.totalCost.value,
+    sourceDocumentIds: document.sourceDocumentIds,
+    clusters: document.clusters.length,
+    measureDetails: document.measureDetails?.length ?? 0
+  };
+}
+
+function buildDocumentAnalysisPayload(document: ObjectAnalysis): GenericSupabaseRow {
+  return {
+    localDocumentId: document.id,
+    aiAgentName: unwrapTextField(document.aiAgentName),
+    confidenceScore: document.confidenceScore.value,
+    projectSuggestion: unwrapTextField(document.projectSuggestion),
+    assignmentSuggestion: unwrapTextField(document.assignmentSuggestion),
+    documentType: unwrapTextField(document.documentType),
+    installmentNumber: unwrapTextField(document.installmentNumber),
+    projectType: unwrapTextField(document.projectType),
+    supplier: unwrapTextField(document.provider),
+    documentNumber: unwrapTextField(document.documentNumber),
+    documentDate: unwrapTextField(document.documentDate),
+    fund: unwrapTextField(document.fund),
+    objectNumber: unwrapTextField(document.objectNumber),
+    objectAddress: unwrapTextField(document.objectAddress),
+    apartmentNumber: unwrapTextField(document.apartmentNumber),
+    location: unwrapTextField(document.location),
+    netAmount: document.netCost.value,
+    vatAmount: document.vatCost.value,
+    totalAmount: document.totalCost.value,
+    measureDescription: unwrapTextField(document.measureDescription),
+    dataQuality: unwrapTextField(document.dataQuality),
+    missingInformation: document.missingInformation.value ?? [],
+    sourceDocumentIds: document.sourceDocumentIds,
+    fieldSources: {
+      documentType: document.documentType.sources,
+      provider: document.provider.sources,
+      documentNumber: document.documentNumber.sources,
+      documentDate: document.documentDate.sources,
+      totalCost: document.totalCost.sources
+    },
+    measureDetails: document.measureDetails ?? [],
+    clusters: document.clusters,
+    costDebug: document.costDebug,
+    measureDebug: document.measureDebug ?? null
+  };
+}
+
+function firstDocumentSource(document: ObjectAnalysis): FieldSource {
+  return (
+    document.documentNumber.sources[0]
+    ?? document.documentDate.sources[0]
+    ?? document.totalCost.sources[0]
+    ?? document.provider.sources[0]
+    ?? document.objectNumber.sources[0]
+    ?? {
+      documentId: document.sourceDocumentIds[0] ?? document.id,
+      fileName: document.sourceDocumentIds[0] ?? document.id,
+      confidence: null
+    }
+  );
 }
 
 function objectRowToSupabase(object: StoredObjectRecord, options: { includeId?: boolean } = {}): SupabaseObjectRow {
@@ -1290,6 +1887,42 @@ function assignmentRowFromSupabase(row: GenericSupabaseRow): { documentId: strin
   };
 }
 
+function profileFromSupabase(row: GenericSupabaseRow, fallbackEmail = ""): UserProfile {
+  return {
+    id: stringValue(row.id),
+    email: stringValue(row.email ?? fallbackEmail),
+    fullName: stringValue(row.full_name ?? row.fullName ?? ""),
+    role: normalizeUserRole(row.role),
+    status: normalizeUserStatus(row.status),
+    createdAt: stringValue(row.created_at),
+    updatedAt: stringValue(row.updated_at),
+    lastLoginAt: stringValue(row.last_login_at)
+  };
+}
+
+function activityLogFromSupabase(row: GenericSupabaseRow): ActivityLogEntry {
+  return {
+    id: stringValue(row.id),
+    userId: stringValue(row.user_id) || null,
+    userEmail: stringValue(row.user_email),
+    action: stringValue(row.action),
+    area: stringValue(row.area),
+    targetType: stringValue(row.target_type),
+    targetId: stringValue(row.target_id) || null,
+    targetLabel: stringValue(row.target_label),
+    details: isRecord(row.details) ? row.details : {},
+    createdAt: stringValue(row.created_at)
+  };
+}
+
+function normalizeUserRole(value: unknown): UserRole {
+  return value === "owner" || value === "admin" || value === "editor" || value === "viewer" ? value : "viewer";
+}
+
+function normalizeUserStatus(value: unknown): UserStatus {
+  return value === "active" || value === "blocked" || value === "pending" ? value : "pending";
+}
+
 function backfillObjectRecord(existing: StoredObjectRecord, incoming: StoredObjectRecord): StoredObjectRecord {
   return {
     ...existing,
@@ -1378,7 +2011,12 @@ async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: 
   console.log("[Supabase Dokumentimport] INSERT public.documents Datensatz", originalRow);
   let row = { ...originalRow };
   for (let attempt = 0; attempt < 24; attempt += 1) {
-    console.log("[Supabase Dokumentimport] INSERT public.documents Versuch", { attempt: attempt + 1, row });
+    console.log("[Supabase Dokumentimport] INSERT public.documents Versuch", {
+      attempt: attempt + 1,
+      fields: Object.keys(row),
+      row,
+      json: JSON.stringify(row, null, 2)
+    });
     const { data, error } = await supabase
       .from("documents")
       .insert(row)
@@ -1388,7 +2026,10 @@ async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: 
     if (!error) {
       console.log("[Supabase Dokumentimport] INSERT public.documents erfolgreich", {
         document_id: data?.id ?? "k.A.",
-        row: data
+        fieldsSent: Object.keys(row),
+        sentRow: row,
+        supabaseResponse: data,
+        supabaseResponseJson: JSON.stringify(data, null, 2)
       });
       return data as GenericSupabaseRow;
     }
@@ -1414,6 +2055,67 @@ async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: 
   }
 
   throw new Error("Supabase-documents-Datensatz konnte nicht gespeichert werden: zu viele Schema-Anpassungen.");
+}
+
+async function updateDocumentRowAdaptive(
+  supabase: SupabaseClient,
+  documentId: string,
+  originalRow: GenericSupabaseRow
+): Promise<GenericSupabaseRow> {
+  console.log("[Supabase Dokumentimport] UPSERT public.documents Datensatz", {
+    documentId,
+    row: originalRow,
+    json: JSON.stringify(originalRow, null, 2)
+  });
+  let row = { ...originalRow };
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    console.log("[Supabase Dokumentimport] UPDATE public.documents Versuch", {
+      attempt: attempt + 1,
+      documentId,
+      fields: Object.keys(row),
+      row,
+      json: JSON.stringify(row, null, 2)
+    });
+    const { data, error } = await supabase
+      .from("documents")
+      .update(row)
+      .eq("id", documentId)
+      .select("*")
+      .single();
+
+    if (!error) {
+      console.log("[Supabase Dokumentimport] UPDATE public.documents erfolgreich", {
+        document_id: data?.id ?? documentId,
+        fieldsSent: Object.keys(row),
+        sentRow: row,
+        supabaseResponse: data,
+        supabaseResponseJson: JSON.stringify(data, null, 2)
+      });
+      return data as GenericSupabaseRow;
+    }
+
+    console.error("[Supabase Dokumentimport] UPDATE public.documents fehlgeschlagen", {
+      code: error.code ?? null,
+      message: error.message ?? null,
+      details: error.details ?? null,
+      hint: error.hint ?? null,
+      documentId,
+      row,
+      error
+    });
+
+    const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && missingColumn !== "object_id" && missingColumn in row) {
+      console.warn(`[Supabase Dokumentimport] Optionale Spalte documents.${missingColumn} existiert nicht und wird beim UPDATE ausgelassen.`, { row, error });
+      const { [missingColumn]: _removed, ...nextRow } = row;
+      row = nextRow;
+      continue;
+    }
+
+    throw new Error(`Supabase-documents-Datensatz konnte nicht aktualisiert werden: ${formatSupabaseError(error)}`);
+  }
+
+  throw new Error("Supabase-documents-Datensatz konnte nicht aktualisiert werden: zu viele Schema-Anpassungen.");
 }
 
 function extractMissingColumn(message: string): string | null {

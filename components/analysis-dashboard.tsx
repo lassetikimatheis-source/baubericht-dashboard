@@ -16,6 +16,9 @@ import {
   YAxis
 } from "recharts";
 import { UploadPanel } from "./upload-panel";
+import { QuarterlyReportsModule } from "./QuarterlyReportsModule";
+import { AdminPanel } from "./admin-panel";
+import { useAuth } from "./auth-gate";
 import type { ObjectMapEntry } from "./map/ObjectMap";
 import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
 import { emptyAnalysisState, emptyField } from "../lib/analysis-state";
@@ -33,6 +36,7 @@ import {
   deleteSupabaseAssignment,
   deleteSupabaseDocument,
   deleteSupabaseProject,
+  logActivity,
   upsertSupabaseProject,
   updateSupabaseObject,
   type SupabaseDocumentCostImportSummary,
@@ -80,7 +84,7 @@ const ObjectMap = dynamic<{ entries: ObjectMapEntry[]; onOpenObject: (id: string
   }
 );
 
-type ViewKey = "dashboard" | "objects" | "map" | "upload" | "projects" | "unassigned" | "reports" | "settings";
+type ViewKey = "dashboard" | "objects" | "map" | "upload" | "projects" | "unassigned" | "reports" | "quarterlyReports" | "settings" | "admin";
 type ProjectTab = "overview" | "documents" | "costs" | "measures" | "ai";
 type ObjectTab = "overview" | "measures" | "trades" | "documents" | "images" | "apartments" | "entrances" | "ai";
 type OverviewGroup = "object" | "entrance" | "project" | "document";
@@ -147,6 +151,11 @@ interface SupabaseDocumentLoadDiagnosis {
   appDocumentCount: number;
   measureDetailsCount: number;
   clustersCount: number;
+  autoRepairEnabled?: boolean;
+  autoRepairIncomplete?: number;
+  autoRepairRepaired?: number;
+  autoRepairSkipped?: number;
+  autoRepairFailed?: number;
 }
 
 interface SupabaseOnlineStatus {
@@ -377,7 +386,9 @@ const navItems: Array<{ key: ViewKey; label: string; locked?: boolean }> = [
   { key: "objects", label: "Objekte" },
   { key: "upload", label: "Dokumente" },
   { key: "reports", label: "Auswertungen" },
+  { key: "quarterlyReports", label: "Quartalsberichte" },
   { key: "unassigned", label: "KI Analyse" },
+  { key: "admin", label: "Admin" },
   { key: "settings", label: "Einstellungen" }
 ];
 
@@ -439,6 +450,9 @@ const standardTradeCatalog: MeasureCluster[] = [
 ];
 
 export function AnalysisDashboard() {
+  const auth = useAuth();
+  const canEdit = auth.canEdit;
+  const canAdmin = auth.canAdmin;
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("objects");
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
@@ -492,7 +506,12 @@ export function AnalysisDashboard() {
     supabaseCostItemCount: 0,
     appDocumentCount: 0,
     measureDetailsCount: 0,
-    clustersCount: 0
+    clustersCount: 0,
+    autoRepairEnabled: true,
+    autoRepairIncomplete: 0,
+    autoRepairRepaired: 0,
+    autoRepairSkipped: 0,
+    autoRepairFailed: 0
   });
   const [supabaseOnlineStatus, setSupabaseOnlineStatus] = useState<SupabaseOnlineStatus>({
     objectCount: 0,
@@ -597,6 +616,7 @@ export function AnalysisDashboard() {
       console.log("[Supabase] App-Dokumente im App-Load", supabaseDocuments.appDocumentCount);
       console.log("[Supabase] measureDetails im App-Load", supabaseDocuments.measureDetailsCount);
       console.log("[Supabase] clusters im App-Load", supabaseDocuments.clustersCount);
+      console.log("[Supabase AutoRepair] App-Load", supabaseDocuments.autoRepair);
       console.log("[Online-Modus] lokale documents count", localDocuments.length);
       console.log("[Online-Modus] Supabase documents count", supabaseDocuments.supabaseDocumentCount);
       console.log("[Online-Modus] verwendete documents-Quelle", "localStorage");
@@ -614,7 +634,12 @@ export function AnalysisDashboard() {
         supabaseCostItemCount: supabaseDocuments.supabaseCostItemCount,
         appDocumentCount: supabaseDocuments.appDocumentCount,
         measureDetailsCount: supabaseDocuments.measureDetailsCount,
-        clustersCount: supabaseDocuments.clustersCount
+        clustersCount: supabaseDocuments.clustersCount,
+        autoRepairEnabled: supabaseDocuments.autoRepair.enabled,
+        autoRepairIncomplete: supabaseDocuments.autoRepair.incomplete,
+        autoRepairRepaired: supabaseDocuments.autoRepair.repaired,
+        autoRepairSkipped: supabaseDocuments.autoRepair.skipped,
+        autoRepairFailed: supabaseDocuments.autoRepair.failed
       });
     } catch (error) {
       console.error("[Supabase] Daten konnten nicht geladen werden:", error);
@@ -696,6 +721,10 @@ export function AnalysisDashboard() {
   }, [assignments, filteredDocuments, filters, objects, projects.length]);
 
   async function handleAnalyze(files: File[]) {
+    if (!canEdit) {
+      setMessage("Deine Rolle erlaubt keine KI-Auswertung.");
+      return;
+    }
     setIsAnalyzing(true);
     setMessage(null);
     setUploadDocument(null);
@@ -764,6 +793,10 @@ export function AnalysisDashboard() {
   }
 
   async function handlePreview(files: File[]) {
+    if (!canEdit) {
+      setMessage("Deine Rolle erlaubt keine Textpruefung.");
+      return;
+    }
     setMessage(null);
     handleFilesSelected(files);
     const formData = new FormData();
@@ -786,6 +819,7 @@ export function AnalysisDashboard() {
       const objectDocuments = analysis.objects.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments));
       try {
         await exportObjectReport(selectedObject, objectDocuments, objects, analysis.objects, projects, assignments);
+        await logActivity({ action: "Report erstellt", area: "Reports", targetType: "object", targetId: selectedObject.id, targetLabel: objectLabel(selectedObject) });
       } catch (error) {
         console.error("PDF export failed", error);
         setMessage("PDF-Export fehlgeschlagen.");
@@ -810,12 +844,14 @@ export function AnalysisDashboard() {
 
     const blob = await response.blob();
     downloadBlob(blob, type === "excel" ? "paribus-baukosten-analyse.xlsx" : "Deckblatt_Portfolio.pdf");
+    await logActivity({ action: "Report heruntergeladen", area: "Reports", targetType: type });
   }
 
   async function exportOverallPdf() {
     try {
       await exportOverallReport(objects, analysis.objects, projects, assignments);
       setMessage("Gesamtbericht wurde erstellt.");
+      await logActivity({ action: "Report erstellt", area: "Reports", targetType: "overall-report", targetLabel: "Gesamtbericht" });
     } catch (error) {
       console.error("Gesamtbericht export failed", error);
       setMessage("Gesamtbericht-Export fehlgeschlagen.");
@@ -843,6 +879,10 @@ export function AnalysisDashboard() {
   }
 
   async function importAppData(file: File) {
+    if (!canEdit) {
+      setDataTransferStatus({ kind: "error", message: "Deine Rolle erlaubt keinen Import.", summary: null });
+      return;
+    }
     try {
       const parsed = JSON.parse(await file.text()) as unknown;
       const preview = summarizeAppDataBackupForImport(parsed);
@@ -877,6 +917,10 @@ export function AnalysisDashboard() {
   }
 
   async function importLocalObjectsToSupabase() {
+    if (!canEdit) {
+      setSupabaseObjectImportStatus({ kind: "error", message: "Deine Rolle erlaubt keinen Import.", summary: null });
+      return;
+    }
     await getRuntimeSupabaseConfig({ forceRefresh: true });
     const supabaseRuntime = await getSupabaseRuntimeConfigStatus();
     const runtimeMessage = `Runtime Config geladen: ${supabaseRuntime.loaded ? "Ja" : "Nein"}, Runtime hasAnonKey: ${supabaseRuntime.hasAnonKey ? "Ja" : "Nein"}, HTTP Status: ${supabaseRuntime.httpStatus ?? "k.A."}.`;
@@ -953,6 +997,10 @@ export function AnalysisDashboard() {
   }
 
   async function importLocalDocumentsToSupabase() {
+    if (!canEdit) {
+      setSupabaseDocumentImportStatus({ kind: "error", message: "Deine Rolle erlaubt keinen Import.", summary: null });
+      return;
+    }
     const storedDocuments = getDocuments();
     logLocalDocumentStorageDiagnostics("Dokumentimport");
     if (!storedDocuments.length) {
@@ -1015,7 +1063,12 @@ export function AnalysisDashboard() {
         supabaseCostItemCount: loadDiagnosis.supabaseCostItemCount,
         appDocumentCount: loadDiagnosis.appDocumentCount,
         measureDetailsCount: loadDiagnosis.measureDetailsCount,
-        clustersCount: loadDiagnosis.clustersCount
+        clustersCount: loadDiagnosis.clustersCount,
+        autoRepairEnabled: loadDiagnosis.autoRepair.enabled,
+        autoRepairIncomplete: loadDiagnosis.autoRepair.incomplete,
+        autoRepairRepaired: loadDiagnosis.autoRepair.repaired,
+        autoRepairSkipped: loadDiagnosis.autoRepair.skipped,
+        autoRepairFailed: loadDiagnosis.autoRepair.failed
       });
       setSupabaseDocumentImportStatus({
         kind: summary.errors.length ? "error" : "success",
@@ -1107,6 +1160,7 @@ export function AnalysisDashboard() {
   }
 
   async function createObject(seed?: ObjectAnalysis) {
+    if (!canEdit) return;
     const draft = objectFromDocument(seed);
     let object: ObjectRecord;
     try {
@@ -1123,9 +1177,11 @@ export function AnalysisDashboard() {
     setObjects((current) => [...current.filter((entry) => entry.id !== object.id), object]);
     setSelectedObjectId(object.id);
     setView("objects");
+    logActivity({ action: "Objekt erstellt", area: "Objekte", targetType: "object", targetId: object.id, targetLabel: objectLabel(object) });
   }
 
   async function saveUploadObject() {
+    if (!canEdit) return;
     const draft = uploadDraftToObjectRecord(objectDraft, `object-${Date.now()}`);
     let object: ObjectRecord;
     try {
@@ -1183,6 +1239,7 @@ export function AnalysisDashboard() {
   }
 
   async function assignUploadDocumentToObject(objectId: string) {
+    if (!canEdit) return;
     const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
     if (!documentsToAssign.length) return;
     const object = objects.find((entry) => entry.id === objectId);
@@ -1227,10 +1284,12 @@ export function AnalysisDashboard() {
   }
 
   function updateObject(objectId: string, field: keyof ObjectRecord, value: string) {
+    if (!canEdit) return;
     const currentObject = objects.find((object) => object.id === objectId);
     if (!currentObject) return;
     const updatedObject = updateStoredObject({ ...currentObject, [field]: value });
     setObjects((current) => current.map((object) => object.id === objectId ? updatedObject : object));
+    logActivity({ action: "Objekt bearbeitet", area: "Objekte", targetType: "object", targetId: objectId, targetLabel: objectLabel(updatedObject), details: { field } });
     updateSupabaseObject(updatedObject).catch((error) => {
       console.error("[Supabase] Objekt konnte nicht aktualisiert werden:", error);
       setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase aktualisiert werden.");
@@ -1238,6 +1297,7 @@ export function AnalysisDashboard() {
   }
 
   function deleteObject(objectId: string) {
+    if (!canEdit) return;
     deleteStoredObject(objectId);
     deleteSupabaseObject(objectId).catch((error) => {
       console.error("[Supabase] Objekt konnte nicht gelöscht werden:", error);
@@ -1251,15 +1311,18 @@ export function AnalysisDashboard() {
       return updateStoredProject({ ...project, objectId: "", object: "", entranceId: "", entrance: "" });
     }));
     setSelectedObjectId(null);
+    logActivity({ action: "Objekt geloescht", area: "Objekte", targetType: "object", targetId: objectId });
   }
 
   function createEntrance(objectId: string) {
+    if (!canEdit) return;
     const entrance = saveEntrance(emptyEntrance(objectId));
     setEntrances((current) => [...current.filter((entry) => entry.id !== entrance.id), entrance]);
     setObjectTab("entrances");
   }
 
   function updateEntrance(entranceId: string, field: keyof EntranceRecord, value: string) {
+    if (!canEdit) return;
     let updatedEntrance: EntranceRecord | null = null;
     setEntrances((current) => current.map((entrance) => {
       if (entrance.id !== entranceId) return entrance;
@@ -1277,6 +1340,7 @@ export function AnalysisDashboard() {
   }
 
   function deleteEntrance(entranceId: string) {
+    if (!canEdit) return;
     deleteStoredEntrance(entranceId);
     setEntrances((current) => current.filter((entrance) => entrance.id !== entranceId));
     setProjects((current) => current.map((project) => {
@@ -1286,6 +1350,7 @@ export function AnalysisDashboard() {
   }
 
   async function createProject(seed?: ObjectAnalysis) {
+    if (!canEdit) return;
     let project = projectFromDocument(seed, objects);
     try {
       project = await upsertSupabaseProject(project);
@@ -1312,9 +1377,11 @@ export function AnalysisDashboard() {
       setSelectedDocumentId(seed.id);
     }
     setView("projects");
+    logActivity({ action: "Projekt erstellt", area: "Projekte", targetType: "project", targetId: project.id, targetLabel: project.projectName });
   }
 
   function deleteProject(projectId: string) {
+    if (!canEdit) return;
     deleteStoredProject(projectId);
     deleteSupabaseProject(projectId).catch((error) => {
       console.error("[Supabase] Projekt konnte nicht geloescht werden:", error);
@@ -1336,9 +1403,11 @@ export function AnalysisDashboard() {
       return next;
     });
     setSelectedProjectId(null);
+    logActivity({ action: "Projekt geloescht", area: "Projekte", targetType: "project", targetId: projectId });
   }
 
   function updateProject(projectId: string, field: keyof ProjectRecord, value: string) {
+    if (!canEdit) return;
     setProjects((current) =>
       current.map((project) => {
         if (project.id !== projectId) return project;
@@ -1372,13 +1441,16 @@ export function AnalysisDashboard() {
   }
 
   function updateDocument(documentId: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) {
+    if (!canEdit) return;
     setAnalysis((current) => {
       const documents = current.objects.map((document) => document.id === documentId ? updateStoredDocument(updater(document)) : document);
       return buildAnalysisFromDocuments(documents, current);
     });
+    logActivity({ action: "Kostenposition geaendert", area: "Dokumente", targetType: "document", targetId: documentId });
   }
 
   function deleteDocument(documentId: string) {
+    if (!canEdit) return;
     deleteStoredDocument(documentId);
     deleteSupabaseDocument(documentId).catch((error) => {
       console.error("[Supabase] Dokument konnte nicht geloescht werden:", error);
@@ -1396,9 +1468,11 @@ export function AnalysisDashboard() {
       return next;
     });
     setSelectedDocumentId(null);
+    logActivity({ action: "Dokument geloescht", area: "Dokumente", targetType: "document", targetId: documentId });
   }
 
   function removeObjectImage(objectId: string, imageIndex: number) {
+    if (!canEdit) return;
     setObjectImages((current) => {
       const images = current[objectId] ?? [];
       const imageToRemove = images[imageIndex];
@@ -1409,6 +1483,7 @@ export function AnalysisDashboard() {
   }
 
   function moveObjectImage(objectId: string, imageIndex: number, direction: -1 | 1) {
+    if (!canEdit) return;
     setObjectImages((current) => {
       const images = [...(current[objectId] ?? [])];
       const nextIndex = imageIndex + direction;
@@ -1419,6 +1494,7 @@ export function AnalysisDashboard() {
   }
 
   function assignDocument(documentId: string, projectId: string | null) {
+    if (!canEdit) return;
     setAssignments((current) => {
       const next = { ...current, [documentId]: projectId };
       saveAssignments(next);
@@ -1441,6 +1517,11 @@ export function AnalysisDashboard() {
   }
 
   async function reanalyzeAllObjects() {
+    if (!canEdit) {
+      setMessage("Deine Rolle erlaubt keine Neuauswertung.");
+      return;
+    }
+    await logActivity({ action: "KI-Auswertung gestartet", area: "Neuauswertung" });
     const storedDocuments = getDocuments();
     const storedObjects = getObjects();
     const total = storedDocuments.length;
@@ -1509,6 +1590,11 @@ export function AnalysisDashboard() {
   const pageTitle = getPageTitle(view);
   const showDocumentEditor = view === "projects" || view === "unassigned" || view === "reports" || view === "settings";
   const showUploadPanel = view === "upload";
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.key === "admin") return canAdmin;
+    if (item.key === "upload") return canEdit;
+    return true;
+  });
 
   return (
     <main className="shell">
@@ -1521,7 +1607,7 @@ export function AnalysisDashboard() {
           </div>
         </div>
         <nav className="nav">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <button
               key={item.key}
               className={[
@@ -1543,6 +1629,11 @@ export function AnalysisDashboard() {
           ))}
         </nav>
         <div className="sideNote">
+          <span>{auth.profile?.fullName || auth.profile?.email}</span>
+          <strong>{auth.profile?.role}</strong>
+          <button type="button" onClick={auth.signOut}>Abmelden</button>
+        </div>
+        <div className="sideNote">
           <span>Struktur</span>
           <strong>Fonds - Objekt - Hauseingang - Projekt - Dokumente</strong>
           <p>Keine einzelne Wohnungsverwaltung in diesem Schritt.</p>
@@ -1560,7 +1651,7 @@ export function AnalysisDashboard() {
             <button type="button" onClick={() => exportFile("excel")}>Export Excel</button>
             <button type="button" onClick={() => exportFile("pdf")}>Export PDF</button>
             <button type="button" onClick={exportOverallPdf}>Gesamtbericht PDF</button>
-            <button className="buttonPrimary" type="button" onClick={() => setView("upload")}>+ Dokument hochladen</button>
+            {canEdit ? <button className="buttonPrimary" type="button" onClick={() => setView("upload")}>+ Dokument hochladen</button> : null}
           </div>
         </header>
 
@@ -1616,6 +1707,7 @@ export function AnalysisDashboard() {
                 onMoveObjectImage={moveObjectImage}
                 onSelectDocument={setSelectedDocumentId}
                 onOpenObject={openObjectDetail}
+                readOnly={!canEdit}
               />
               ) : null}
 
@@ -1639,6 +1731,7 @@ export function AnalysisDashboard() {
                 onAnalyze={handleAnalyze}
                 onPreview={handlePreview}
                 onFilesSelected={handleFilesSelected}
+                readOnly={!canEdit}
               />
               ) : null}
 
@@ -1660,6 +1753,7 @@ export function AnalysisDashboard() {
                 onAssign={assignDocument}
                 onRemoveDocument={(documentId) => assignDocument(documentId, null)}
                 onDeleteDocument={deleteDocument}
+                readOnly={!canEdit}
               />
               ) : null}
 
@@ -1671,11 +1765,20 @@ export function AnalysisDashboard() {
                 onAssign={assignDocument}
                 onCreateProject={createProject}
                 onDelete={deleteDocument}
+                readOnly={!canEdit}
               />
               ) : null}
 
               {view === "reports" ? (
               <ReportsView documents={filteredDocuments} projects={projects} assignments={assignments} />
+              ) : null}
+
+              {view === "quarterlyReports" ? (
+              <QuarterlyReportsModule />
+              ) : null}
+
+              {view === "admin" && canAdmin ? (
+              <AdminPanel />
               ) : null}
 
               {view === "settings" ? (
@@ -1695,6 +1798,7 @@ export function AnalysisDashboard() {
                 onImportData={importAppData}
                 onImportLocalObjectsToSupabase={importLocalObjectsToSupabase}
                 onImportLocalDocumentsToSupabase={importLocalDocumentsToSupabase}
+                readOnly={!canEdit}
               />
               ) : null}
             </div>
@@ -1708,6 +1812,7 @@ export function AnalysisDashboard() {
                 onCreateProject={() => selectedDocument && createProject(selectedDocument)}
                 onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
                 onUpdate={updateDocument}
+                readOnly={!canEdit}
               />
             ) : null}
             {showUploadPanel ? (
@@ -1725,6 +1830,7 @@ export function AnalysisDashboard() {
                 onChange={(field, value) => setObjectDraft((current) => ({ ...current, [field]: value }))}
                 onSaveNew={saveUploadObject}
                 onAssignExisting={(objectId) => assignUploadDocumentToObject(objectId)}
+                readOnly={!canEdit}
               />
             ) : null}
           </section>
@@ -1852,7 +1958,8 @@ function DocumentUploadView({
   message,
   onAnalyze,
   onPreview,
-  onFilesSelected
+  onFilesSelected,
+  readOnly = false
 }: {
   previews: ParsedPreview[];
   isAnalyzing: boolean;
@@ -1860,7 +1967,16 @@ function DocumentUploadView({
   onAnalyze: (files: File[]) => Promise<void>;
   onPreview: (files: File[]) => Promise<void>;
   onFilesSelected: (files: File[]) => void;
+  readOnly?: boolean;
 }) {
+  if (readOnly) {
+    return (
+      <section className="panel">
+        <h2>Dokument Upload / KI</h2>
+        <p className="muted">Deine Rolle erlaubt nur Ansicht und Report-Downloads. Upload und KI-Start sind deaktiviert.</p>
+      </section>
+    );
+  }
   return (
     <section className="uploadWorkspace">
       <div className="panelHeader uploadTitle">
@@ -2238,6 +2354,8 @@ function getPageTitle(view: ViewKey): string {
     projects: "Projekte",
     unassigned: "KI Analyse",
     reports: "Auswertungen",
+    quarterlyReports: "Quartalsberichte",
+    admin: "Admin",
     settings: "Einstellungen"
   };
   return titles[view];
@@ -2504,7 +2622,8 @@ function DocumentTable({
   onSelect,
   onAssign,
   onCreateProject,
-  onDelete
+  onDelete,
+  readOnly
 }: {
   documents: ObjectAnalysis[];
   projects: ProjectRecord[];
@@ -2514,7 +2633,35 @@ function DocumentTable({
   onAssign: (documentId: string, projectId: string | null) => void;
   onCreateProject: (document: ObjectAnalysis) => void;
   onDelete: (id: string) => void;
+  readOnly: boolean;
 }) {
+  if (readOnly) {
+    return (
+      <section className="panel panelFlush">
+        <div className="panelHeader tableHeader">
+          <div>
+            <h2>Unzugeordnete Dokumente</h2>
+            <p>Nur Ansicht. Deine Rolle erlaubt keine Zuordnung, KI-Neuauswertung oder Loeschaktion.</p>
+          </div>
+        </div>
+        <div className="unassignedList">
+          {documents.length === 0 ? <div className="emptyState"><p>Keine unzugeordneten Dokumente.</p></div> : null}
+          {documents.map((document) => (
+            <article className="unassignedCard" key={document.id}>
+              <div>
+                <strong>{fieldOrUnknown(document.documentType)} - {fieldOrUnknown(document.documentNumber)}</strong>
+                <p>{fieldOrUnknown(document.objectAddress)} - {formatCurrency(document.totalCost)}</p>
+                <small>KI-Vorschlag: {fieldOrUnknown(document.objectNumber)} / {fieldOrUnknown(document.projectType)}</small>
+              </div>
+              <div className="headerActions">
+                <button type="button" onClick={() => onSelect(document.id)}>Ansehen</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="panel panelFlush">
       <div className="panelHeader tableHeader">
@@ -2617,7 +2764,8 @@ function ObjectsView({
   onRemoveObjectImage,
   onMoveObjectImage,
   onSelectDocument,
-  onOpenObject
+  onOpenObject,
+  readOnly
 }: {
   objects: ObjectRecord[];
   entrances: EntranceRecord[];
@@ -2642,6 +2790,7 @@ function ObjectsView({
   onMoveObjectImage: (id: string, imageIndex: number, direction: -1 | 1) => void;
   onSelectDocument: (id: string) => void;
   onOpenObject: (id: string) => void;
+  readOnly: boolean;
 }) {
   const [objectSearch, setObjectSearch] = useState("");
   const [costBasis, setCostBasis] = useState<CostBasisMode>("all");
@@ -2673,7 +2822,7 @@ function ObjectsView({
           <h2>Objekte</h2>
           <p>Wirtschaftseinheiten, Hauseingänge, Projekte, Dokumente, Kosten und Bilder in einer sauberen Objektakte.</p>
         </div>
-        <button className="buttonPrimary" type="button" onClick={onCreate}>Objekt erstellen</button>
+        {!readOnly ? <button className="buttonPrimary" type="button" onClick={onCreate}>Objekt erstellen</button> : null}
       </div>
 
       <div className="objectKpiStrip">
@@ -2754,6 +2903,7 @@ function ObjectsView({
                   onAddImages={(files) => onAddObjectImages(selectedObject.id, files)}
                   onRemoveImage={(imageIndex) => onRemoveObjectImage(selectedObject.id, imageIndex)}
                   onMoveImage={(imageIndex, direction) => onMoveObjectImage(selectedObject.id, imageIndex, direction)}
+                  readOnly={readOnly}
                 />
               ) : null}
               {activeTab === "entrances" ? (
@@ -2762,6 +2912,7 @@ function ObjectsView({
                   onCreate={() => onCreateEntrance(selectedObject.id)}
                   onDelete={onDeleteEntrance}
                   onUpdate={onUpdateEntrance}
+                  readOnly={readOnly}
                 />
               ) : null}
               {activeTab === "measures" ? (
@@ -2771,6 +2922,7 @@ function ObjectsView({
                   projects={projects}
                   assignments={assignments}
                   onUpdateDocument={onUpdateDocument}
+                  readOnly={readOnly}
                 />
               ) : null}
               {activeTab === "trades" ? <ObjectTradesTab documents={selectedCostDocuments} /> : null}
@@ -2784,6 +2936,7 @@ function ObjectsView({
                   onSelect={onSelectDocument}
                   onUpdate={onUpdateDocument}
                   onDelete={onDeleteDocument}
+                  readOnly={readOnly}
                 />
               ) : null}
               {activeTab === "images" ? (
@@ -2792,13 +2945,14 @@ function ObjectsView({
                   onAdd={(files) => onAddObjectImages(selectedObject.id, files)}
                   onRemove={(imageIndex) => onRemoveObjectImage(selectedObject.id, imageIndex)}
                   onMove={(imageIndex, direction) => onMoveObjectImage(selectedObject.id, imageIndex, direction)}
+                  readOnly={readOnly}
                 />
               ) : null}
               {activeTab === "apartments" ? <ObjectApartmentsTab documents={selectedCostDocuments} /> : null}
               {activeTab === "ai" ? <ProjectAiTab documents={selectedCostDocuments} /> : null}
-              <div className="headerActions projectActions">
+              {!readOnly ? <div className="headerActions projectActions">
                 <button type="button" onClick={() => onDelete(selectedObject.id)}>Objekt loeschen</button>
-              </div>
+              </div> : null}
             </>
           ) : (
             <div className="emptyState"><p>Kein Objekt ausgewählt.</p></div>
@@ -2821,10 +2975,11 @@ function ObjectsView({
             <DetectedObjectImages
               images={objectImages[group.key] ?? []}
               onAdd={(files) => onAddObjectImages(group.key, files)}
+              readOnly={readOnly}
             />
             <div className="headerActions">
               <button type="button" onClick={() => onSelectDocument(group.documents[0].id)}>Dokument oeffnen</button>
-              <button type="button" onClick={() => onCreateFromDocument(group.documents[0])}>Objekt daraus erstellen</button>
+              {!readOnly ? <button type="button" onClick={() => onCreateFromDocument(group.documents[0])}>Objekt daraus erstellen</button> : null}
             </div>
           </article>
         ))}
@@ -2906,7 +3061,8 @@ function ObjectOverviewTab({
   onUpdateObject,
   onAddImages,
   onRemoveImage,
-  onMoveImage
+  onMoveImage,
+  readOnly
 }: {
   object: ObjectRecord;
   documents: ObjectAnalysis[];
@@ -2916,6 +3072,7 @@ function ObjectOverviewTab({
   onAddImages: (files: FileList) => void;
   onRemoveImage: (imageIndex: number) => void;
   onMoveImage: (imageIndex: number, direction: -1 | 1) => void;
+  readOnly: boolean;
 }) {
   const rows = buildMeasureRows(documents);
   const totalGross = sumValues(rows.map((row) => row.grossCost));
@@ -2931,7 +3088,7 @@ function ObjectOverviewTab({
 
   return (
     <div className="objectOverviewBoard">
-      <ObjectImageUpload images={images} onAdd={onAddImages} onRemove={onRemoveImage} onMove={onMoveImage} />
+      <ObjectImageUpload images={images} onAdd={onAddImages} onRemove={onRemoveImage} onMove={onMoveImage} readOnly={readOnly} />
       <section className="panel objectFormPanel">
         <div className="panelHeader compactHeader">
           <div>
@@ -2939,7 +3096,7 @@ function ObjectOverviewTab({
             <p>Koordinaten für die Karte werden hier gepflegt.</p>
           </div>
         </div>
-        <ObjectForm object={object} onChange={onUpdateObject} />
+        <ObjectForm object={object} onChange={onUpdateObject} readOnly={readOnly} />
       </section>
       <section className="panel insightCard">
         <h3>Zusammenfassung der Maßnahmen</h3>
@@ -2962,12 +3119,14 @@ function EntrancesTab({
   entrances,
   onCreate,
   onUpdate,
-  onDelete
+  onDelete,
+  readOnly
 }: {
   entrances: EntranceRecord[];
   onCreate: () => void;
   onUpdate: (id: string, field: keyof EntranceRecord, value: string) => void;
   onDelete: (id: string) => void;
+  readOnly: boolean;
 }) {
   return (
     <div className="stackSection">
@@ -2976,16 +3135,16 @@ function EntrancesTab({
           <h3>Hauseingänge</h3>
           <p>Ein Objekt kann eine ganze Wirtschaftseinheit wie Pamirweg 1-14 umfassen.</p>
         </div>
-        <button className="buttonPrimary" type="button" onClick={onCreate}>Hauseingang anlegen</button>
+        {!readOnly ? <button className="buttonPrimary" type="button" onClick={onCreate}>Hauseingang anlegen</button> : null}
       </div>
       {entrances.length === 0 ? <div className="emptyState"><p>Noch keine Hauseingänge angelegt.</p></div> : null}
       <div className="entranceGrid">
         {entrances.map((entrance) => (
           <article className="entranceCard" key={entrance.id}>
-            <EntranceForm entrance={entrance} onChange={(field, value) => onUpdate(entrance.id, field, value)} />
-            <div className="headerActions">
+            <EntranceForm entrance={entrance} onChange={(field, value) => onUpdate(entrance.id, field, value)} readOnly={readOnly} />
+            {!readOnly ? <div className="headerActions">
               <button type="button" onClick={() => onDelete(entrance.id)}>Hauseingang loeschen</button>
-            </div>
+            </div> : null}
           </article>
         ))}
       </div>
@@ -3024,7 +3183,8 @@ function ObjectDocumentsTab({
   onToggleCostDocument,
   onSelect,
   onUpdate,
-  onDelete
+  onDelete,
+  readOnly
 }: {
   documents: ObjectAnalysis[];
   costDocuments: ObjectAnalysis[];
@@ -3034,6 +3194,7 @@ function ObjectDocumentsTab({
   onSelect: (id: string) => void;
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
   onDelete: (id: string) => void;
+  readOnly: boolean;
 }) {
   const [filters, setFilters] = useState({ year: "", trade: "", type: "", object: "" });
   const basisDocuments = costBasis === "manual" ? costDocuments : applyCostBasis(costDocuments, costBasis, manualCostDocumentIds);
@@ -3055,7 +3216,7 @@ function ObjectDocumentsTab({
       <div className="documentCardGrid">
         {filteredDocuments.length === 0 ? <div className="emptyState"><p>k.A.</p></div> : filteredDocuments.map((document) => (
           <article className="documentPreviewCard" key={document.id} onClick={() => onSelect(document.id)}>
-            {costBasis === "manual" ? (
+            {costBasis === "manual" && !readOnly ? (
               <label className="costIncludeCheck" onClick={(event) => event.stopPropagation()}>
                 <input
                   type="checkbox"
@@ -3069,8 +3230,8 @@ function ObjectDocumentsTab({
             <h3>{fieldOrUnknown(document.provider)}</h3>
             <p className="documentMetaLine">Objekt {fieldOrUnknown(document.objectNumber)}</p>
             <p className="documentMetaLine">{weLabel(document)}</p>
-            <DocumentWeEditor document={document} apartmentOptions={apartmentOptions} onUpdate={onUpdate} />
-            <DocumentInlineFields document={document} onUpdate={onUpdate} />
+            <DocumentWeEditor document={document} apartmentOptions={apartmentOptions} onUpdate={onUpdate} readOnly={readOnly} />
+            <DocumentInlineFields document={document} onUpdate={onUpdate} readOnly={readOnly} />
             <div className="documentWarnings">
               {documentWarningItems(document).map((item) => <span key={item}>{item}</span>)}
             </div>
@@ -3123,11 +3284,13 @@ function weLabel(document: ObjectAnalysis): string {
 function DocumentWeEditor({
   document,
   apartmentOptions,
-  onUpdate
+  onUpdate,
+  readOnly
 }: {
   document: ObjectAnalysis;
   apartmentOptions: string[];
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+  readOnly: boolean;
 }) {
   const currentValues = documentApartmentValues(document);
   const currentValue = currentValues.join(", ");
@@ -3144,6 +3307,10 @@ function DocumentWeEditor({
     const mergedValues = uniqueStrings([...selectedValues, ...parseApartmentValues(manualValue)]);
     onUpdate(document.id, (current) => updateDocumentApartmentNumber(current, mergedValues.join(", ")));
     setIsEditing(false);
+  }
+
+  if (readOnly) {
+    return <span className="documentWeEditor">{currentValue || "WE nicht hinterlegt"}</span>;
   }
 
   return (
@@ -3192,11 +3359,14 @@ function DocumentWeEditor({
 
 function DocumentInlineFields({
   document,
-  onUpdate
+  onUpdate,
+  readOnly
 }: {
   document: ObjectAnalysis;
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+  readOnly: boolean;
 }) {
+  if (readOnly) return null;
   return (
     <div className="documentInlineFields" onClick={(event) => event.stopPropagation()}>
       <InlineDocumentField label="Dokumenttyp" value={fieldOrUnknown(document.documentType)} onSave={(value) => onUpdate(document.id, (current) => updateManualTextField(current, "documentType", value))} />
@@ -3295,13 +3465,15 @@ function ObjectMeasuresTab({
   costDocuments,
   projects,
   assignments,
-  onUpdateDocument
+  onUpdateDocument,
+  readOnly
 }: {
   documents: ObjectAnalysis[];
   costDocuments: ObjectAnalysis[];
   projects: ProjectRecord[];
   assignments: Record<string, string | null>;
   onUpdateDocument: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+  readOnly: boolean;
 }) {
   const [selectedMeasureId, setSelectedMeasureId] = useState<string | null>(null);
   const [filters, setFilters] = useState({ project: "", year: "", documentType: "" });
@@ -3373,6 +3545,7 @@ function ObjectMeasuresTab({
           documents={documents}
           onClose={() => setSelectedMeasureId(null)}
           onUpdate={updateMeasure}
+          readOnly={readOnly}
         />
       ) : null}
     </div>
@@ -3384,13 +3557,15 @@ function MeasureDetailPanel({
   totalGross,
   documents,
   onClose,
-  onUpdate
+  onUpdate,
+  readOnly = false
 }: {
   row: MeasureRow | null;
   totalGross?: number | null;
   documents?: ObjectAnalysis[];
   onClose: () => void;
   onUpdate?: (row: MeasureRow, field: "cluster" | "description" | "grossCost" | "status", value: string) => void;
+  readOnly?: boolean;
 }) {
   if (!row) return null;
   const scopedDocuments = documents ? documentsForMeasure(row, documents) : [];
@@ -3403,7 +3578,7 @@ function MeasureDetailPanel({
         </div>
         <button type="button" onClick={onClose}>Schliessen</button>
       </div>
-      {onUpdate ? (
+      {onUpdate && !readOnly ? (
         <div className="measureCardDetails">
           <EditInput label="Gewerk" value={row.cluster === "k.A." ? "" : row.cluster} onChange={(value) => onUpdate(row, "cluster", value)} />
           <EditInput label="Beschreibung" value={row.description === "k.A." ? "" : row.description} onChange={(value) => onUpdate(row, "description", value)} />
@@ -3418,7 +3593,7 @@ function MeasureDetailPanel({
       <InfoLine label="Dokumente" value={documents ? formatNumber(scopedDocuments.length) : "k.A."} />
       <InfoLine label="Quelle" value={row.source} />
       <InfoLine label="KI-Sicherheit" value={row.confidence} />
-      <button type="button" className="buttonPrimary">Bearbeiten</button>
+      {!readOnly ? <button type="button" className="buttonPrimary">Bearbeiten</button> : null}
       <h4>Erkannte Positionen</h4>
       {row.lineItems.length === 0 ? <p className="muted">k.A.</p> : (
         <ul>
@@ -3760,10 +3935,10 @@ function AverageTradeCostBarChart({
   );
 }
 
-function DetectedObjectImages({ images, onAdd }: { images: string[]; onAdd: (files: FileList) => void }) {
+function DetectedObjectImages({ images, onAdd, readOnly }: { images: string[]; onAdd: (files: FileList) => void; readOnly: boolean }) {
   return (
     <div className="detectedImages">
-      <label className="smallUploadButton">
+      {!readOnly ? <label className="smallUploadButton">
         Bilder
         <input
           type="file"
@@ -3776,7 +3951,7 @@ function DetectedObjectImages({ images, onAdd }: { images: string[]; onAdd: (fil
             }
           }}
         />
-      </label>
+      </label> : null}
       {images.length > 0 ? (
         <div className="miniImageStrip">
           {images.slice(0, 4).map((image, index) => (
@@ -3794,12 +3969,14 @@ function ObjectImageUpload({
   images,
   onAdd,
   onRemove,
-  onMove
+  onMove,
+  readOnly
 }: {
   images: string[];
   onAdd: (files: FileList) => void;
   onRemove: (imageIndex: number) => void;
   onMove: (imageIndex: number, direction: -1 | 1) => void;
+  readOnly: boolean;
 }) {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   return (
@@ -3809,7 +3986,7 @@ function ObjectImageUpload({
           <h3>Objektbilder</h3>
           <p>Bilder lokal auswählen und als Vorschau am Objekt anzeigen.</p>
         </div>
-        <label className="imageUploadButton">
+        {!readOnly ? <label className="imageUploadButton">
           Bilder hochladen
           <input
             type="file"
@@ -3822,7 +3999,7 @@ function ObjectImageUpload({
               }
             }}
           />
-        </label>
+        </label> : null}
       </div>
       {images.length === 0 ? (
         <div className="imageEmpty">Noch keine Bilder für dieses Objekt ausgewählt.</div>
@@ -3842,7 +4019,7 @@ function ObjectImageUpload({
                         <button className="imageLightboxButton" type="button" onClick={() => setLightboxImage(image)}>
                           <img src={image} alt={`${section} ${index + 1}`} />
                         </button>
-                        <figcaption className="imageActions">
+                        {!readOnly ? <figcaption className="imageActions">
                           <button type="button" onClick={() => onMove(imageIndex, -1)} disabled={imageIndex === 0} aria-label="Bild nach links verschieben">
                             Zurueck
                           </button>
@@ -3852,7 +4029,7 @@ function ObjectImageUpload({
                           <button type="button" className="dangerButton" onClick={() => onRemove(imageIndex)}>
                             Loeschen
                           </button>
-                        </figcaption>
+                        </figcaption> : null}
                       </figure>
                     ))}
                   </div>
@@ -3888,7 +4065,8 @@ function ProjectsView({
   onSelectDocument,
   onAssign,
   onRemoveDocument,
-  onDeleteDocument
+  onDeleteDocument,
+  readOnly
 }: {
   projects: ProjectRecord[];
   objects: ObjectRecord[];
@@ -3906,6 +4084,7 @@ function ProjectsView({
   onAssign: (documentId: string, projectId: string | null) => void;
   onRemoveDocument: (id: string) => void;
   onDeleteDocument: (id: string) => void;
+  readOnly: boolean;
 }) {
   return (
     <section className="panel">
@@ -3914,7 +4093,7 @@ function ProjectsView({
           <h2>Projekte</h2>
           <p>Projekt erstellen, bearbeiten, loeschen und Dokumente projektbezogen pruefen.</p>
         </div>
-        <button className="buttonPrimary" type="button" onClick={onCreate}>Projekt erstellen</button>
+        {!readOnly ? <button className="buttonPrimary" type="button" onClick={onCreate}>Projekt erstellen</button> : null}
       </div>
       <div className="projectLayout">
         <div className="projectList">
@@ -3953,9 +4132,10 @@ function ProjectsView({
                     objects={objects}
                     entrances={entrances}
                     onChange={(field, value) => onUpdateProject(selectedProject.id, field, value)}
+                    readOnly={readOnly}
                   />
                   <div className="headerActions projectActions">
-                    <button type="button" onClick={() => onDelete(selectedProject.id)}>Projekt loeschen</button>
+                    {!readOnly ? <button type="button" onClick={() => onDelete(selectedProject.id)}>Projekt loeschen</button> : null}
                   </div>
                 </>
               ) : null}
@@ -3968,6 +4148,7 @@ function ProjectsView({
                   onAssign={onAssign}
                   onRemove={onRemoveDocument}
                   onDelete={onDeleteDocument}
+                  readOnly={readOnly}
                 />
               ) : null}
               {activeTab === "costs" ? (
@@ -3996,7 +4177,8 @@ function ProjectDocumentsTab({
   onSelect,
   onAssign,
   onRemove,
-  onDelete
+  onDelete,
+  readOnly
 }: {
   documents: ObjectAnalysis[];
   projects: ProjectRecord[];
@@ -4005,6 +4187,7 @@ function ProjectDocumentsTab({
   onAssign: (documentId: string, projectId: string | null) => void;
   onRemove: (id: string) => void;
   onDelete: (id: string) => void;
+  readOnly: boolean;
 }) {
   return (
     <div className="tableWrap">
@@ -4044,14 +4227,14 @@ function ProjectDocumentsTab({
               <td>
                 <div className="rowActions">
                   <button type="button" onClick={() => onSelect(document.id)}>Ansehen</button>
-                  <button type="button" onClick={() => onSelect(document.id)}>Bearbeiten</button>
-                  <button type="button">KI erneut</button>
-                  <select value={assignments[document.id] ?? ""} onChange={(event) => onAssign(document.id, event.target.value || null)}>
+                  {!readOnly ? <button type="button" onClick={() => onSelect(document.id)}>Bearbeiten</button> : null}
+                  {!readOnly ? <button type="button">KI erneut</button> : null}
+                  {!readOnly ? <select value={assignments[document.id] ?? ""} onChange={(event) => onAssign(document.id, event.target.value || null)}>
                     <option value="">Verschieben</option>
                     {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
-                  </select>
-                  <button type="button" onClick={() => onRemove(document.id)}>Entfernen</button>
-                  <button type="button" onClick={() => onDelete(document.id)}>Loeschen</button>
+                  </select> : null}
+                  {!readOnly ? <button type="button" onClick={() => onRemove(document.id)}>Entfernen</button> : null}
+                  {!readOnly ? <button type="button" onClick={() => onDelete(document.id)}>Loeschen</button> : null}
                 </div>
               </td>
             </tr>
@@ -4301,7 +4484,8 @@ function UnassignedView({
   onSelect,
   onAssign,
   onCreateProject,
-  onDelete
+  onDelete,
+  readOnly
 }: {
   documents: ObjectAnalysis[];
   projects: ProjectRecord[];
@@ -4309,6 +4493,7 @@ function UnassignedView({
   onAssign: (documentId: string, projectId: string | null) => void;
   onCreateProject: (document: ObjectAnalysis) => void;
   onDelete: (id: string) => void;
+  readOnly: boolean;
 }) {
   return (
     <section className="panel panelFlush">
@@ -4404,7 +4589,8 @@ function SettingsView({
   onExportData,
   onImportData,
   onImportLocalObjectsToSupabase,
-  onImportLocalDocumentsToSupabase
+  onImportLocalDocumentsToSupabase,
+  readOnly
 }: {
   progress: ReanalysisProgress;
   dataTransferStatus: DataTransferStatus;
@@ -4421,6 +4607,7 @@ function SettingsView({
   onImportData: (file: File) => Promise<void>;
   onImportLocalObjectsToSupabase: () => Promise<void>;
   onImportLocalDocumentsToSupabase: () => Promise<void>;
+  readOnly: boolean;
 }) {
   const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const currentSummary = summarizeCurrentAppData();
@@ -4431,9 +4618,9 @@ function SettingsView({
           <h2>Einstellungen</h2>
           <p>OpenAI API-Key und Analyse-Regeln werden über Server-Umgebung und Backend gesteuert.</p>
         </div>
-        <button className="buttonPrimary" type="button" onClick={onReanalyzeAll} disabled={progress.status === "running"}>
+        {!readOnly ? <button className="buttonPrimary" type="button" onClick={onReanalyzeAll} disabled={progress.status === "running"}>
           {progress.status === "running" ? "Neuauswertung laeuft..." : "Alle Objekte neu auswerten"}
-        </button>
+        </button> : null}
       </div>
       {progress.status !== "idle" ? (
         <div className="reanalysisPanel">
@@ -4564,6 +4751,10 @@ function SupabaseDocumentLoadDiagnosisView({ diagnosis }: { diagnosis: SupabaseD
         <span>App-Dokumente: {formatNumber(diagnosis.appDocumentCount)}</span>
         <span>measureDetails: {formatNumber(diagnosis.measureDetailsCount)}</span>
         <span>clusters: {formatNumber(diagnosis.clustersCount)}</span>
+        <span>Automatische Dokument-Reparatur {diagnosis.autoRepairEnabled === false ? "inaktiv" : "aktiv"}</span>
+        <span>Unvollständig: {formatNumber(diagnosis.autoRepairIncomplete ?? 0)}</span>
+        <span>Repariert: {formatNumber(diagnosis.autoRepairRepaired ?? 0)}</span>
+        <span>Nicht repariert: {formatNumber((diagnosis.autoRepairSkipped ?? 0) + (diagnosis.autoRepairFailed ?? 0))}</span>
       </div>
     </div>
   );
@@ -4655,7 +4846,8 @@ function DocumentEditor({
   onAssign,
   onCreateProject,
   onDelete,
-  onUpdate
+  onUpdate,
+  readOnly
 }: {
   document: ObjectAnalysis | null;
   projects: ProjectRecord[];
@@ -4664,6 +4856,7 @@ function DocumentEditor({
   onCreateProject: () => void;
   onDelete: () => void;
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+  readOnly: boolean;
 }) {
   if (!document) {
     return (
@@ -4691,17 +4884,17 @@ function DocumentEditor({
       </div>
       <label className="filterInput">
         <span>Projekt</span>
-        <select value={assignedProjectId ?? ""} onChange={(event) => onAssign(event.target.value || null)}>
+        <select value={assignedProjectId ?? ""} disabled={readOnly} onChange={(event) => onAssign(event.target.value || null)}>
           <option value="">Unzugeordnet</option>
           {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
         </select>
       </label>
 
-      <div className="editorActions">
+      {!readOnly ? <div className="editorActions">
         <button type="button" onClick={onCreateProject}>Neues Projekt aus Dokument</button>
         <button type="button">KI erneut starten</button>
         <button type="button" onClick={onDelete}>Dokument loeschen</button>
-      </div>
+      </div> : null}
 
       <div className="editForm">
         <EditInput label="KI-Agent" value={fieldOrUnknown(document.aiAgentName)} onChange={() => undefined} readOnly />
@@ -4753,7 +4946,8 @@ function UploadObjectPanel({
   uploadedFileName,
   onChange,
   onSaveNew,
-  onAssignExisting
+  onAssignExisting,
+  readOnly
 }: {
   document: ObjectAnalysis | null;
   documents: ObjectAnalysis[];
@@ -4768,6 +4962,7 @@ function UploadObjectPanel({
   onChange: (field: keyof UploadObjectDraft, value: string) => void;
   onSaveNew: () => void;
   onAssignExisting: (objectId: string) => void;
+  readOnly: boolean;
 }) {
   const showForm = phase === "analyzed";
   const visibleDocuments = documents.length ? documents : document ? [document] : [];
@@ -4874,10 +5069,10 @@ function UploadObjectPanel({
             <div className="possibleMatchBox">
               <strong>Möglicherweise vorhandenes Objekt gefunden</strong>
               <p>{objectLabel(existingObject) || existingObject.address || "k.A."}</p>
-              <div className="editorActions">
+              {!readOnly ? <div className="editorActions">
                 <button type="button" onClick={() => onAssignExisting(existingObject.id)}>Bestehendem Objekt zuordnen</button>
                 <button type="button" onClick={onSaveNew}>Trotzdem neues Objekt erstellen</button>
-              </div>
+              </div> : null}
             </div>
           ) : null}
 
@@ -4912,9 +5107,9 @@ function UploadObjectPanel({
             <EditInput label="Wohnfläche sanierte Wohnung m²" value={draft.wohnflaecheSanierteWohnung ?? ""} type="number" placeholder="Nicht erkannt" onChange={(value) => onChange("wohnflaecheSanierteWohnung", value)} />
           </div>
 
-          <div className="editorActions">
+          {!readOnly ? <div className="editorActions">
             <button className="buttonPrimary" type="button" onClick={onSaveNew}>Als neues Objekt speichern</button>
-          </div>
+          </div> : null}
         </>
       ) : null}
     </aside>
@@ -4982,7 +5177,7 @@ function MeasureDebugBlock({ document }: { document: ObjectAnalysis }) {
   );
 }
 
-function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (field: keyof ObjectRecord, value: string) => void }) {
+function ObjectForm({ object, onChange, readOnly = false }: { object: ObjectRecord; onChange: (field: keyof ObjectRecord, value: string) => void; readOnly?: boolean }) {
   return (
     <div className="projectForm">
       {([
@@ -5008,6 +5203,7 @@ function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (fie
           value={String(object[field] ?? "")}
           type={field === "wohnflaecheSanierteWohnung" ? "number" : "text"}
           onChange={(value) => onChange(field, value)}
+          readOnly={readOnly}
         />
       ))}
       <p className="formHint">Geocoding ist vorbereitet. Bis zur automatischen Adressaufloesung bitte Koordinaten manuell eintragen.</p>
@@ -5015,7 +5211,7 @@ function ObjectForm({ object, onChange }: { object: ObjectRecord; onChange: (fie
   );
 }
 
-function EntranceForm({ entrance, onChange }: { entrance: EntranceRecord; onChange: (field: keyof EntranceRecord, value: string) => void }) {
+function EntranceForm({ entrance, onChange, readOnly = false }: { entrance: EntranceRecord; onChange: (field: keyof EntranceRecord, value: string) => void; readOnly?: boolean }) {
   return (
     <div className="projectForm entranceForm">
       {([
@@ -5027,7 +5223,7 @@ function EntranceForm({ entrance, onChange }: { entrance: EntranceRecord; onChan
         ["livingAreaSqm", "Wohnfläche"],
         ["unitCount", "Anzahl WE"]
       ] as Array<[keyof EntranceRecord, string]>).map(([field, label]) => (
-        <EditInput key={field} label={label} value={String(entrance[field] ?? "")} onChange={(value) => onChange(field, value)} />
+        <EditInput key={field} label={label} value={String(entrance[field] ?? "")} onChange={(value) => onChange(field, value)} readOnly={readOnly} />
       ))}
     </div>
   );
@@ -5037,12 +5233,14 @@ function ProjectForm({
   project,
   objects,
   entrances,
-  onChange
+  onChange,
+  readOnly = false
 }: {
   project: ProjectRecord;
   objects: ObjectRecord[];
   entrances: EntranceRecord[];
   onChange: (field: keyof ProjectRecord, value: string) => void;
+  readOnly?: boolean;
 }) {
   const objectEntrances = entrances.filter((entrance) => entrance.objectId === project.objectId);
   return (
@@ -5052,7 +5250,7 @@ function ProjectForm({
       <EditInput label="Fonds" value={project.fund} onChange={(value) => onChange("fund", value)} />
       <label className="filterInput">
         <span>Objekt</span>
-        <select value={project.objectId} onChange={(event) => onChange("objectId", event.target.value)}>
+        <select value={project.objectId} disabled={readOnly} onChange={(event) => onChange("objectId", event.target.value)}>
           <option value="">k.A.</option>
           {objects.map((object) => <option key={object.id} value={object.id}>{objectLabel(object) || "k.A."}</option>)}
         </select>
@@ -5060,7 +5258,7 @@ function ProjectForm({
       <EditInput label="Objekt Freitext" value={project.object} onChange={(value) => onChange("object", value)} />
       <label className="filterInput">
         <span>Hauseingang</span>
-        <select value={project.entranceId ?? ""} onChange={(event) => onChange("entranceId", event.target.value)}>
+        <select value={project.entranceId ?? ""} disabled={readOnly} onChange={(event) => onChange("entranceId", event.target.value)}>
           <option value="">k.A.</option>
           {objectEntrances.map((entrance) => <option key={entrance.id} value={entrance.id}>{entranceLabel(entrance) || "k.A."}</option>)}
         </select>
