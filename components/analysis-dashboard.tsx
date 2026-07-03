@@ -28,8 +28,11 @@ import {
   deleteSupabaseObject,
   getRuntimeSupabaseConfig,
   getSupabaseRuntimeConfigStatus,
+  importAssignmentsToSupabase,
   importDocumentsAndCostItemsToSupabase,
+  importEntrancesToSupabase,
   importMissingObjectsToSupabase,
+  importObjectImagesToSupabase,
   loadSupabaseDocumentsWithCostItems,
   loadSupabaseOnlineData,
   saveSupabaseAssignment,
@@ -41,6 +44,7 @@ import {
   updateSupabaseObject,
   type SupabaseDocumentCostImportSummary,
   type SupabaseObjectImportSummary,
+  type SupabaseBackfillTableSummary,
   type SupabaseTableLoadDiagnostic
 } from "../lib/supabase";
 import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
@@ -147,13 +151,20 @@ interface SupabaseDocumentImportStatus {
 interface SupabaseDocumentLoadDiagnosis {
   message: string;
   supabaseActive?: boolean;
+  source?: string;
+  lastSyncAt?: string;
+  localObjectCount?: number;
+  localProjectCount?: number;
   localDocumentsTotal: number;
+  supabaseObjectCount?: number;
+  supabaseProjectCount?: number;
   supabaseDocumentCount: number;
   supabaseCostItemCount: number;
   appDocumentCount: number;
   measureDetailsCount: number;
   clustersCount: number;
   tableDiagnostics?: SupabaseTableLoadDiagnostic[];
+  backfillSummary?: SupabaseBackfillTableSummary[];
   autoRepairEnabled?: boolean;
   autoRepairIncomplete?: number;
   autoRepairRepaired?: number;
@@ -507,12 +518,19 @@ export function AnalysisDashboard() {
     message: "",
     localDocumentsTotal: 0,
     supabaseActive: false,
+    source: "",
+    lastSyncAt: "",
+    localObjectCount: 0,
+    localProjectCount: 0,
+    supabaseObjectCount: 0,
+    supabaseProjectCount: 0,
     supabaseDocumentCount: 0,
     supabaseCostItemCount: 0,
     appDocumentCount: 0,
     measureDetailsCount: 0,
     clustersCount: 0,
     tableDiagnostics: [],
+    backfillSummary: [],
     autoRepairEnabled: true,
     autoRepairIncomplete: 0,
     autoRepairRepaired: 0,
@@ -592,6 +610,7 @@ export function AnalysisDashboard() {
       const localObjects = getObjects();
       const localDocuments = getDocuments();
       const localProjects = getProjects();
+      const localEntrances = getEntrances();
       const localAssignments = getAssignments();
       const localDocumentsTotal = localDocuments.length;
       logLocalDocumentStorageDiagnostics("App-Load");
@@ -622,7 +641,10 @@ export function AnalysisDashboard() {
         assignmentCount: supabaseAssignmentCount
       });
       console.log("[Diagnose] localStorage objects count", localObjects.length);
+      console.log("[Diagnose] localStorage projects count", localProjects.length);
+      console.log("[Diagnose] localStorage entrances count", localEntrances.length);
       console.log("[Diagnose] localStorage documents count", localDocuments.length);
+      console.log("[Diagnose] localStorage assignments count", Object.keys(localAssignments).length);
       console.log("[Diagnose] Supabase objects count", supabaseObjects.length);
       console.log("[Diagnose] Supabase documents count", supabaseDocuments.supabaseDocumentCount);
       console.log("[Supabase] lokale Dokumente im App-Load", localDocumentsTotal);
@@ -661,7 +683,10 @@ export function AnalysisDashboard() {
         (
           localObjects.length > supabaseObjects.length ||
           localProjects.length > supabaseProjects.length ||
-          localDocuments.length > supabaseDocuments.documents.length
+          localDocuments.length > supabaseDocuments.documents.length ||
+          localEntrances.length > supabaseEntrances.length ||
+          Object.keys(localAssignments).length > supabaseAssignmentCount ||
+          Object.values(objectImages).reduce((sum, images) => sum + images.length, 0) > supabaseImageCount
         );
       if (shouldBackfillLocalData) {
         localDataBackfillAttemptedRef.current = true;
@@ -669,24 +694,29 @@ export function AnalysisDashboard() {
           localObjects,
           localDocuments,
           localProjects,
+          localEntrances,
+          localAssignments,
+          localObjectImages: objectImages,
           supabaseObjectsCount: supabaseObjects.length,
           supabaseProjectsCount: supabaseProjects.length,
-          supabaseDocumentsCount: supabaseDocuments.documents.length
+          supabaseDocumentsCount: supabaseDocuments.documents.length,
+          supabaseCostItemsCount: supabaseDocuments.supabaseCostItemCount,
+          supabaseEntrancesCount: supabaseEntrances.length,
+          supabaseAssignmentsCount: supabaseAssignmentCount,
+          supabaseObjectImagesCount: supabaseImageCount
         });
       }
       if (hasSupabaseAppData) {
         const nextObjects = supabaseObjects.length > 0
           ? supabaseObjects
-          : buildObjectsFromStoredData(localObjects, supabaseDocuments.documents.length > 0 ? supabaseDocuments.documents : localDocuments, supabaseProjects.length > 0 ? supabaseProjects : localProjects, { deriveFallbackObjects: true });
+          : buildObjectsFromStoredData([], supabaseDocuments.documents, supabaseProjects, { deriveFallbackObjects: true });
         setObjects(nextObjects);
-        setProjects(supabaseProjects.length > 0 ? supabaseProjects : localProjects);
-        setEntrances(supabaseEntrances.length > 0 ? supabaseEntrances : getEntrances());
-        setAssignments(supabaseAssignmentCount > 0 ? supabaseAssignments : localAssignments);
-        setObjectImages(supabaseImageCount > 0 ? supabaseObjectImages : {});
-        if (supabaseDocuments.documents.length > 0) {
-          setAnalysis(buildAnalysisFromDocuments(supabaseDocuments.documents));
-          setSelectedDocumentId((current) => supabaseDocuments.documents.some((document) => document.id === current) ? current : supabaseDocuments.documents[0]?.id ?? null);
-        }
+        setProjects(supabaseProjects);
+        setEntrances(supabaseEntrances);
+        setAssignments(supabaseAssignments);
+        setObjectImages(supabaseObjectImages);
+        setAnalysis(buildAnalysisFromDocuments(supabaseDocuments.documents));
+        setSelectedDocumentId((current) => supabaseDocuments.documents.some((document) => document.id === current) ? current : supabaseDocuments.documents[0]?.id ?? null);
         setSelectedObjectId((current) => nextObjects.some((object) => object.id === current) ? current : nextObjects[0]?.id ?? null);
         setSelectedProjectId((current) => supabaseProjects.some((project) => project.id === current) ? current : supabaseProjects[0]?.id ?? null);
       }
@@ -695,13 +725,20 @@ export function AnalysisDashboard() {
           ? `Supabase aktiv: ja. Daten aus Supabase geladen. Objects: ${supabaseObjects.length}, documents: ${supabaseDocuments.supabaseDocumentCount}, projects: ${supabaseProjects.length}.`
           : `Supabase aktiv: ${supabaseActive ? "ja" : "nein"}. Keine Supabase-App-Daten gefunden, lokaler Fallback aktiv.`,
         supabaseActive,
+        source: hasSupabaseAppData ? "Supabase" : "localStorage fallback",
+        lastSyncAt: new Date().toISOString(),
+        localObjectCount: localObjects.length,
+        localProjectCount: localProjects.length,
         localDocumentsTotal,
+        supabaseObjectCount: supabaseObjects.length,
+        supabaseProjectCount: supabaseProjects.length,
         supabaseDocumentCount: supabaseDocuments.supabaseDocumentCount,
         supabaseCostItemCount: supabaseDocuments.supabaseCostItemCount,
         appDocumentCount: supabaseDocuments.appDocumentCount,
         measureDetailsCount: supabaseDocuments.measureDetailsCount,
         clustersCount: supabaseDocuments.clustersCount,
         tableDiagnostics: supabaseDiagnostics,
+        backfillSummary: supabaseDocumentLoadDiagnosis.backfillSummary,
         autoRepairEnabled: supabaseDocuments.autoRepair.enabled,
         autoRepairIncomplete: supabaseDocuments.autoRepair.incomplete,
         autoRepairRepaired: supabaseDocuments.autoRepair.repaired,
@@ -718,51 +755,197 @@ export function AnalysisDashboard() {
     localObjects,
     localDocuments,
     localProjects,
+    localEntrances,
+    localAssignments,
+    localObjectImages,
     supabaseObjectsCount,
     supabaseProjectsCount,
-    supabaseDocumentsCount
+    supabaseDocumentsCount,
+    supabaseCostItemsCount,
+    supabaseEntrancesCount,
+    supabaseAssignmentsCount,
+    supabaseObjectImagesCount
   }: {
     localObjects: ObjectRecord[];
     localDocuments: ObjectAnalysis[];
     localProjects: ProjectRecord[];
+    localEntrances: EntranceRecord[];
+    localAssignments: Record<string, string | null>;
+    localObjectImages: Record<string, string[]>;
     supabaseObjectsCount: number;
     supabaseProjectsCount: number;
     supabaseDocumentsCount: number;
+    supabaseCostItemsCount: number;
+    supabaseEntrancesCount: number;
+    supabaseAssignmentsCount: number;
+    supabaseObjectImagesCount: number;
   }) {
     try {
       const importObjects = buildObjectsFromStoredData(localObjects, localDocuments, localProjects, {
         deriveFallbackObjects: true
       });
+      const backfillSummaries: SupabaseBackfillTableSummary[] = [];
+      const localCostItems = localDocuments.reduce((sum, document) =>
+        sum + Math.max(document.measureDetails?.length ?? 0, document.clusters.length),
+        0
+      );
       console.log("[Supabase Backfill] Lokale Daten werden einmalig nach Supabase synchronisiert", {
         localObjects: localObjects.length,
         importObjects: importObjects.length,
         localProjects: localProjects.length,
+        localEntrances: localEntrances.length,
         localDocuments: localDocuments.length,
+        localCostItems,
+        localAssignments: Object.keys(localAssignments).length,
+        localObjectImages: Object.values(localObjectImages).reduce((sum, images) => sum + images.length, 0),
         supabaseObjects: supabaseObjectsCount,
         supabaseProjects: supabaseProjectsCount,
-        supabaseDocuments: supabaseDocumentsCount
+        supabaseEntrances: supabaseEntrancesCount,
+        supabaseDocuments: supabaseDocumentsCount,
+        supabaseCostItems: supabaseCostItemsCount,
+        supabaseAssignments: supabaseAssignmentsCount,
+        supabaseObjectImages: supabaseObjectImagesCount
       });
 
       if (importObjects.length > 0) {
         const objectSummary = await importMissingObjectsToSupabase(importObjects);
         console.log("[Supabase Backfill] Objekte synchronisiert", objectSummary);
+        backfillSummaries.push({
+          table: "objects",
+          local: importObjects.length,
+          before: supabaseObjectsCount,
+          imported: objectSummary.imported,
+          skipped: objectSummary.skipped,
+          notRepairable: objectSummary.skipped,
+          errors: objectSummary.errors
+        });
+      } else {
+        backfillSummaries.push(emptyBackfillTableSummary("objects", 0, supabaseObjectsCount));
       }
 
       if (localProjects.length > 0) {
         const projectResults = await Promise.allSettled(localProjects.map((project) => upsertSupabaseProject(project)));
+        const rejectedProjects = projectResults.filter((result) => result.status === "rejected");
         console.log("[Supabase Backfill] Projekte synchronisiert", {
           total: localProjects.length,
           fulfilled: projectResults.filter((result) => result.status === "fulfilled").length,
-          rejected: projectResults.filter((result) => result.status === "rejected").map((result) => result.reason)
+          rejected: rejectedProjects.map((result) => result.reason)
         });
+        backfillSummaries.push({
+          table: "projects",
+          local: localProjects.length,
+          before: supabaseProjectsCount,
+          imported: projectResults.filter((result) => result.status === "fulfilled").length,
+          skipped: 0,
+          notRepairable: 0,
+          errors: rejectedProjects.map((result) => String(result.reason))
+        });
+      } else {
+        backfillSummaries.push(emptyBackfillTableSummary("projects", 0, supabaseProjectsCount));
+      }
+
+      if (localEntrances.length > 0) {
+        backfillSummaries.push(await importEntrancesToSupabase(localEntrances));
+      } else {
+        backfillSummaries.push(emptyBackfillTableSummary("entrances", 0, supabaseEntrancesCount));
       }
 
       if (localDocuments.length > 0) {
         const documentSummary = await importDocumentsAndCostItemsToSupabase(localDocuments);
         console.log("[Supabase Backfill] Dokumente synchronisiert", documentSummary);
+        backfillSummaries.push({
+          table: "documents",
+          local: localDocuments.length,
+          before: supabaseDocumentsCount,
+          imported: documentSummary.documentsImported,
+          skipped: documentSummary.skipped,
+          notRepairable: documentSummary.skippedMissingObject + documentSummary.skippedEmpty,
+          errors: documentSummary.errors
+        });
+        backfillSummaries.push({
+          table: "cost_items",
+          local: localCostItems,
+          before: supabaseCostItemsCount,
+          imported: documentSummary.costItemsImported,
+          skipped: documentSummary.skippedDuplicate,
+          notRepairable: documentSummary.skippedMissingObject + documentSummary.skippedEmpty,
+          errors: documentSummary.errors
+        });
+      } else {
+        backfillSummaries.push(emptyBackfillTableSummary("documents", 0, supabaseDocumentsCount));
+        backfillSummaries.push(emptyBackfillTableSummary("cost_items", 0, supabaseCostItemsCount));
       }
 
+      if (Object.keys(localAssignments).length > 0) {
+        backfillSummaries.push(await importAssignmentsToSupabase(localAssignments));
+      } else {
+        backfillSummaries.push(emptyBackfillTableSummary("assignments", 0, supabaseAssignmentsCount));
+      }
+
+      if (Object.values(localObjectImages).some((images) => images.length > 0)) {
+        backfillSummaries.push(await importObjectImagesToSupabase(localObjectImages));
+      } else {
+        backfillSummaries.push(emptyBackfillTableSummary("object_images", 0, supabaseObjectImagesCount));
+      }
+
+      const after = await loadSupabaseOnlineData();
+      const afterByTable = new Map<string, number>([
+        ["objects", after.objects.length],
+        ["documents", after.documents.supabaseDocumentCount],
+        ["cost_items", after.documents.supabaseCostItemCount],
+        ["projects", after.projects.length],
+        ["entrances", after.entrances.length],
+        ["assignments", Object.keys(after.assignments).length],
+        ["object_images", Object.values(after.objectImages).reduce((sum, images) => sum + images.length, 0)]
+      ]);
+      const finalizedSummaries = backfillSummaries.map((entry) => ({
+        ...entry,
+        after: afterByTable.get(entry.table) ?? entry.after ?? entry.before
+      }));
+      console.log("[Supabase Backfill] Abschlussbilanz", {
+        objects: {
+          lokal: importObjects.length,
+          supabaseVorher: supabaseObjectsCount,
+          supabaseNachher: after.objects.length
+        },
+        documents: {
+          lokal: localDocuments.length,
+          supabaseVorher: supabaseDocumentsCount,
+          supabaseNachher: after.documents.supabaseDocumentCount
+        },
+        costItems: {
+          lokal: localCostItems,
+          supabaseVorher: supabaseCostItemsCount,
+          supabaseNachher: after.documents.supabaseCostItemCount
+        },
+        projects: {
+          lokal: localProjects.length,
+          supabaseVorher: supabaseProjectsCount,
+          supabaseNachher: after.projects.length
+        },
+        entrances: {
+          lokal: localEntrances.length,
+          supabaseVorher: supabaseEntrancesCount,
+          supabaseNachher: after.entrances.length
+        },
+        assignments: {
+          lokal: Object.keys(localAssignments).length,
+          supabaseVorher: supabaseAssignmentsCount,
+          supabaseNachher: Object.keys(after.assignments).length
+        },
+        objectImages: {
+          lokal: Object.values(localObjectImages).reduce((sum, images) => sum + images.length, 0),
+          supabaseVorher: supabaseObjectImagesCount,
+          supabaseNachher: Object.values(after.objectImages).reduce((sum, images) => sum + images.length, 0)
+        }
+      });
       await loadSupabaseObjectData();
+      setSupabaseDocumentLoadDiagnosis((current) => ({
+        ...current,
+        source: "Supabase",
+        lastSyncAt: new Date().toISOString(),
+        backfillSummary: finalizedSummaries
+      }));
     } catch (backfillError) {
       console.error("[Supabase Backfill] Lokale Daten konnten nicht synchronisiert werden", backfillError);
       setMessage(backfillError instanceof Error ? `Lokale Daten konnten nicht nach Supabase synchronisiert werden: ${backfillError.message}` : "Lokale Daten konnten nicht nach Supabase synchronisiert werden.");
@@ -2944,6 +3127,26 @@ function ObjectsView({
       `${object.objectNumber} ${object.objectName} ${object.address} ${object.fund}`.toLowerCase().includes(objectSearch.toLowerCase())
     )
     .sort(compareObjectsByNumber);
+  useEffect(() => {
+    const search = objectSearch.trim().toLowerCase();
+    const discarded = objects
+      .filter((object) => !filteredObjects.some((entry) => entry.id === object.id))
+      .map((object) => ({
+        id: object.id,
+        objectNumber: object.objectNumber,
+        address: object.address,
+        fund: object.fund,
+        reason: search
+          ? `Suchfilter "${objectSearch}" passt nicht auf objectNumber/objectName/address/fund.`
+          : "Unbekannter Filtergrund."
+      }));
+    console.log("[UI Diagnose] Objektliste", {
+      loadedObjects: objects.length,
+      filteredObjects: filteredObjects.length,
+      objectSearch,
+      discardedObjects: discarded
+    });
+  }, [objects, filteredObjects, objectSearch]);
   const selectedEntrances = selectedObject ? entrances.filter((entrance) => entrance.objectId === selectedObject.id) : [];
   const selectedProjects = selectedObject ? projects.filter((project) => project.objectId === selectedObject.id) : [];
   const selectedDocuments = selectedObject ? documents.filter((document) => documentBelongsToObject(document, selectedObject, projects, assignments)) : [];
@@ -4888,6 +5091,12 @@ function SupabaseDocumentLoadDiagnosisView({ diagnosis }: { diagnosis: SupabaseD
       <strong>{diagnosis.message}</strong>
       <div>
         <span>Supabase aktiv: {diagnosis.supabaseActive ? "ja" : "nein"}</span>
+        <span>Datenquelle: {diagnosis.source || "k.A."}</span>
+        <span>Letzter Sync: {diagnosis.lastSyncAt || "k.A."}</span>
+        <span>Lokale Objekte: {formatNumber(diagnosis.localObjectCount ?? 0)}</span>
+        <span>Supabase objects: {formatNumber(diagnosis.supabaseObjectCount ?? 0)}</span>
+        <span>Lokale Projekte: {formatNumber(diagnosis.localProjectCount ?? 0)}</span>
+        <span>Supabase projects: {formatNumber(diagnosis.supabaseProjectCount ?? 0)}</span>
         <span>Lokale Dokumente: {formatNumber(diagnosis.localDocumentsTotal)}</span>
         <span>Supabase documents: {formatNumber(diagnosis.supabaseDocumentCount)}</span>
         <span>Supabase cost_items: {formatNumber(diagnosis.supabaseCostItemCount)}</span>
@@ -4906,8 +5115,28 @@ function SupabaseDocumentLoadDiagnosisView({ diagnosis }: { diagnosis: SupabaseD
           ).join(" | ")}
         </small>
       ) : null}
+      {diagnosis.backfillSummary?.length ? (
+        <small>
+          {diagnosis.backfillSummary.map((entry) =>
+            `${entry.table}: lokal ${formatNumber(entry.local)} / vorher ${formatNumber(entry.before)} / nachher ${formatNumber(entry.after ?? entry.before)} / importiert ${formatNumber(entry.imported)} / uebersprungen ${formatNumber(entry.skipped)} / nicht reparierbar ${formatNumber(entry.notRepairable)} / Fehler ${formatNumber(entry.errors.length)}`
+          ).join(" | ")}
+        </small>
+      ) : null}
     </div>
   );
+}
+
+function emptyBackfillTableSummary(table: string, local: number, before: number): SupabaseBackfillTableSummary {
+  return {
+    table,
+    local,
+    before,
+    after: before,
+    imported: 0,
+    skipped: 0,
+    notRepairable: 0,
+    errors: []
+  };
 }
 
 function SupabaseDocumentImportSummaryView({ status }: { status: SupabaseDocumentImportStatus }) {

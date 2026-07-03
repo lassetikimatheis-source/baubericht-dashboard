@@ -498,6 +498,17 @@ export interface SupabaseObjectImportSummary {
   errors: string[];
 }
 
+export interface SupabaseBackfillTableSummary {
+  table: string;
+  local: number;
+  before: number;
+  after?: number;
+  imported: number;
+  skipped: number;
+  notRepairable: number;
+  errors: string[];
+}
+
 export interface SupabaseDocumentCostImportSummary {
   localDocumentsTotal: number;
   documentsImported: number;
@@ -527,8 +538,11 @@ export interface SupabaseDocumentLoadResult {
 
 export interface SupabaseTableLoadDiagnostic {
   table: string;
+  query: string;
+  filters: Record<string, unknown>;
   loaded: boolean;
   count: number;
+  sample: unknown[];
   error: string | null;
   rlsError: boolean;
 }
@@ -612,13 +626,12 @@ export async function importMissingObjectsToSupabase(objects: StoredObjectRecord
     runtime: "server"
   });
   const existingObjects = await loadSupabaseObjects();
-  const existingByObjectNumber = new Map<string, StoredObjectRecord>();
+  const existingByObjectKey = new Map<string, StoredObjectRecord>();
   existingObjects.forEach((object) => {
-    const objectNumber = normalizeObjectNumber(object.objectNumber);
-    if (objectNumber) existingByObjectNumber.set(objectNumber, object);
+    objectImportKeys(object).forEach((key) => existingByObjectKey.set(key, object));
   });
-  const processedObjectNumbers = new Set<string>();
-  const sampleObject = objects.find((object) => normalizeObjectNumber(object.objectNumber)) ?? objects[0] ?? null;
+  const processedObjectKeys = new Set<string>();
+  const sampleObject = objects.find((object) => objectImportKeys(object).length > 0) ?? objects[0] ?? null;
   if (sampleObject) {
     console.log("[Supabase Import] Beispiel lokales Objekt", sampleObject);
     console.log("[Supabase Import] Beispiel Supabase-Datensatz", objectRowToSupabase(sampleObject, { includeId: true }));
@@ -630,33 +643,34 @@ export async function importMissingObjectsToSupabase(objects: StoredObjectRecord
   };
 
   for (const object of objects) {
-    const objectNumber = normalizeObjectNumber(object.objectNumber);
-    if (!objectNumber) {
+    const objectKeys = objectImportKeys(object);
+    const primaryKey = objectKeys[0] ?? "";
+    if (!primaryKey) {
       summary.skipped += 1;
-      summary.errors.push(`${object.address || object.id}: keine Objektnummer vorhanden.`);
+      summary.errors.push(`${object.address || object.id}: keine importierbare Objektnummer oder Adresse vorhanden.`);
       continue;
     }
 
-    if (processedObjectNumbers.has(objectNumber)) {
+    if (objectKeys.some((key) => processedObjectKeys.has(key))) {
       summary.skipped += 1;
       continue;
     }
 
     try {
-      const existingObject = existingByObjectNumber.get(objectNumber);
+      const existingObject = objectKeys.map((key) => existingByObjectKey.get(key)).find(Boolean);
       if (existingObject) {
         const backfilledObject = backfillObjectRecord(existingObject, object);
         await updateSupabaseObject(backfilledObject);
-        existingByObjectNumber.set(objectNumber, backfilledObject);
+        objectImportKeys(backfilledObject).forEach((key) => existingByObjectKey.set(key, backfilledObject));
         summary.skipped += 1;
       } else {
         const createdObject = await createSupabaseObject(object);
-        existingByObjectNumber.set(objectNumber, createdObject);
+        objectImportKeys(createdObject).forEach((key) => existingByObjectKey.set(key, createdObject));
         summary.imported += 1;
       }
-      processedObjectNumbers.add(objectNumber);
+      objectKeys.forEach((key) => processedObjectKeys.add(key));
     } catch (error) {
-      summary.errors.push(`${object.objectNumber}: ${error instanceof Error ? error.message : "Import fehlgeschlagen."}`);
+      summary.errors.push(`${object.objectNumber || object.address || object.id}: ${error instanceof Error ? error.message : "Import fehlgeschlagen."}`);
     }
   }
 
@@ -726,7 +740,12 @@ export async function upsertSupabaseProject(project: StoredProjectRecord): Promi
   if (!supabase) {
     throw new Error(`Supabase-Projekt konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
   }
-  const row = projectRowToSupabase(project, { includeId: isUuid(project.id) });
+  const resolvedObjectId = await resolveSupabaseObjectIdForProject(supabase, project);
+  const row = projectRowToSupabase(
+    resolvedObjectId && resolvedObjectId !== project.objectId ? { ...project, objectId: resolvedObjectId } : project,
+    { includeId: isUuid(project.id) }
+  );
+  console.log("[Supabase Backfill] Project UPSERT Payload", { project, resolvedObjectId, row });
   const { data, error } = await supabase
     .from("projects")
     .upsert(row)
@@ -740,6 +759,128 @@ export async function upsertSupabaseProject(project: StoredProjectRecord): Promi
   }
 
   return projectRowFromSupabase(data as GenericSupabaseRow, project);
+}
+
+export async function importEntrancesToSupabase(entrances: StoredEntranceRecord[]): Promise<SupabaseBackfillTableSummary> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Hauseingaenge konnten nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+  const before = await countSupabaseRows(supabase, "entrances");
+  const summary: SupabaseBackfillTableSummary = {
+    table: "entrances",
+    local: entrances.length,
+    before,
+    imported: 0,
+    skipped: 0,
+    notRepairable: 0,
+    errors: []
+  };
+  for (const entrance of entrances) {
+    try {
+      const resolvedObjectId = await resolveSupabaseObjectIdForEntrance(supabase, entrance);
+      if (!resolvedObjectId) {
+        summary.skipped += 1;
+        summary.notRepairable += 1;
+        console.warn("[Supabase Backfill] Entrance ohne aufloesbares Objekt uebersprungen", { entrance });
+        continue;
+      }
+      const row = entranceRowToSupabase({ ...entrance, objectId: resolvedObjectId });
+      console.log("[Supabase Backfill] Entrance UPSERT Payload", { entrance, resolvedObjectId, row });
+      const { error } = await supabase.from("entrances").upsert(row);
+      if (error) {
+        console.error("[Supabase Backfill] Entrance UPSERT fehlgeschlagen", { entrance, row, error });
+        await insertRowAdaptive(supabase, "entrances", row, ["object_id"]);
+      }
+      summary.imported += 1;
+    } catch (error) {
+      summary.errors.push(`${entrance.id}: ${error instanceof Error ? error.message : "Import fehlgeschlagen."}`);
+    }
+  }
+  summary.after = await countSupabaseRows(supabase, "entrances");
+  console.log("[Supabase Backfill] Entrances Ergebnis", summary);
+  return summary;
+}
+
+export async function importAssignmentsToSupabase(assignments: Record<string, string | null>): Promise<SupabaseBackfillTableSummary> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Zuordnungen konnten nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+  const entries = Object.entries(assignments);
+  const before = await countSupabaseRows(supabase, "assignments");
+  const summary: SupabaseBackfillTableSummary = {
+    table: "assignments",
+    local: entries.length,
+    before,
+    imported: 0,
+    skipped: 0,
+    notRepairable: 0,
+    errors: []
+  };
+  for (const [documentId, projectId] of entries) {
+    try {
+      if (!documentId) {
+        summary.skipped += 1;
+        summary.notRepairable += 1;
+        continue;
+      }
+      await saveSupabaseAssignment(documentId, projectId);
+      summary.imported += 1;
+    } catch (error) {
+      summary.errors.push(`${documentId}: ${error instanceof Error ? error.message : "Import fehlgeschlagen."}`);
+    }
+  }
+  summary.after = await countSupabaseRows(supabase, "assignments");
+  console.log("[Supabase Backfill] Assignments Ergebnis", summary);
+  return summary;
+}
+
+export async function importObjectImagesToSupabase(objectImages: Record<string, string[]>): Promise<SupabaseBackfillTableSummary> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    throw new Error(`Supabase-Objektbilder konnten nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  }
+  const entries = Object.entries(objectImages).flatMap(([objectId, images]) => images.map((url) => ({ objectId, url })));
+  const before = await countSupabaseRows(supabase, "object_images");
+  const summary: SupabaseBackfillTableSummary = {
+    table: "object_images",
+    local: entries.length,
+    before,
+    imported: 0,
+    skipped: 0,
+    notRepairable: 0,
+    errors: []
+  };
+  for (const entry of entries) {
+    try {
+      const resolvedObjectId = isUuid(entry.objectId)
+        ? entry.objectId
+        : await resolveSupabaseIdByLocalId(supabase, "objects", entry.objectId, "local_object_id");
+      if (!resolvedObjectId || !entry.url) {
+        summary.skipped += 1;
+        summary.notRepairable += 1;
+        continue;
+      }
+      const row: GenericSupabaseRow = {
+        object_id: resolvedObjectId,
+        local_object_id: entry.objectId,
+        url: entry.url,
+        image_url: entry.url,
+        metadata: {
+          localObjectId: entry.objectId
+        }
+      };
+      console.log("[Supabase Backfill] Object image INSERT Payload", row);
+      await insertRowAdaptive(supabase, "object_images", row, ["object_id", "url"]);
+      summary.imported += 1;
+    } catch (error) {
+      summary.errors.push(`${entry.objectId}: ${error instanceof Error ? error.message : "Import fehlgeschlagen."}`);
+    }
+  }
+  summary.after = await countSupabaseRows(supabase, "object_images");
+  console.log("[Supabase Backfill] Object images Ergebnis", summary);
+  return summary;
 }
 
 export async function deleteSupabaseProject(id: string): Promise<void> {
@@ -1195,6 +1336,7 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
     const documentTypeId = await ensureLookupId(supabase, "document_types", unwrapTextField(document.documentType), documentTypeIdByName, ["name"]);
     const companyId = await ensureLookupId(supabase, "companies", unwrapTextField(document.provider), companyIdByName, ["name", "company_name"]);
     const documentRow = documentRowToSupabase(document, objectId, resolvedObject.objectNumber, documentTypeId, companyId);
+    assertPersistableDocumentRow(documentRow, document);
     const documentKey = documentDuplicateKey(documentRow);
     let supabaseDocumentId = documentIdByKey.get(documentKey) ?? null;
 
@@ -1643,6 +1785,42 @@ function documentRowToSupabase(
   return row;
 }
 
+function assertPersistableDocumentRow(row: GenericSupabaseRow, document: ObjectAnalysis): void {
+  const meaningfulFields = [
+    row.document_number,
+    row.number,
+    row.document_date,
+    row.date,
+    row.total_amount,
+    row.gross_amount,
+    row.amount,
+    row.net_amount,
+    row.vat_amount,
+    row.supplier,
+    row.provider,
+    row.document_type,
+    row.type,
+    row.file_url,
+    row.file_name,
+    row.analysis
+  ].filter((value) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === "string") return value.trim().length > 0;
+    if (typeof value === "number") return Number.isFinite(value);
+    if (typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+    return true;
+  });
+
+  if (meaningfulFields.length > 0) return;
+
+  console.error("[Supabase Dokumentimport] Abbruch: Dokument-Mapping enthaelt keine fachlichen Felder. Insert/Update wird verhindert.", {
+    localDocument: summarizeDocumentForPersistence(document),
+    row,
+    rowKeys: Object.keys(row)
+  });
+  throw new Error("Dokument wurde nicht gespeichert: Mapping enthielt keine fachlichen Dokumentfelder.");
+}
+
 function costItemRowsToSupabase(
   document: ObjectAnalysis,
   objectId: string,
@@ -2063,7 +2241,8 @@ function firstDocumentSource(document: ObjectAnalysis): FieldSource {
 }
 
 function objectRowToSupabase(object: StoredObjectRecord, options: { includeId?: boolean } = {}): SupabaseObjectRow {
-  const row: SupabaseObjectRow = {
+  const row: SupabaseObjectRow & GenericSupabaseRow = {
+    local_object_id: object.id,
     object_number: emptyToNull(object.objectNumber),
     address: emptyToNull(object.address),
     postal_code: emptyToNull(object.postalCode),
@@ -2073,7 +2252,17 @@ function objectRowToSupabase(object: StoredObjectRecord, options: { includeId?: 
     renovated_area: emptyToNull(object.wohnflaecheSanierteWohnung),
     residential_units: emptyToNull(object.unitCount),
     latitude: emptyToNull(object.latitude),
-    longitude: emptyToNull(object.longitude)
+    longitude: emptyToNull(object.longitude),
+    metadata: {
+      localId: object.id,
+      fund: object.fund,
+      objectName: object.objectName,
+      federalState: object.federalState,
+      assetManager: object.assetManager,
+      portfolioManager: object.portfolioManager,
+      createdAt: object.createdAt,
+      updatedAt: object.updatedAt
+    }
   };
   if (options.includeId) {
     row.id = isUuid(object.id) ? object.id : createBrowserUuid();
@@ -2121,6 +2310,34 @@ function entranceRowFromSupabase(row: GenericSupabaseRow): StoredEntranceRecord 
     unitCount: stringValue(row.unit_count ?? row.units ?? metadata.unitCount),
     createdAt: stringValue(row.created_at ?? metadata.createdAt),
     updatedAt: stringValue(row.updated_at ?? metadata.updatedAt)
+  };
+}
+
+function entranceRowToSupabase(entrance: StoredEntranceRecord): GenericSupabaseRow {
+  return {
+    local_entrance_id: entrance.id,
+    object_id: isUuid(entrance.objectId) ? entrance.objectId : null,
+    local_object_id: entrance.objectId,
+    street: emptyToNull(entrance.street),
+    house_number: emptyToNull(entrance.houseNumber),
+    suffix: emptyToNull(entrance.suffix),
+    postal_code: emptyToNull(entrance.postalCode),
+    city: emptyToNull(entrance.city),
+    living_area_sqm: emptyToNull(entrance.livingAreaSqm),
+    unit_count: emptyToNull(entrance.unitCount),
+    metadata: {
+      localId: entrance.id,
+      objectId: entrance.objectId,
+      street: entrance.street,
+      houseNumber: entrance.houseNumber,
+      suffix: entrance.suffix,
+      postalCode: entrance.postalCode,
+      city: entrance.city,
+      livingAreaSqm: entrance.livingAreaSqm,
+      unitCount: entrance.unitCount,
+      createdAt: entrance.createdAt,
+      updatedAt: entrance.updatedAt
+    }
   };
 }
 
@@ -2212,19 +2429,101 @@ function assignmentRowFromSupabase(row: GenericSupabaseRow): { documentId: strin
   };
 }
 
+async function resolveSupabaseObjectIdForProject(supabase: SupabaseClient, project: StoredProjectRecord): Promise<string | null> {
+  if (isUuid(project.objectId)) return project.objectId;
+  const byLocalId = project.objectId
+    ? await resolveSupabaseIdByLocalId(supabase, "objects", project.objectId, "local_object_id")
+    : null;
+  if (byLocalId) return byLocalId;
+  const { data, error } = await supabase.from("objects").select("*");
+  if (error) {
+    console.warn("[Supabase Backfill] Objekte konnten fuer Projekt-Mapping nicht geladen werden", { project, error });
+    return null;
+  }
+  return resolveSupabaseObjectIdFromRows(projectObjectLookupText(project), data as GenericSupabaseRow[] | null);
+}
+
+async function resolveSupabaseObjectIdForEntrance(supabase: SupabaseClient, entrance: StoredEntranceRecord): Promise<string | null> {
+  if (isUuid(entrance.objectId)) return entrance.objectId;
+  const byLocalId = entrance.objectId
+    ? await resolveSupabaseIdByLocalId(supabase, "objects", entrance.objectId, "local_object_id")
+    : null;
+  if (byLocalId) return byLocalId;
+  const { data, error } = await supabase.from("objects").select("*");
+  if (error) {
+    console.warn("[Supabase Backfill] Objekte konnten fuer Entrance-Mapping nicht geladen werden", { entrance, error });
+    return null;
+  }
+  return resolveSupabaseObjectIdFromRows(entranceObjectLookupText(entrance), data as GenericSupabaseRow[] | null);
+}
+
+function resolveSupabaseObjectIdFromRows(lookupText: string, rows: GenericSupabaseRow[] | null): string | null {
+  const normalizedLookup = normalizeAddressText(lookupText);
+  const normalizedNumber = normalizeObjectNumber(lookupText);
+  for (const row of rows ?? []) {
+    const id = stringValue(row.id);
+    if (!id) continue;
+    const rowNumber = normalizeObjectNumber(stringValue(row.object_number));
+    const rowAddress = normalizeAddressText([row.address, row.postal_code, row.city].map(stringValue).join(" "));
+    const localId = normalizeLookupKey(stringValue(row.local_object_id ?? readMetadataValue(row, "localId")));
+    if (normalizedNumber && rowNumber && normalizedNumber === rowNumber) return id;
+    if (normalizedLookup && rowAddress && (normalizedLookup.includes(rowAddress) || rowAddress.includes(normalizedLookup))) return id;
+    if (localId && normalizedLookup.includes(localId)) return id;
+  }
+  return null;
+}
+
+function projectObjectLookupText(project: StoredProjectRecord): string {
+  return [
+    project.objectId,
+    project.object,
+    project.projectName,
+    project.fund,
+    project.location,
+    project.description
+  ].filter(Boolean).join(" ");
+}
+
+function entranceObjectLookupText(entrance: StoredEntranceRecord): string {
+  return [
+    entrance.objectId,
+    entrance.street,
+    entrance.houseNumber,
+    entrance.postalCode,
+    entrance.city
+  ].filter(Boolean).join(" ");
+}
+
+async function countSupabaseRows(supabase: SupabaseClient, table: string): Promise<number> {
+  const { count, error, data } = await supabase
+    .from(table)
+    .select("*", { count: "exact", head: false })
+    .limit(1);
+  if (error) {
+    console.warn("[Supabase Backfill] Tabellenzaehlung fehlgeschlagen", { table, error });
+    return 0;
+  }
+  return count ?? data?.length ?? 0;
+}
+
 async function loadSupabaseTableDiagnostics(
   supabase: SupabaseClient,
   tables: string[]
 ): Promise<SupabaseTableLoadDiagnostic[]> {
   const diagnostics = await Promise.all(tables.map(async (table) => {
+    const query = `from("${table}").select("*", { count: "exact" }).limit(5)`;
+    const filters: Record<string, unknown> = {};
     const { data, error, count } = await supabase
       .from(table)
       .select("*", { count: "exact" })
-      .limit(1);
+      .limit(5);
     const diagnostic: SupabaseTableLoadDiagnostic = {
       table,
+      query,
+      filters,
       loaded: !error,
       count: error ? 0 : count ?? data?.length ?? 0,
+      sample: data ?? [],
       error: error ? formatSupabaseError(error) : null,
       rlsError: isSupabaseRlsError(error)
     };
@@ -2319,6 +2618,15 @@ function backfillObjectRecord(existing: StoredObjectRecord, incoming: StoredObje
     createdAt: existing.createdAt || incoming.createdAt,
     updatedAt: incoming.updatedAt || existing.updatedAt
   };
+}
+
+function objectImportKeys(object: StoredObjectRecord): string[] {
+  return [
+    normalizeObjectNumber(object.objectNumber) ? `number:${normalizeObjectNumber(object.objectNumber)}` : "",
+    normalizeAddressText([object.address, object.postalCode, object.city].filter(Boolean).join(" ")) || object.address.trim()
+      ? `address:${normalizeAddressText([object.address, object.postalCode, object.city].filter(Boolean).join(" ")) || object.address.trim().toLowerCase()}`
+      : ""
+  ].filter(Boolean);
 }
 
 function firstPresent(primary?: string, fallback?: string): string {
