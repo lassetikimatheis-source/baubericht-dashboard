@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { emptyField } from "./analysis-state";
-import { getDocuments, type StoredObjectRecord, type StoredProjectRecord } from "./storage";
+import { getDocuments, type StoredEntranceRecord, type StoredObjectRecord, type StoredProjectRecord } from "./storage";
 import type { CostAllocation, FieldSource, MeasureCluster, MeasureDetail, ObjectAnalysis } from "../types/analysis";
 
 let browserSupabaseClient: SupabaseClient | null = null;
@@ -243,22 +243,86 @@ export async function runSupabaseConnectionTest(): Promise<void> {
 
 export async function getCurrentSupabaseProfile(): Promise<UserProfile | null> {
   const supabase = await getSupabaseClientAsync();
-  if (!supabase) return null;
+  if (!supabase) {
+    console.error("[Supabase Auth] Profil laden abgebrochen: Supabase Client fehlt.");
+    return null;
+  }
   const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user) return null;
+  console.log("[Supabase Auth] getUser Antwort vor Profil-Load", {
+    userId: authData.user?.id ?? null,
+    userEmail: authData.user?.email ?? null,
+    authError: authError
+      ? {
+        message: authError.message,
+        name: authError.name,
+        status: authError.status
+      }
+      : null,
+    raw: authData
+  });
+  if (authError || !authData.user) {
+    console.error("[Supabase Auth] Profil laden ohne gueltigen User abgebrochen", { authError, authData });
+    return null;
+  }
   const user = authData.user;
-  const { data, error } = await supabase
+  console.log("[Supabase Auth] Lade public.profiles per maybeSingle", {
+    table: "profiles",
+    filter: { id: user.id },
+    userId: user.id,
+    userEmail: user.email ?? null
+  });
+  const profileResult = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
     .maybeSingle();
+  const { data, error } = profileResult;
+
+  console.log("[Supabase Auth] public.profiles maybeSingle Antwort", {
+    userId: user.id,
+    userEmail: user.email ?? null,
+    profileId: stringValue((data as GenericSupabaseRow | null)?.id),
+    profileStatus: stringValue((data as GenericSupabaseRow | null)?.status),
+    profileRole: stringValue((data as GenericSupabaseRow | null)?.role),
+    data,
+    error: error
+      ? {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      }
+      : null,
+    fullResponse: profileResult
+  });
 
   if (error) {
-    console.error("[Supabase Auth] Profil konnte nicht geladen werden", error);
+    console.error("[Supabase Auth] Profil konnte nicht geladen werden. Moeglicher RLS-/Policy-Fehler.", {
+      userId: user.id,
+      error,
+      hint: "Der angemeldete Nutzer muss public.profiles mit id = auth.uid() lesen duerfen."
+    });
     throw new Error(`Profil konnte nicht geladen werden: ${formatSupabaseError(error)}`);
   }
 
-  if (data) return profileFromSupabase(data as GenericSupabaseRow, user.email ?? "");
+  if (data) {
+    const profile = profileFromSupabase(data as GenericSupabaseRow, user.email ?? "");
+    console.log("[Supabase Auth] Profil erfolgreich geladen", {
+      userId: user.id,
+      profileId: profile.id,
+      profileStatus: profile.status,
+      profileRole: profile.role,
+      profile
+    });
+    return profile;
+  }
+
+  console.warn("[Supabase Auth] maybeSingle lieferte null. Es wird ein Pending-Profil fuer die aktuelle auth.users.id erstellt.", {
+    userId: user.id,
+    userEmail: user.email ?? null,
+    expectedProfileId: user.id,
+    note: "Wenn bereits ein active/owner-Profil existiert, stimmt dessen id vermutlich nicht mit auth.users.id ueberein oder RLS blendet es aus."
+  });
 
   const email = user.email ?? "";
   const fullName = String(user.user_metadata?.full_name ?? user.user_metadata?.name ?? email.split("@")[0] ?? "");
@@ -279,19 +343,71 @@ export async function getCurrentSupabaseProfile(): Promise<UserProfile | null> {
     console.error("[Supabase Auth] Pending-Profil konnte nicht erstellt werden", { insertRow, error: createError });
     throw new Error(`Profil konnte nicht erstellt werden: ${formatSupabaseError(createError)}`);
   }
+  console.log("[Supabase Auth] Pending-Profil erstellt", {
+    userId: user.id,
+    created,
+    insertRow
+  });
   return profileFromSupabase(created as GenericSupabaseRow, email);
 }
 
 export async function touchCurrentProfileLogin(): Promise<void> {
   const supabase = await getSupabaseClientAsync();
-  if (!supabase) return;
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) return;
-  const { error } = await supabase
+  if (!supabase) {
+    console.warn("[Supabase Auth] last_login_at Update abgebrochen: Supabase Client fehlt.");
+    return;
+  }
+  const { data, error: authError } = await supabase.auth.getUser();
+  console.log("[Supabase Auth] touchCurrentProfileLogin getUser", {
+    userId: data.user?.id ?? null,
+    userEmail: data.user?.email ?? null,
+    authError: authError ?? null
+  });
+  if (authError || !data.user) return;
+  const updateRow = { last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  const result = await supabase
     .from("profiles")
-    .update({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update(updateRow)
     .eq("id", data.user.id);
-  if (error) console.warn("[Supabase Auth] last_login_at konnte nicht aktualisiert werden", error);
+  if (!result.error) {
+    console.log("[Supabase Auth] last_login_at aktualisiert", {
+      userId: data.user.id,
+      updateRow,
+      response: result
+    });
+    return;
+  }
+
+  const missingColumn = extractMissingColumn(result.error.message ?? "");
+  if (missingColumn === "last_login_at") {
+    console.warn("[Supabase Auth] Spalte last_login_at fehlt. Fallback auf updated_at-only.", {
+      userId: data.user.id,
+      error: result.error
+    });
+    const fallback = await supabase
+      .from("profiles")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", data.user.id);
+    if (fallback.error) {
+      console.warn("[Supabase Auth] updated_at-Fallback konnte nicht aktualisiert werden", {
+        userId: data.user.id,
+        error: fallback.error,
+        response: fallback
+      });
+    } else {
+      console.log("[Supabase Auth] updated_at-Fallback aktualisiert", {
+        userId: data.user.id,
+        response: fallback
+      });
+    }
+    return;
+  }
+
+  console.warn("[Supabase Auth] last_login_at konnte nicht aktualisiert werden", {
+    userId: data.user.id,
+    error: result.error,
+    response: result
+  });
 }
 
 export async function loadUserProfiles(): Promise<UserProfile[]> {
@@ -409,6 +525,14 @@ export interface SupabaseDocumentLoadResult {
   autoRepair: SupabaseDocumentAutoRepairSummary;
 }
 
+export interface SupabaseTableLoadDiagnostic {
+  table: string;
+  loaded: boolean;
+  count: number;
+  error: string | null;
+  rlsError: boolean;
+}
+
 export interface SupabaseDocumentAutoRepairSummary {
   enabled: boolean;
   loaded: number;
@@ -428,6 +552,10 @@ export interface SupabaseOnlineData {
   documents: SupabaseDocumentLoadResult;
   projects: StoredProjectRecord[];
   assignments: Record<string, string | null>;
+  entrances: StoredEntranceRecord[];
+  objectImages: Record<string, string[]>;
+  diagnostics: SupabaseTableLoadDiagnostic[];
+  supabaseActive: boolean;
 }
 
 export async function loadSupabaseObjects(): Promise<StoredObjectRecord[]> {
@@ -646,6 +774,44 @@ export async function loadSupabaseAssignments(): Promise<Record<string, string |
   return assignments;
 }
 
+export async function loadSupabaseEntrances(): Promise<StoredEntranceRecord[]> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return [];
+
+  const { data, error } = await supabase
+    .from("entrances")
+    .select("*");
+
+  if (error) {
+    throw new Error(`Supabase-Hauseingaenge konnten nicht geladen werden: ${formatSupabaseError(error)}`);
+  }
+
+  return (data ?? []).map((row) => entranceRowFromSupabase(row as GenericSupabaseRow));
+}
+
+export async function loadSupabaseObjectImages(): Promise<Record<string, string[]>> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return {};
+
+  const { data, error } = await supabase
+    .from("object_images")
+    .select("*");
+
+  if (error) {
+    throw new Error(`Supabase-Objektbilder konnten nicht geladen werden: ${formatSupabaseError(error)}`);
+  }
+
+  const images: Record<string, string[]> = {};
+  (data ?? []).forEach((row) => {
+    const imageRow = row as GenericSupabaseRow;
+    const objectId = stringValue(imageRow.object_id || imageRow.local_object_id || readMetadataValue(imageRow, "objectId"));
+    const url = stringValue(imageRow.url || imageRow.image_url || imageRow.file_url || imageRow.public_url);
+    if (!objectId || !url) return;
+    images[objectId] = [...(images[objectId] ?? []), url];
+  });
+  return images;
+}
+
 export async function saveSupabaseAssignment(documentId: string, projectId: string | null): Promise<void> {
   const supabase = await getSupabaseClientAsync();
   if (!supabase) {
@@ -708,14 +874,73 @@ export async function deleteSupabaseDocument(documentId: string): Promise<void> 
 }
 
 export async function loadSupabaseOnlineData(): Promise<SupabaseOnlineData> {
-  const [objects, documents, projects, assignments] = await Promise.all([
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) {
+    return {
+      objects: [],
+      documents: emptySupabaseDocumentLoadResult(false),
+      projects: [],
+      assignments: {},
+      entrances: [],
+      objectImages: {},
+      diagnostics: [],
+      supabaseActive: false
+    };
+  }
+
+  const diagnostics = await loadSupabaseTableDiagnostics(supabase, [
+    "projects",
+    "objects",
+    "documents",
+    "cost_items",
+    "trades",
+    "companies",
+    "document_types",
+    "units",
+    "entrances",
+    "assignments",
+    "object_images"
+  ]);
+
+  const [objectsResult, documentsResult, projectsResult, assignmentsResult, entrancesResult, objectImagesResult] = await Promise.allSettled([
     loadSupabaseObjects(),
     loadSupabaseDocumentsWithCostItems(),
     loadSupabaseProjects(),
-    loadSupabaseAssignments()
+    loadSupabaseAssignments(),
+    loadSupabaseEntrances(),
+    loadSupabaseObjectImages()
   ]);
 
-  return { objects, documents, projects, assignments };
+  const objects = unwrapSupabaseLoadResult(objectsResult, "objects", [] as StoredObjectRecord[]);
+  const documents = unwrapSupabaseLoadResult(documentsResult, "documents", emptySupabaseDocumentLoadResult(true));
+  const projects = unwrapSupabaseLoadResult(projectsResult, "projects", [] as StoredProjectRecord[]);
+  const assignments = unwrapSupabaseLoadResult(assignmentsResult, "assignments", {} as Record<string, string | null>);
+  const entrances = unwrapSupabaseLoadResult(entrancesResult, "entrances", [] as StoredEntranceRecord[]);
+  const objectImages = unwrapSupabaseLoadResult(objectImagesResult, "object_images", {} as Record<string, string[]>);
+
+  console.log("[Supabase Online] Tabellen-Diagnose", diagnostics);
+  console.log("[Supabase Online] Geladene App-Daten", {
+    supabaseActive: true,
+    objects: objects.length,
+    documents: documents.supabaseDocumentCount,
+    appDocuments: documents.appDocumentCount,
+    costItems: documents.supabaseCostItemCount,
+    projects: projects.length,
+    entrances: entrances.length,
+    assignments: Object.keys(assignments).length,
+    objectImages: Object.values(objectImages).reduce((sum, images) => sum + images.length, 0)
+  });
+
+  return {
+    objects,
+    documents,
+    projects,
+    assignments,
+    entrances,
+    objectImages,
+    diagnostics,
+    supabaseActive: true
+  };
 }
 
 export async function loadSupabaseDocumentsWithCostItems(options: { autoRepair?: boolean } = {}): Promise<SupabaseDocumentLoadResult> {
@@ -1799,6 +2024,26 @@ function objectRowFromSupabase(row: SupabaseObjectRow, fallback?: StoredObjectRe
   };
 }
 
+function entranceRowFromSupabase(row: GenericSupabaseRow): StoredEntranceRecord {
+  const metadata = isRecord(row.metadata) ? row.metadata : {};
+  const street = stringValue(row.street ?? row.street_name ?? metadata.street);
+  const houseNumber = stringValue(row.house_number ?? row.number ?? metadata.houseNumber);
+  const address = stringValue(row.address ?? row.name ?? row.label);
+  return {
+    id: stringValue(row.id ?? row.local_entrance_id ?? `entrance-${Date.now()}`),
+    objectId: stringValue(row.object_id ?? row.local_object_id ?? metadata.objectId),
+    street: street || address,
+    houseNumber,
+    suffix: stringValue(row.suffix ?? metadata.suffix),
+    postalCode: stringValue(row.postal_code ?? row.zip ?? metadata.postalCode),
+    city: stringValue(row.city ?? metadata.city),
+    livingAreaSqm: stringValue(row.living_area_sqm ?? row.living_area ?? row.total_area ?? metadata.livingAreaSqm),
+    unitCount: stringValue(row.unit_count ?? row.units ?? metadata.unitCount),
+    createdAt: stringValue(row.created_at ?? metadata.createdAt),
+    updatedAt: stringValue(row.updated_at ?? metadata.updatedAt)
+  };
+}
+
 function projectRowToSupabase(project: StoredProjectRecord, options: { includeId?: boolean } = {}): GenericSupabaseRow {
   const row: GenericSupabaseRow = {
     local_project_id: project.id,
@@ -1885,6 +2130,56 @@ function assignmentRowFromSupabase(row: GenericSupabaseRow): { documentId: strin
     documentId: stringValue(row.local_document_id ?? metadata.localDocumentId ?? row.document_id),
     projectId: stringValue(row.local_project_id ?? metadata.localProjectId ?? row.project_id) || null
   };
+}
+
+async function loadSupabaseTableDiagnostics(
+  supabase: SupabaseClient,
+  tables: string[]
+): Promise<SupabaseTableLoadDiagnostic[]> {
+  const diagnostics = await Promise.all(tables.map(async (table) => {
+    const { data, error, count } = await supabase
+      .from(table)
+      .select("*", { count: "exact" })
+      .limit(1);
+    const diagnostic: SupabaseTableLoadDiagnostic = {
+      table,
+      loaded: !error,
+      count: error ? 0 : count ?? data?.length ?? 0,
+      error: error ? formatSupabaseError(error) : null,
+      rlsError: isSupabaseRlsError(error)
+    };
+    console.log("[Supabase Diagnose] Tabelle geladen", diagnostic);
+    return diagnostic;
+  }));
+  return diagnostics;
+}
+
+function unwrapSupabaseLoadResult<T>(
+  result: PromiseSettledResult<T>,
+  label: string,
+  fallback: T
+): T {
+  if (result.status === "fulfilled") return result.value;
+  console.error(`[Supabase Online] ${label} konnte nicht geladen werden`, result.reason);
+  return fallback;
+}
+
+function emptySupabaseDocumentLoadResult(autoRepairEnabled: boolean): SupabaseDocumentLoadResult {
+  return {
+    documents: [],
+    supabaseDocumentCount: 0,
+    supabaseCostItemCount: 0,
+    appDocumentCount: 0,
+    measureDetailsCount: 0,
+    clustersCount: 0,
+    autoRepair: emptyDocumentAutoRepairSummary(0, autoRepairEnabled)
+  };
+}
+
+function isSupabaseRlsError(error: { message?: string; code?: string | null; details?: string | null } | null): boolean {
+  if (!error) return false;
+  const text = [error.message, error.details, error.code].filter(Boolean).join(" ").toLowerCase();
+  return error.code === "42501" || /row-level security|rls|permission denied|policy/.test(text);
 }
 
 function profileFromSupabase(row: GenericSupabaseRow, fallbackEmail = ""): UserProfile {

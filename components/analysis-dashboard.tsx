@@ -40,7 +40,8 @@ import {
   upsertSupabaseProject,
   updateSupabaseObject,
   type SupabaseDocumentCostImportSummary,
-  type SupabaseObjectImportSummary
+  type SupabaseObjectImportSummary,
+  type SupabaseTableLoadDiagnostic
 } from "../lib/supabase";
 import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
@@ -145,12 +146,14 @@ interface SupabaseDocumentImportStatus {
 
 interface SupabaseDocumentLoadDiagnosis {
   message: string;
+  supabaseActive?: boolean;
   localDocumentsTotal: number;
   supabaseDocumentCount: number;
   supabaseCostItemCount: number;
   appDocumentCount: number;
   measureDetailsCount: number;
   clustersCount: number;
+  tableDiagnostics?: SupabaseTableLoadDiagnostic[];
   autoRepairEnabled?: boolean;
   autoRepairIncomplete?: number;
   autoRepairRepaired?: number;
@@ -502,11 +505,13 @@ export function AnalysisDashboard() {
   const [supabaseDocumentLoadDiagnosis, setSupabaseDocumentLoadDiagnosis] = useState<SupabaseDocumentLoadDiagnosis>({
     message: "",
     localDocumentsTotal: 0,
+    supabaseActive: false,
     supabaseDocumentCount: 0,
     supabaseCostItemCount: 0,
     appDocumentCount: 0,
     measureDetailsCount: 0,
     clustersCount: 0,
+    tableDiagnostics: [],
     autoRepairEnabled: true,
     autoRepairIncomplete: 0,
     autoRepairRepaired: 0,
@@ -593,9 +598,21 @@ export function AnalysisDashboard() {
         objects: supabaseObjects,
         documents: supabaseDocuments,
         projects: supabaseProjects,
-        assignments: supabaseAssignments
+        assignments: supabaseAssignments,
+        entrances: supabaseEntrances,
+        objectImages: supabaseObjectImages,
+        diagnostics: supabaseDiagnostics,
+        supabaseActive
       } = await loadSupabaseOnlineData();
       const supabaseAssignmentCount = Object.keys(supabaseAssignments).length;
+      const supabaseImageCount = Object.values(supabaseObjectImages).reduce((sum, images) => sum + images.length, 0);
+      const hasSupabaseAppData =
+        supabaseObjects.length > 0 ||
+        supabaseDocuments.documents.length > 0 ||
+        supabaseProjects.length > 0 ||
+        supabaseEntrances.length > 0 ||
+        supabaseAssignmentCount > 0 ||
+        supabaseImageCount > 0;
       setSupabaseOnlineStatus({
         objectCount: supabaseObjects.length,
         documentCount: supabaseDocuments.supabaseDocumentCount,
@@ -612,29 +629,58 @@ export function AnalysisDashboard() {
       console.log("[Supabase] documents im App-Load", supabaseDocuments.supabaseDocumentCount);
       console.log("[Supabase] cost_items im App-Load", supabaseDocuments.supabaseCostItemCount);
       console.log("[Supabase] projects im App-Load", supabaseProjects.length);
+      console.log("[Supabase] entrances im App-Load", supabaseEntrances.length);
       console.log("[Supabase] assignments im App-Load", supabaseAssignmentCount);
+      console.log("[Supabase] object_images im App-Load", supabaseImageCount);
       console.log("[Supabase] App-Dokumente im App-Load", supabaseDocuments.appDocumentCount);
       console.log("[Supabase] measureDetails im App-Load", supabaseDocuments.measureDetailsCount);
       console.log("[Supabase] clusters im App-Load", supabaseDocuments.clustersCount);
       console.log("[Supabase AutoRepair] App-Load", supabaseDocuments.autoRepair);
+      console.log("[Supabase Diagnose] App-Load Tabellen", {
+        supabaseActive,
+        tables: supabaseDiagnostics
+      });
       console.log("[Online-Modus] lokale documents count", localDocuments.length);
       console.log("[Online-Modus] Supabase documents count", supabaseDocuments.supabaseDocumentCount);
-      console.log("[Online-Modus] verwendete documents-Quelle", "localStorage");
+      console.log("[Online-Modus] verwendete documents-Quelle", hasSupabaseAppData ? "Supabase" : "localStorage fallback");
       console.log("[Online-Modus] Datenquelle App-Load", {
-        objects: "localStorage",
-        documents: "localStorage",
-        costItems: "localStorage",
-        projects: "localStorage",
-        assignments: "localStorage"
+        supabaseActive,
+        objects: supabaseObjects.length > 0 ? "Supabase" : "localStorage fallback",
+        documents: supabaseDocuments.documents.length > 0 ? "Supabase" : "localStorage fallback",
+        costItems: supabaseDocuments.supabaseCostItemCount > 0 ? "Supabase" : "localStorage fallback",
+        projects: supabaseProjects.length > 0 ? "Supabase" : "localStorage fallback",
+        entrances: supabaseEntrances.length > 0 ? "Supabase" : "localStorage fallback",
+        assignments: supabaseAssignmentCount > 0 ? "Supabase" : "localStorage fallback",
+        objectImages: supabaseImageCount > 0 ? "Supabase" : "localStorage fallback"
       });
+      if (hasSupabaseAppData) {
+        const nextObjects = supabaseObjects.length > 0
+          ? supabaseObjects
+          : buildObjectsFromStoredData(localObjects, supabaseDocuments.documents.length > 0 ? supabaseDocuments.documents : localDocuments, supabaseProjects.length > 0 ? supabaseProjects : localProjects, { deriveFallbackObjects: true });
+        setObjects(nextObjects);
+        setProjects(supabaseProjects.length > 0 ? supabaseProjects : localProjects);
+        setEntrances(supabaseEntrances.length > 0 ? supabaseEntrances : getEntrances());
+        setAssignments(supabaseAssignmentCount > 0 ? supabaseAssignments : localAssignments);
+        setObjectImages(supabaseImageCount > 0 ? supabaseObjectImages : {});
+        if (supabaseDocuments.documents.length > 0) {
+          setAnalysis(buildAnalysisFromDocuments(supabaseDocuments.documents));
+          setSelectedDocumentId((current) => supabaseDocuments.documents.some((document) => document.id === current) ? current : supabaseDocuments.documents[0]?.id ?? null);
+        }
+        setSelectedObjectId((current) => nextObjects.some((object) => object.id === current) ? current : nextObjects[0]?.id ?? null);
+        setSelectedProjectId((current) => supabaseProjects.some((project) => project.id === current) ? current : supabaseProjects[0]?.id ?? null);
+      }
       setSupabaseDocumentLoadDiagnosis({
-        message: `Diagnose: localStorage bleibt aktiv. Local objects: ${localObjects.length}, local documents: ${localDocuments.length}, Supabase objects: ${supabaseObjects.length}, Supabase documents: ${supabaseDocuments.supabaseDocumentCount}.`,
+        message: hasSupabaseAppData
+          ? `Supabase aktiv: ja. Daten aus Supabase geladen. Objects: ${supabaseObjects.length}, documents: ${supabaseDocuments.supabaseDocumentCount}, projects: ${supabaseProjects.length}.`
+          : `Supabase aktiv: ${supabaseActive ? "ja" : "nein"}. Keine Supabase-App-Daten gefunden, lokaler Fallback aktiv.`,
+        supabaseActive,
         localDocumentsTotal,
         supabaseDocumentCount: supabaseDocuments.supabaseDocumentCount,
         supabaseCostItemCount: supabaseDocuments.supabaseCostItemCount,
         appDocumentCount: supabaseDocuments.appDocumentCount,
         measureDetailsCount: supabaseDocuments.measureDetailsCount,
         clustersCount: supabaseDocuments.clustersCount,
+        tableDiagnostics: supabaseDiagnostics,
         autoRepairEnabled: supabaseDocuments.autoRepair.enabled,
         autoRepairIncomplete: supabaseDocuments.autoRepair.incomplete,
         autoRepairRepaired: supabaseDocuments.autoRepair.repaired,
@@ -4745,6 +4791,7 @@ function SupabaseDocumentLoadDiagnosisView({ diagnosis }: { diagnosis: SupabaseD
     <div className={`dataTransferSummary ${diagnosis.message.includes("leer") || diagnosis.message.includes("fehlgeschlagen") ? "dataTransferError" : ""}`}>
       <strong>{diagnosis.message}</strong>
       <div>
+        <span>Supabase aktiv: {diagnosis.supabaseActive ? "ja" : "nein"}</span>
         <span>Lokale Dokumente: {formatNumber(diagnosis.localDocumentsTotal)}</span>
         <span>Supabase documents: {formatNumber(diagnosis.supabaseDocumentCount)}</span>
         <span>Supabase cost_items: {formatNumber(diagnosis.supabaseCostItemCount)}</span>
@@ -4756,6 +4803,13 @@ function SupabaseDocumentLoadDiagnosisView({ diagnosis }: { diagnosis: SupabaseD
         <span>Repariert: {formatNumber(diagnosis.autoRepairRepaired ?? 0)}</span>
         <span>Nicht repariert: {formatNumber((diagnosis.autoRepairSkipped ?? 0) + (diagnosis.autoRepairFailed ?? 0))}</span>
       </div>
+      {diagnosis.tableDiagnostics?.length ? (
+        <small>
+          {diagnosis.tableDiagnostics.map((entry) =>
+            `${entry.table}: ${entry.loaded ? "geladen" : "Fehler"} (${formatNumber(entry.count)})${entry.rlsError ? " RLS" : ""}${entry.error ? ` - ${entry.error}` : ""}`
+          ).join(" | ")}
+        </small>
+      ) : null}
     </div>
   );
 }

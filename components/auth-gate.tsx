@@ -42,7 +42,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
 
   async function refreshProfile() {
+    console.log("[AuthGate] refreshProfile gestartet");
     const nextProfile = await getCurrentSupabaseProfile();
+    console.log("[AuthGate] refreshProfile Ergebnis", {
+      profileId: nextProfile?.id ?? null,
+      profileStatus: nextProfile?.status ?? null,
+      profileRole: nextProfile?.role ?? null,
+      profile: nextProfile
+    });
     setProfile(nextProfile);
   }
 
@@ -57,25 +64,70 @@ export function AuthGate({ children }: { children: ReactNode }) {
         }
         return;
       }
-      const { data } = await supabase.auth.getSession();
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      console.log("[AuthGate] getSession Antwort", {
+        userId: data.session?.user?.id ?? null,
+        userEmail: data.session?.user?.email ?? null,
+        hasSession: Boolean(data.session),
+        error: sessionError ?? null
+      });
       if (mounted) {
         setUser(data.session?.user ?? null);
       }
       if (data.session?.user) {
         try {
-          await touchCurrentProfileLogin();
           await refreshProfile();
         } catch (profileError) {
+          console.error("[AuthGate] Profil laden im initAuth fehlgeschlagen", {
+            userId: data.session.user.id,
+            userEmail: data.session.user.email,
+            error: profileError
+          });
           if (mounted) setError(profileError instanceof Error ? profileError.message : "Profil konnte nicht geladen werden.");
+        }
+        try {
+          await touchCurrentProfileLogin();
+        } catch (touchError) {
+          console.warn("[AuthGate] last_login_at konnte nicht aktualisiert werden; Profil bleibt trotzdem geladen.", {
+            userId: data.session.user.id,
+            userEmail: data.session.user.email,
+            error: touchError
+          });
         }
       }
       if (mounted) setLoading(false);
       const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log("[AuthGate] AuthStateChange", {
+          event,
+          userId: session?.user?.id ?? null,
+          userEmail: session?.user?.email ?? null
+        });
         setUser(session?.user ?? null);
         if (event === "SIGNED_IN" && session?.user) {
-          await touchCurrentProfileLogin();
-          await refreshProfile();
-          await logActivity({ action: "Login", area: "Auth", targetType: "user", targetId: session.user.id, targetLabel: session.user.email ?? "" });
+          try {
+            await refreshProfile();
+          } catch (profileError) {
+            console.error("[AuthGate] Profil laden nach SIGNED_IN fehlgeschlagen", {
+              userId: session.user.id,
+              userEmail: session.user.email,
+              error: profileError
+            });
+            if (mounted) setError(profileError instanceof Error ? profileError.message : "Profil konnte nicht geladen werden.");
+          }
+          try {
+            await touchCurrentProfileLogin();
+          } catch (touchError) {
+            console.warn("[AuthGate] last_login_at nach SIGNED_IN konnte nicht aktualisiert werden.", {
+              userId: session.user.id,
+              userEmail: session.user.email,
+              error: touchError
+            });
+          }
+          try {
+            await logActivity({ action: "Login", area: "Auth", targetType: "user", targetId: session.user.id, targetLabel: session.user.email ?? "" });
+          } catch (activityError) {
+            console.warn("[AuthGate] Login-Aktivitaet konnte nicht gespeichert werden", activityError);
+          }
         }
         if (event === "SIGNED_OUT") {
           setProfile(null);
@@ -89,6 +141,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
       cleanupPromise.then((cleanup) => cleanup?.()).catch(() => undefined);
     };
   }, []);
+
+  useEffect(() => {
+    console.log("[AuthGate] Render-Status", {
+      loading,
+      userId: user?.id ?? null,
+      userEmail: user?.email ?? null,
+      profileId: profile?.id ?? null,
+      profileStatus: profile?.status ?? null,
+      profileRole: profile?.role ?? null,
+      willShowPending: Boolean(!loading && user && (!profile || profile.status === "pending")),
+      willShowBlocked: Boolean(!loading && user && profile?.status === "blocked")
+    });
+  }, [loading, user, profile]);
 
   async function signOut() {
     const supabase = await getSupabaseClientAsync();
@@ -126,6 +191,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (profile?.status === "blocked") {
+    console.warn("[AuthGate] Blocked-Screen wird angezeigt", {
+      userId: user.id,
+      profileId: profile.id,
+      profileStatus: profile.status,
+      profileRole: profile.role
+    });
     return (
       <AuthScreenShell>
         <div className="authCard">
@@ -139,6 +210,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (!profile || profile.status === "pending") {
+    console.warn("[AuthGate] Pending-Screen wird angezeigt", {
+      userId: user.id,
+      userEmail: user.email,
+      profileId: profile?.id ?? null,
+      profileStatus: profile?.status ?? null,
+      profileRole: profile?.role ?? null,
+      reason: !profile ? "Profil ist null" : "Profilstatus ist pending"
+    });
     return (
       <AuthScreenShell>
         <div className="authCard">
