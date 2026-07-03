@@ -766,18 +766,13 @@ export async function importEntrancesToSupabase(entrances: StoredEntranceRecord[
   for (const entrance of entrances) {
     try {
       const resolvedObjectId = await resolveSupabaseObjectIdForEntrance(supabase, entrance);
-      if (!resolvedObjectId) {
-        summary.skipped += 1;
-        summary.notRepairable += 1;
-        console.warn("[Supabase Backfill] Entrance ohne aufloesbares Objekt uebersprungen", { entrance });
-        continue;
-      }
-      const row = entranceRowToSupabase({ ...entrance, objectId: resolvedObjectId });
+      const row = entranceRowToSupabase(resolvedObjectId ? { ...entrance, objectId: resolvedObjectId } : entrance);
       console.log("[Supabase Backfill] Entrance UPSERT Payload", { entrance, resolvedObjectId, row });
-      const { error } = await supabase.from("entrances").upsert(row);
-      if (error) {
-        console.error("[Supabase Backfill] Entrance UPSERT fehlgeschlagen", { entrance, row, error });
-        await insertRowAdaptive(supabase, "entrances", row, ["object_id"]);
+      const existingEntranceId = await resolveSupabaseIdByLocalId(supabase, "entrances", entrance.id, "local_entrance_id");
+      if (existingEntranceId) {
+        await updateRowAdaptive(supabase, "entrances", existingEntranceId, row, []);
+      } else {
+        await insertRowAdaptive(supabase, "entrances", row, []);
       }
       summary.imported += 1;
     } catch (error) {
@@ -2754,7 +2749,7 @@ async function resolveSupabaseIdByLocalId(
     .from(table)
     .select("id")
     .eq(localColumn, value)
-    .maybeSingle();
+    .limit(1);
   if (error) {
     const missingColumn = extractMissingColumn(error.message ?? "");
     if (missingColumn && isImportIdentityColumn(missingColumn)) {
@@ -2764,7 +2759,7 @@ async function resolveSupabaseIdByLocalId(
     console.warn(`[Supabase] ${table}.${localColumn} konnte nicht fuer Zuordnung aufgeloest werden.`, { value, error });
     return null;
   }
-  return stringValue((data as GenericSupabaseRow | null)?.id) || (isUuid(value) ? value : null);
+  return stringValue((data as GenericSupabaseRow[] | null)?.[0]?.id) || (isUuid(value) ? value : null);
 }
 
 async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: GenericSupabaseRow): Promise<GenericSupabaseRow> {
