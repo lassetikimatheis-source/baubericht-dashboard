@@ -2407,6 +2407,13 @@ function assignmentRowToSupabase(
   resolvedProjectId: string | null = null
 ): GenericSupabaseRow {
   const localAssignmentId = `${documentId}:${projectId ?? "unassigned"}`;
+  const payload = {
+    localAssignmentId,
+    localDocumentId: documentId,
+    localProjectId: projectId,
+    resolvedDocumentId,
+    resolvedProjectId
+  };
   return {
     id: createBrowserUuid(),
     document_id: resolvedDocumentId || (isUuid(documentId) ? documentId : null),
@@ -2414,10 +2421,8 @@ function assignmentRowToSupabase(
     local_assignment_id: localAssignmentId,
     local_document_id: documentId,
     local_project_id: projectId,
-    metadata: {
-      localDocumentId: documentId,
-      localProjectId: projectId
-    }
+    data: payload,
+    metadata: payload
   };
 }
 

@@ -31,8 +31,10 @@ alter table public.assignments add column if not exists local_object_id text;
 alter table public.assignments add column if not exists local_document_id text;
 alter table public.assignments add column if not exists local_project_id text;
 alter table public.assignments add column if not exists metadata jsonb default '{}'::jsonb;
+alter table public.assignments add column if not exists data jsonb default '{}'::jsonb;
 
 alter table public.assignments alter column id set default gen_random_uuid();
+alter table public.assignments alter column data set default '{}'::jsonb;
 
 alter table public.entrances add column if not exists local_entrance_id text;
 alter table public.entrances add column if not exists local_object_id text;
