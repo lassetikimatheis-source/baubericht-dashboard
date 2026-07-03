@@ -739,19 +739,13 @@ export async function upsertSupabaseProject(project: StoredProjectRecord): Promi
     { includeId: isUuid(project.id) }
   );
   console.log("[Supabase Backfill] Project UPSERT Payload", { project, resolvedObjectId, row });
-  const { data, error } = await supabase
-    .from("projects")
-    .upsert(row)
-    .select("*")
-    .single();
-
-  if (error) {
-    console.error("[Supabase] Upsert public.projects fehlgeschlagen", { row, error });
-    const inserted = await insertRowAdaptive(supabase, "projects", row, []);
-    return projectRowFromSupabase(inserted, project);
+  const existingProjectId = await resolveSupabaseIdByLocalId(supabase, "projects", project.id, "local_project_id");
+  if (existingProjectId) {
+    const updated = await updateRowAdaptive(supabase, "projects", existingProjectId, row, ["name"]);
+    return projectRowFromSupabase(updated, project);
   }
-
-  return projectRowFromSupabase(data as GenericSupabaseRow, project);
+  const inserted = await insertRowAdaptive(supabase, "projects", row, ["name"]);
+  return projectRowFromSupabase(inserted, project);
 }
 
 export async function importEntrancesToSupabase(entrances: StoredEntranceRecord[]): Promise<SupabaseBackfillTableSummary> {
@@ -957,14 +951,15 @@ export async function saveSupabaseAssignment(documentId: string, projectId: stri
     projectId ? resolveSupabaseIdByLocalId(supabase, "projects", projectId, "local_project_id") : Promise.resolve(null)
   ]);
   const row = assignmentRowToSupabase(documentId, projectId, resolvedDocumentId, resolvedProjectId);
-  const { error } = await supabase
-    .from("assignments")
-    .upsert(row);
-
-  if (error) {
-    console.error("[Supabase] Upsert public.assignments fehlgeschlagen", { row, error });
-    await insertRowAdaptive(supabase, "assignments", row, []);
+  const localAssignmentId = stringValue(row.local_assignment_id);
+  const existingAssignmentId = localAssignmentId
+    ? await resolveSupabaseIdByLocalId(supabase, "assignments", localAssignmentId, "local_assignment_id")
+    : null;
+  if (existingAssignmentId) {
+    await updateRowAdaptive(supabase, "assignments", existingAssignmentId, row, ["data"]);
+    return;
   }
+  await insertRowAdaptive(supabase, "assignments", row, ["data"]);
 }
 
 export async function deleteSupabaseAssignment(documentId: string): Promise<void> {
@@ -2679,6 +2674,42 @@ async function insertRowAdaptive(
   throw new Error(`Supabase-${table}-Datensatz konnte nicht gespeichert werden: zu viele Schema-Anpassungen.`);
 }
 
+async function updateRowAdaptive(
+  supabase: SupabaseClient,
+  table: string,
+  id: string,
+  originalRow: GenericSupabaseRow,
+  requiredColumns: string[]
+): Promise<GenericSupabaseRow> {
+  let row = { ...originalRow };
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const { data, error } = await supabase
+      .from(table)
+      .update(row)
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (!error) return data as GenericSupabaseRow;
+
+    const missingColumn = extractMissingColumn(error.message ?? "");
+    if (missingColumn && isImportIdentityColumn(missingColumn)) {
+      throw new Error(formatMissingImportColumnError(table, missingColumn, error));
+    }
+
+    if (missingColumn && !requiredColumns.includes(missingColumn) && missingColumn in row) {
+      console.warn(`[Supabase Import] Optionale Spalte ${table}.${missingColumn} existiert nicht und wird beim Update ausgelassen.`, { row, error });
+      const { [missingColumn]: _removed, ...nextRow } = row;
+      row = nextRow;
+      continue;
+    }
+
+    throw new Error(`Supabase-${table}-Datensatz konnte nicht aktualisiert werden: ${formatSupabaseError(error)}`);
+  }
+
+  throw new Error(`Supabase-${table}-Datensatz konnte nicht aktualisiert werden: zu viele Schema-Anpassungen.`);
+}
+
 async function updateObjectRowAdaptive(
   supabase: SupabaseClient,
   objectId: string,
@@ -2719,7 +2750,6 @@ async function resolveSupabaseIdByLocalId(
   localColumn: string
 ): Promise<string | null> {
   if (!value) return null;
-  if (isUuid(value)) return value;
   const { data, error } = await supabase
     .from(table)
     .select("id")
@@ -2734,7 +2764,7 @@ async function resolveSupabaseIdByLocalId(
     console.warn(`[Supabase] ${table}.${localColumn} konnte nicht fuer Zuordnung aufgeloest werden.`, { value, error });
     return null;
   }
-  return stringValue((data as GenericSupabaseRow | null)?.id) || null;
+  return stringValue((data as GenericSupabaseRow | null)?.id) || (isUuid(value) ? value : null);
 }
 
 async function insertDocumentRowAdaptive(supabase: SupabaseClient, originalRow: GenericSupabaseRow): Promise<GenericSupabaseRow> {
