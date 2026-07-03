@@ -1135,15 +1135,63 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
       continue;
     }
 
-    const resolvedObject = resolveSupabaseObjectForDocument(document, objectsByNumber, supabaseObjects);
+    let resolvedObject = resolveSupabaseObjectForDocument(document, objectsByNumber, supabaseObjects);
     if (!resolvedObject.objectRow) {
+      const fallbackObject = objectRecordFromDocumentForImport(document);
+      if (!fallbackObject) {
+        summary.skipped += 1;
+        summary.skippedMissingObject += 1;
+        logSkippedSupabaseDocument(document, resolvedObject.reason, resolvedObject);
+        continue;
+      }
+      try {
+        console.log("[Supabase Dokumentimport] Objekt fehlt, wird aus Dokumentanalyse angelegt", {
+          reason: resolvedObject.reason,
+          document: summarizeDocumentForPersistence(document),
+          fallbackObject
+        });
+        const createdObject = await createSupabaseObject(fallbackObject);
+        const createdObjectRow: GenericSupabaseRow = {
+          id: createdObject.id,
+          object_number: createdObject.objectNumber,
+          address: createdObject.address,
+          postal_code: createdObject.postalCode,
+          city: createdObject.city,
+          total_area: createdObject.totalLivingAreaSqm,
+          renovated_area: createdObject.wohnflaecheSanierteWohnung,
+          residential_units: createdObject.unitCount
+        };
+        supabaseObjects.push(createdObjectRow);
+        const createdObjectNumber = normalizeObjectNumber(createdObject.objectNumber);
+        if (createdObjectNumber) objectsByNumber.set(createdObjectNumber, createdObjectRow);
+        resolvedObject = {
+          objectRow: createdObjectRow,
+          objectNumber: createdObject.objectNumber,
+          reason: "Objekt wurde aus Dokumentanalyse automatisch angelegt."
+        };
+      } catch (objectError) {
+        summary.skipped += 1;
+        summary.skippedMissingObject += 1;
+        const reason = objectError instanceof Error ? objectError.message : "Objekt konnte nicht automatisch angelegt werden.";
+        console.error("[Supabase Dokumentimport] Objekt konnte fuer Dokument nicht angelegt werden", {
+          document: summarizeDocumentForPersistence(document),
+          fallbackObject,
+          error: objectError
+        });
+        logSkippedSupabaseDocument(document, `${resolvedObject.reason} Automatische Objektanlage fehlgeschlagen: ${reason}`, resolvedObject);
+        continue;
+      }
+    }
+
+    const resolvedObjectRow = resolvedObject.objectRow;
+    if (!resolvedObjectRow) {
       summary.skipped += 1;
       summary.skippedMissingObject += 1;
-      logSkippedSupabaseDocument(document, resolvedObject.reason, resolvedObject);
+      logSkippedSupabaseDocument(document, "Objekt konnte nicht aufgeloest werden.", resolvedObject);
       continue;
     }
 
-    const objectId = stringValue(resolvedObject.objectRow.id);
+    const objectId = stringValue(resolvedObjectRow.id);
     const documentTypeId = await ensureLookupId(supabase, "document_types", unwrapTextField(document.documentType), documentTypeIdByName, ["name"]);
     const companyId = await ensureLookupId(supabase, "companies", unwrapTextField(document.provider), companyIdByName, ["name", "company_name"]);
     const documentRow = documentRowToSupabase(document, objectId, resolvedObject.objectNumber, documentTypeId, companyId);
@@ -1420,6 +1468,38 @@ function documentAddressValue(document: ObjectAnalysis): string {
     unwrapTextField(document.objectAddress),
     unwrapTextField(document.location)
   );
+}
+
+function objectRecordFromDocumentForImport(document: ObjectAnalysis): StoredObjectRecord | null {
+  const objectNumber = unwrapTextField(document.objectNumber);
+  const address = unwrapTextField(document.objectAddress);
+  if (!objectNumber && !address) return null;
+  const location = unwrapTextField(document.location);
+  const { postalCode, city } = parsePostalCodeAndCity(firstPresent(address, location));
+  return {
+    id: createBrowserUuid(),
+    fund: unwrapTextField(document.fund),
+    objectNumber,
+    objectName: firstPresent(address, objectNumber || document.id),
+    address,
+    postalCode,
+    city,
+    federalState: "",
+    constructionYear: "",
+    unitCount: stringValue(document.renovatedApartmentCount.value ?? ""),
+    totalLivingAreaSqm: stringValue(document.totalAreaSqm.value ?? document.livingAreaSqm.value ?? ""),
+    wohnflaecheSanierteWohnung: stringValue(document.renovatedAreaSqm.value ?? document.livingAreaSqm.value ?? ""),
+    assetManager: "",
+    portfolioManager: ""
+  };
+}
+
+function parsePostalCodeAndCity(value: string): { postalCode: string; city: string } {
+  const match = value.match(/\b(\d{5})\s+([A-Za-z\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00df .-]+)/);
+  return {
+    postalCode: match?.[1] ?? "",
+    city: match?.[2]?.trim() ?? ""
+  };
 }
 
 function normalizeAddress(value: string): { full: string; street: string; houseNumber: string; streetHouse: string } {

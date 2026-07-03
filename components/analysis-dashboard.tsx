@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Area,
@@ -456,6 +456,7 @@ export function AnalysisDashboard() {
   const auth = useAuth();
   const canEdit = auth.canEdit;
   const canAdmin = auth.canAdmin;
+  const localDocumentBackfillAttemptedRef = useRef(false);
   const [analysis, setAnalysis] = useState<PortfolioAnalysisState>(emptyAnalysisState);
   const [view, setView] = useState<ViewKey>("objects");
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
@@ -653,6 +654,27 @@ export function AnalysisDashboard() {
         assignments: supabaseAssignmentCount > 0 ? "Supabase" : "localStorage fallback",
         objectImages: supabaseImageCount > 0 ? "Supabase" : "localStorage fallback"
       });
+      if (
+        canEdit &&
+        supabaseActive &&
+        localDocuments.length > 0 &&
+        supabaseDocuments.documents.length < localDocuments.length &&
+        !localDocumentBackfillAttemptedRef.current
+      ) {
+        localDocumentBackfillAttemptedRef.current = true;
+        console.log("[Supabase Backfill] Lokale Dokumente werden einmalig nach Supabase synchronisiert", {
+          localDocuments: localDocuments.length,
+          supabaseDocuments: supabaseDocuments.documents.length
+        });
+        importDocumentsAndCostItemsToSupabase(localDocuments)
+          .then((summary) => {
+            console.log("[Supabase Backfill] Lokale Dokumente synchronisiert", summary);
+            return loadSupabaseObjectData();
+          })
+          .catch((backfillError) => {
+            console.error("[Supabase Backfill] Lokale Dokumente konnten nicht synchronisiert werden", backfillError);
+          });
+      }
       if (hasSupabaseAppData) {
         const nextObjects = supabaseObjects.length > 0
           ? supabaseObjects
@@ -814,6 +836,26 @@ export function AnalysisDashboard() {
         saveAssignments(next);
         return next;
       });
+      if ((data.analysis.objects ?? []).length > 0) {
+        console.log("[Upload Workflow] Starte automatische Supabase-Synchronisierung nach Analyse", {
+          documentCount: data.analysis.objects.length,
+          documents: data.analysis.objects.map((document: ObjectAnalysis) => ({
+            id: document.id,
+            objectNumber: document.objectNumber.value,
+            documentNumber: document.documentNumber.value,
+            totalCost: document.totalCost.value
+          }))
+        });
+        importDocumentsAndCostItemsToSupabase(data.analysis.objects)
+          .then((summary) => {
+            console.log("[Upload Workflow] Automatische Supabase-Synchronisierung abgeschlossen", summary);
+            return loadSupabaseObjectData();
+          })
+          .catch((syncError) => {
+            console.error("[Upload Workflow] Automatische Supabase-Synchronisierung fehlgeschlagen", syncError);
+            setMessage(syncError instanceof Error ? `Analyse gespeichert, aber Supabase-Sync fehlgeschlagen: ${syncError.message}` : "Analyse gespeichert, aber Supabase-Sync fehlgeschlagen.");
+          });
+      }
       const analyzedCount = (data.analysis.objects ?? []).length;
       setMessage(hasRecognizedUploadValues(nextDraft) ? `${formatNumber(analyzedCount)} Dokument(e) analysiert - bitte Daten prüfen.` : "Analyse abgeschlossen - keine Werte erkannt. Bitte manuell ergänzen.");
     } catch (error) {
