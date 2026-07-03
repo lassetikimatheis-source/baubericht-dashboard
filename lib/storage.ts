@@ -79,6 +79,22 @@ export interface AppDataSummary {
   assignments: number;
 }
 
+export interface LocalStorageKeySnapshot {
+  key: string;
+  count: number;
+  shape: string;
+  value: unknown;
+}
+
+export interface FullLocalDataExport {
+  version: 2;
+  exportedAt: string;
+  source: "localStorage";
+  appKeys: AppDataBackup["keys"];
+  allParibusKeys: LocalStorageKeySnapshot[];
+  counts: Record<string, number>;
+}
+
 export interface LocalDocumentStorageDiagnostic {
   key: string;
   count: number;
@@ -282,6 +298,33 @@ export function exportAppDataBackup(): AppDataBackup {
   };
 }
 
+export function exportFullLocalDataBackup(): FullLocalDataExport {
+  const appKeys = {
+    objects: readCollection<StoredObjectRecord>(STORAGE_KEYS.objects),
+    entrances: readCollection<StoredEntranceRecord>(STORAGE_KEYS.entrances),
+    projects: readCollection<StoredProjectRecord>(STORAGE_KEYS.projects),
+    documents: getDocuments(),
+    assignments: readJson<Record<string, string | null>>(STORAGE_KEYS.assignments, {})
+  };
+  const allParibusKeys = readAllParibusLocalStorageKeys();
+  return {
+    version: 2,
+    exportedAt: timestamp(),
+    source: "localStorage",
+    appKeys,
+    allParibusKeys,
+    counts: countFullLocalDataExport({ appKeys, allParibusKeys })
+  };
+}
+
+export function summarizeFullLocalDataExport(exportData: FullLocalDataExport): Record<string, number> {
+  return countFullLocalDataExport(exportData);
+}
+
+export function getLocalStorageKeyDiagnostics(): LocalStorageKeySnapshot[] {
+  return readAllParibusLocalStorageKeys();
+}
+
 export function importAppDataBackup(backup: unknown): AppDataSummary {
   const parsed = parseAppDataBackup(backup);
   createAnalysisBackup();
@@ -338,6 +381,69 @@ function parseAppDataBackup(value: unknown): AppDataBackup {
       assignments: keys.assignments as Record<string, string | null>
     }
   };
+}
+
+function readAllParibusLocalStorageKeys(): LocalStorageKeySnapshot[] {
+  if (typeof window === "undefined") return [];
+  const snapshots: LocalStorageKeySnapshot[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index) ?? "";
+    if (!key.startsWith("paribus-baukosten.")) continue;
+    const raw = window.localStorage.getItem(key);
+    const value = parseJsonSafely(raw);
+    snapshots.push({
+      key,
+      count: countStorageEntries(value),
+      shape: describeStorageShape(value),
+      value
+    });
+  }
+  snapshots.sort((left, right) => left.key.localeCompare(right.key));
+  return snapshots;
+}
+
+function countFullLocalDataExport(exportData: Pick<FullLocalDataExport, "appKeys" | "allParibusKeys">): Record<string, number> {
+  return {
+    objects: exportData.appKeys.objects.length,
+    entrances: exportData.appKeys.entrances.length,
+    projects: exportData.appKeys.projects.length,
+    documents: exportData.appKeys.documents.length,
+    assignments: Object.keys(exportData.appKeys.assignments).length,
+    cost_items: exportData.appKeys.documents.reduce((sum, document) =>
+      sum + Math.max(document.measureDetails?.length ?? 0, document.clusters?.length ?? 0),
+      0
+    ),
+    units: countKnownLocalKey(exportData.allParibusKeys, "units"),
+    trades: countKnownLocalKey(exportData.allParibusKeys, "trades"),
+    companies: countKnownLocalKey(exportData.allParibusKeys, "companies"),
+    document_types: countKnownLocalKey(exportData.allParibusKeys, "document_types") || countKnownLocalKey(exportData.allParibusKeys, "document-types"),
+    object_images: countKnownLocalKey(exportData.allParibusKeys, "object_images") || countKnownLocalKey(exportData.allParibusKeys, "object-images"),
+    reports: countKnownLocalKey(exportData.allParibusKeys, "reports") + countKnownLocalKey(exportData.allParibusKeys, "quarterly-reports"),
+    paribus_keys: exportData.allParibusKeys.length
+  };
+}
+
+function countKnownLocalKey(keys: LocalStorageKeySnapshot[], name: string): number {
+  return keys
+    .filter((entry) => entry.key.toLowerCase().includes(name.toLowerCase()))
+    .reduce((sum, entry) => sum + entry.count, 0);
+}
+
+function countStorageEntries(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (!isRecord(value)) return value === null || value === undefined ? 0 : 1;
+  if (Array.isArray(value.items)) return value.items.length;
+  if (Array.isArray(value.rows)) return value.rows.length;
+  if (Array.isArray(value.documents)) return value.documents.length;
+  if (Array.isArray(value.objects)) return value.objects.length;
+  if (isRecord(value.keys)) {
+    return Object.values(value.keys).reduce<number>((sum, entry) => {
+      if (Array.isArray(entry)) return sum + entry.length;
+      if (isRecord(entry)) return sum + Object.keys(entry).length;
+      return sum;
+    }, 0);
+  }
+  return Object.keys(value).length;
 }
 
 function dedupeStoredDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {

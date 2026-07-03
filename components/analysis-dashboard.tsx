@@ -57,10 +57,12 @@ import {
   getAssignments,
   getDocuments,
   getEntrances,
+  getLocalStorageKeyDiagnostics,
   getLocalDocumentStorageDiagnostics,
   getObjects,
   getProjects,
   exportAppDataBackup,
+  exportFullLocalDataBackup,
   importAppDataBackup,
   saveAssignments,
   saveDocument,
@@ -74,7 +76,10 @@ import {
   summarizeAppDataBackup,
   summarizeAppDataBackupForImport,
   summarizeCurrentAppData,
+  summarizeFullLocalDataExport,
   type AppDataSummary,
+  type FullLocalDataExport,
+  type LocalStorageKeySnapshot,
   type StoredEntranceRecord,
   type StoredObjectRecord,
   type StoredProjectRecord
@@ -146,6 +151,16 @@ interface SupabaseDocumentImportStatus {
   message: string;
   summary: SupabaseDocumentCostImportSummary | null;
   kind: "idle" | "success" | "error";
+}
+
+interface SupabaseRescueImportStatus {
+  kind: "idle" | "running" | "success" | "error";
+  message: string;
+  localCounts: Record<string, number>;
+  beforeCounts: Record<string, number>;
+  afterCounts: Record<string, number>;
+  tableResults: SupabaseBackfillTableSummary[];
+  errors: string[];
 }
 
 interface SupabaseDocumentLoadDiagnosis {
@@ -514,6 +529,15 @@ export function AnalysisDashboard() {
     summary: null,
     kind: "idle"
   });
+  const [supabaseRescueImportStatus, setSupabaseRescueImportStatus] = useState<SupabaseRescueImportStatus>({
+    kind: "idle",
+    message: "",
+    localCounts: {},
+    beforeCounts: {},
+    afterCounts: {},
+    tableResults: [],
+    errors: []
+  });
   const [supabaseDocumentLoadDiagnosis, setSupabaseDocumentLoadDiagnosis] = useState<SupabaseDocumentLoadDiagnosis>({
     message: "",
     localDocumentsTotal: 0,
@@ -676,18 +700,7 @@ export function AnalysisDashboard() {
         assignments: supabaseAssignmentCount > 0 ? "Supabase" : "localStorage fallback",
         objectImages: supabaseImageCount > 0 ? "Supabase" : "localStorage fallback"
       });
-      const shouldBackfillLocalData =
-        canEdit &&
-        supabaseActive &&
-        !localDataBackfillAttemptedRef.current &&
-        (
-          localObjects.length > supabaseObjects.length ||
-          localProjects.length > supabaseProjects.length ||
-          localDocuments.length > supabaseDocuments.documents.length ||
-          localEntrances.length > supabaseEntrances.length ||
-          Object.keys(localAssignments).length > supabaseAssignmentCount ||
-          Object.values(objectImages).reduce((sum, images) => sum + images.length, 0) > supabaseImageCount
-        );
+      const shouldBackfillLocalData = false;
       if (shouldBackfillLocalData) {
         localDataBackfillAttemptedRef.current = true;
         void backfillLocalDataToSupabase({
@@ -704,6 +717,15 @@ export function AnalysisDashboard() {
           supabaseEntrancesCount: supabaseEntrances.length,
           supabaseAssignmentsCount: supabaseAssignmentCount,
           supabaseObjectImagesCount: supabaseImageCount
+        });
+      } else {
+        console.log("[Supabase Backfill] Automatischer Backfill ist deaktiviert. Import erfolgt nur manuell per JSON-Rettungsimport.", {
+          canEdit,
+          supabaseActive,
+          localObjects: localObjects.length,
+          supabaseObjects: supabaseObjects.length,
+          localDocuments: localDocuments.length,
+          supabaseDocuments: supabaseDocuments.supabaseDocumentCount
         });
       }
       if (hasSupabaseAppData) {
@@ -1185,14 +1207,20 @@ export function AnalysisDashboard() {
 
   function exportAppData() {
     try {
-      const backup = exportAppDataBackup();
-      const summary = summarizeAppDataBackup(backup);
+      const backup = exportFullLocalDataBackup();
+      const summary = summarizeFullLocalDataExport(backup);
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-      downloadBlob(blob, `paribus-baukosten-backup-${formatBackupTimestamp(new Date())}.json`, "application/json");
+      downloadBlob(blob, `paribus-baukosten-localstorage-export-${formatBackupTimestamp(new Date())}.json`, "application/json");
       setDataTransferStatus({
         kind: "success",
-        message: "Datensicherung wurde erstellt.",
-        summary
+        message: `Lokale Daten exportiert. paribus-baukosten.* Keys: ${summary.paribus_keys ?? 0}`,
+        summary: {
+          objects: summary.objects ?? 0,
+          entrances: summary.entrances ?? 0,
+          projects: summary.projects ?? 0,
+          documents: summary.documents ?? 0,
+          assignments: summary.assignments ?? 0
+        }
       });
     } catch (error) {
       setDataTransferStatus({
@@ -1237,6 +1265,162 @@ export function AnalysisDashboard() {
         kind: "error",
         message: error instanceof Error ? error.message : "Import fehlgeschlagen.",
         summary: null
+      });
+    }
+  }
+
+  async function importRescueJsonToSupabase(file: File) {
+    if (!canEdit) {
+      setSupabaseRescueImportStatus({
+        kind: "error",
+        message: "Deine Rolle erlaubt keinen Supabase-Import.",
+        localCounts: {},
+        beforeCounts: {},
+        afterCounts: {},
+        tableResults: [],
+        errors: ["Nur owner/admin/editor duerfen JSON nach Supabase importieren."]
+      });
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const exportData = parseFullLocalDataExportForImport(parsed);
+      const localCounts = summarizeFullLocalDataExport(exportData);
+      const objectImagesForImport = extractObjectImagesFromFullExport(exportData);
+      const confirmed = window.confirm(
+        `JSON wird kontrolliert nach Supabase importiert.\n\n` +
+        `Objects lokal: ${localCounts.objects ?? 0}\n` +
+        `Documents lokal: ${localCounts.documents ?? 0}\n` +
+        `Cost Items lokal: ${localCounts.cost_items ?? 0}\n` +
+        `Projects lokal: ${localCounts.projects ?? 0}\n` +
+        `Entrances lokal: ${localCounts.entrances ?? 0}\n` +
+        `Assignments lokal: ${localCounts.assignments ?? 0}\n\n` +
+        `Fortfahren?`
+      );
+      if (!confirmed) {
+        setSupabaseRescueImportStatus({
+          kind: "idle",
+          message: "JSON nach Supabase Import abgebrochen.",
+          localCounts,
+          beforeCounts: {},
+          afterCounts: {},
+          tableResults: [],
+          errors: []
+        });
+        return;
+      }
+
+      setSupabaseRescueImportStatus({
+        kind: "running",
+        message: "JSON nach Supabase Import laeuft...",
+        localCounts,
+        beforeCounts: {},
+        afterCounts: {},
+        tableResults: [],
+        errors: []
+      });
+
+      const before = await loadSupabaseOnlineData();
+      const beforeCounts = supabaseCountsFromOnlineData(before);
+      const tableResults: SupabaseBackfillTableSummary[] = [];
+      const errors: string[] = [];
+      const importObjects = buildObjectsFromStoredData(
+        exportData.appKeys.objects,
+        exportData.appKeys.documents,
+        exportData.appKeys.projects,
+        { deriveFallbackObjects: true }
+      );
+
+      const objectSummary = await importMissingObjectsToSupabase(importObjects);
+      tableResults.push({
+        table: "objects",
+        local: importObjects.length,
+        before: beforeCounts.objects ?? 0,
+        imported: objectSummary.imported,
+        skipped: objectSummary.skipped,
+        notRepairable: objectSummary.errors.length,
+        errors: objectSummary.errors
+      });
+      errors.push(...objectSummary.errors.map((error) => `objects: ${error}`));
+
+      const projectResults = await Promise.allSettled(exportData.appKeys.projects.map((project) => upsertSupabaseProject(project)));
+      const projectErrors = projectResults
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => String(result.reason));
+      tableResults.push({
+        table: "projects",
+        local: exportData.appKeys.projects.length,
+        before: beforeCounts.projects ?? 0,
+        imported: projectResults.filter((result) => result.status === "fulfilled").length,
+        skipped: 0,
+        notRepairable: projectErrors.length,
+        errors: projectErrors
+      });
+      errors.push(...projectErrors.map((error) => `projects: ${error}`));
+
+      const entranceSummary = await importEntrancesToSupabase(exportData.appKeys.entrances);
+      tableResults.push(entranceSummary);
+      errors.push(...entranceSummary.errors.map((error) => `entrances: ${error}`));
+
+      const documentSummary = await importDocumentsAndCostItemsToSupabase(exportData.appKeys.documents);
+      tableResults.push({
+        table: "documents",
+        local: exportData.appKeys.documents.length,
+        before: beforeCounts.documents ?? 0,
+        imported: documentSummary.documentsImported,
+        skipped: documentSummary.skipped,
+        notRepairable: documentSummary.skippedMissingObject + documentSummary.skippedEmpty,
+        errors: documentSummary.errors
+      });
+      tableResults.push({
+        table: "cost_items",
+        local: localCounts.cost_items ?? 0,
+        before: beforeCounts.cost_items ?? 0,
+        imported: documentSummary.costItemsImported,
+        skipped: documentSummary.skippedDuplicate,
+        notRepairable: documentSummary.skippedMissingObject + documentSummary.skippedEmpty,
+        errors: documentSummary.errors
+      });
+      errors.push(...documentSummary.errors.map((error) => `documents: ${error}`));
+
+      const assignmentSummary = await importAssignmentsToSupabase(exportData.appKeys.assignments);
+      tableResults.push(assignmentSummary);
+      errors.push(...assignmentSummary.errors.map((error) => `assignments: ${error}`));
+
+      const imageSummary = await importObjectImagesToSupabase(objectImagesForImport);
+      tableResults.push(imageSummary);
+      errors.push(...imageSummary.errors.map((error) => `object_images: ${error}`));
+
+      const after = await loadSupabaseOnlineData();
+      const afterCounts = supabaseCountsFromOnlineData(after);
+      const finalizedResults = tableResults.map((result) => ({
+        ...result,
+        after: afterCounts[result.table] ?? result.after ?? result.before
+      }));
+      const countErrors = compareLocalAndSupabaseCounts(localCounts, afterCounts);
+      const allErrors = [...errors, ...countErrors];
+      setSupabaseRescueImportStatus({
+        kind: allErrors.length ? "error" : "success",
+        message: allErrors.length
+          ? "JSON nach Supabase Import abgeschlossen, aber Counts/Fehler muessen geprueft werden."
+          : "JSON nach Supabase Import abgeschlossen. Supabase Counts entsprechen den importierbaren lokalen Daten.",
+        localCounts,
+        beforeCounts,
+        afterCounts,
+        tableResults: finalizedResults,
+        errors: allErrors
+      });
+      await loadSupabaseObjectData();
+    } catch (error) {
+      setSupabaseRescueImportStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "JSON nach Supabase Import fehlgeschlagen.",
+        localCounts: {},
+        beforeCounts: {},
+        afterCounts: {},
+        tableResults: [],
+        errors: [error instanceof Error ? error.message : "JSON nach Supabase Import fehlgeschlagen."]
       });
     }
   }
@@ -2112,6 +2296,7 @@ export function AnalysisDashboard() {
                 dataTransferStatus={dataTransferStatus}
                 supabaseObjectImportStatus={supabaseObjectImportStatus}
                 supabaseDocumentImportStatus={supabaseDocumentImportStatus}
+                supabaseRescueImportStatus={supabaseRescueImportStatus}
                 supabaseDocumentLoadDiagnosis={supabaseDocumentLoadDiagnosis}
                 supabaseOnlineStatus={supabaseOnlineStatus}
                 migrationMode={migrationMode}
@@ -2121,6 +2306,7 @@ export function AnalysisDashboard() {
                 onRunAsbestosDebug={runAsbestosDebug}
                 onExportData={exportAppData}
                 onImportData={importAppData}
+                onImportRescueJsonToSupabase={importRescueJsonToSupabase}
                 onImportLocalObjectsToSupabase={importLocalObjectsToSupabase}
                 onImportLocalDocumentsToSupabase={importLocalDocumentsToSupabase}
                 readOnly={!canEdit}
@@ -4924,6 +5110,7 @@ function SettingsView({
   dataTransferStatus,
   supabaseObjectImportStatus,
   supabaseDocumentImportStatus,
+  supabaseRescueImportStatus,
   supabaseDocumentLoadDiagnosis,
   supabaseOnlineStatus,
   migrationMode,
@@ -4933,6 +5120,7 @@ function SettingsView({
   onRunAsbestosDebug,
   onExportData,
   onImportData,
+  onImportRescueJsonToSupabase,
   onImportLocalObjectsToSupabase,
   onImportLocalDocumentsToSupabase,
   readOnly
@@ -4941,6 +5129,7 @@ function SettingsView({
   dataTransferStatus: DataTransferStatus;
   supabaseObjectImportStatus: SupabaseObjectImportStatus;
   supabaseDocumentImportStatus: SupabaseDocumentImportStatus;
+  supabaseRescueImportStatus: SupabaseRescueImportStatus;
   supabaseDocumentLoadDiagnosis: SupabaseDocumentLoadDiagnosis;
   supabaseOnlineStatus: SupabaseOnlineStatus;
   migrationMode: boolean;
@@ -4950,12 +5139,14 @@ function SettingsView({
   onRunAsbestosDebug: () => void;
   onExportData: () => void;
   onImportData: (file: File) => Promise<void>;
+  onImportRescueJsonToSupabase: (file: File) => Promise<void>;
   onImportLocalObjectsToSupabase: () => Promise<void>;
   onImportLocalDocumentsToSupabase: () => Promise<void>;
   readOnly: boolean;
 }) {
   const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const currentSummary = summarizeCurrentAppData();
+  const localStorageKeyDiagnostics = getLocalStorageKeyDiagnostics();
   return (
     <section className="panel">
       <div className="panelHeader">
@@ -4987,9 +5178,19 @@ function SettingsView({
           </div>
           <div className="headerActions">
             <button type="button" onClick={onRunAsbestosDebug}>Asbest-Debug ausführen</button>
-            <button type="button" onClick={onImportLocalObjectsToSupabase}>Objekte nach Supabase importieren</button>
-            <button type="button" onClick={onImportLocalDocumentsToSupabase}>Dokumente nach Supabase importieren</button>
-            <button type="button" onClick={onExportData}>Daten sichern</button>
+            <button type="button" onClick={onExportData}>Lokale Daten exportieren</button>
+            <label className="imageUploadButton">
+              JSON nach Supabase importieren
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void onImportRescueJsonToSupabase(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
             <button type="button" onClick={() => onToggleMigrationMode(!migrationMode)}>
               {migrationMode ? "Migrationsmodus aus" : "Migrationsmodus an"}
             </button>
@@ -5015,6 +5216,7 @@ function SettingsView({
         <SupabaseObjectImportSummaryView status={supabaseObjectImportStatus} />
         <SupabaseDocumentLoadDiagnosisView diagnosis={supabaseDocumentLoadDiagnosis} />
         <SupabaseDocumentImportSummaryView status={supabaseDocumentImportStatus} />
+        <SupabaseRescueImportStatusView status={supabaseRescueImportStatus} localStorageKeyDiagnostics={localStorageKeyDiagnostics} />
         <AsbestosDebugReportView report={asbestosDebugReport} />
       </div>
       <div className="settingsGrid">
@@ -5064,6 +5266,58 @@ function DataTransferSummaryView({
         <span>Projekte: {formatNumber(summary.projects)}</span>
         <span>Zuordnungen: {formatNumber(summary.assignments)}</span>
       </div>
+    </div>
+  );
+}
+
+function SupabaseRescueImportStatusView({
+  status,
+  localStorageKeyDiagnostics
+}: {
+  status: SupabaseRescueImportStatus;
+  localStorageKeyDiagnostics: LocalStorageKeySnapshot[];
+}) {
+  const countKeys = Array.from(new Set([
+    ...Object.keys(status.localCounts),
+    ...Object.keys(status.beforeCounts),
+    ...Object.keys(status.afterCounts)
+  ])).sort();
+  return (
+    <div className={`dataTransferSummary ${status.kind === "error" ? "dataTransferError" : ""}`}>
+      <strong>{status.message || "Admin-Diagnose: Lokale Datenrettung"}</strong>
+      <div>
+        <span>Importstatus: {status.kind}</span>
+        <span>localStorage Keys: {formatNumber(localStorageKeyDiagnostics.length)}</span>
+        <span>Fehler: {formatNumber(status.errors.length)}</span>
+      </div>
+      {localStorageKeyDiagnostics.length ? (
+        <small>
+          {localStorageKeyDiagnostics.map((entry) =>
+            `${entry.key}: ${entry.shape}, Count ${formatNumber(entry.count)}`
+          ).join(" | ")}
+        </small>
+      ) : (
+        <small>Keine paribus-baukosten.* localStorage Keys gefunden.</small>
+      )}
+      {countKeys.length ? (
+        <small>
+          {countKeys.map((key) => {
+            const local = status.localCounts[key] ?? 0;
+            const before = status.beforeCounts[key] ?? 0;
+            const after = status.afterCounts[key] ?? 0;
+            const diff = local - after;
+            return `${key}: lokal ${formatNumber(local)} / Supabase vorher ${formatNumber(before)} / Supabase nachher ${formatNumber(after)} / Differenz ${formatNumber(diff)}`;
+          }).join(" | ")}
+        </small>
+      ) : null}
+      {status.tableResults.length ? (
+        <small>
+          {status.tableResults.map((entry) =>
+            `${entry.table}: importiert ${formatNumber(entry.imported)}, uebersprungen ${formatNumber(entry.skipped)}, nicht importierbar ${formatNumber(entry.notRepairable)}, Fehler ${formatNumber(entry.errors.length)}`
+          ).join(" | ")}
+        </small>
+      ) : null}
+      {status.errors.length ? <small>{status.errors.slice(0, 12).join(" | ")}</small> : null}
     </div>
   );
 }
@@ -5137,6 +5391,113 @@ function emptyBackfillTableSummary(table: string, local: number, before: number)
     notRepairable: 0,
     errors: []
   };
+}
+
+function parseFullLocalDataExportForImport(value: unknown): FullLocalDataExport {
+  if (!isPlainRecord(value)) throw new Error("Die Datei ist kein gueltiges JSON-Objekt.");
+  if (value.version === 2 && isPlainRecord(value.appKeys)) {
+    const appKeys = parseFullExportAppKeys(value.appKeys);
+    const allParibusKeys = Array.isArray(value.allParibusKeys)
+      ? value.allParibusKeys.filter(isLocalStorageKeySnapshot)
+      : [];
+    return {
+      version: 2,
+      exportedAt: typeof value.exportedAt === "string" ? value.exportedAt : new Date().toISOString(),
+      source: "localStorage",
+      appKeys,
+      allParibusKeys,
+      counts: isPlainRecord(value.counts)
+        ? Object.fromEntries(Object.entries(value.counts).map(([key, count]) => [key, typeof count === "number" ? count : 0]))
+        : {}
+    };
+  }
+  if (value.version === 1 && isPlainRecord(value.keys)) {
+    return {
+      version: 2,
+      exportedAt: typeof value.exportedAt === "string" ? value.exportedAt : new Date().toISOString(),
+      source: "localStorage",
+      appKeys: parseFullExportAppKeys(value.keys),
+      allParibusKeys: [],
+      counts: {}
+    };
+  }
+  throw new Error("Die JSON-Datei ist kein unterstuetzter paribus-baukosten Export. Erwartet version 2 mit appKeys oder version 1 mit keys.");
+}
+
+function parseFullExportAppKeys(value: Record<string, unknown>): FullLocalDataExport["appKeys"] {
+  if (!Array.isArray(value.objects)) throw new Error("Im Export fehlt appKeys.objects als Array.");
+  if (!Array.isArray(value.entrances)) throw new Error("Im Export fehlt appKeys.entrances als Array.");
+  if (!Array.isArray(value.projects)) throw new Error("Im Export fehlt appKeys.projects als Array.");
+  if (!Array.isArray(value.documents)) throw new Error("Im Export fehlt appKeys.documents als Array.");
+  if (!isPlainRecord(value.assignments)) throw new Error("Im Export fehlt appKeys.assignments als Objekt.");
+  return {
+    objects: value.objects as StoredObjectRecord[],
+    entrances: value.entrances as StoredEntranceRecord[],
+    projects: value.projects as StoredProjectRecord[],
+    documents: value.documents as ObjectAnalysis[],
+    assignments: value.assignments as Record<string, string | null>
+  };
+}
+
+function isLocalStorageKeySnapshot(value: unknown): value is LocalStorageKeySnapshot {
+  return isPlainRecord(value) &&
+    typeof value.key === "string" &&
+    typeof value.count === "number" &&
+    typeof value.shape === "string";
+}
+
+function extractObjectImagesFromFullExport(exportData: FullLocalDataExport): Record<string, string[]> {
+  const images: Record<string, string[]> = {};
+  exportData.allParibusKeys
+    .filter((entry) => /object[_-]?images|images/i.test(entry.key))
+    .forEach((entry) => collectObjectImages(entry.value, images));
+  return images;
+}
+
+function collectObjectImages(value: unknown, output: Record<string, string[]>): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectObjectImages(entry, output));
+    return;
+  }
+  if (!isPlainRecord(value)) return;
+  Object.entries(value).forEach(([key, entry]) => {
+    if (Array.isArray(entry) && entry.every((item) => typeof item === "string")) {
+      output[key] = [...(output[key] ?? []), ...entry];
+      return;
+    }
+    if (isPlainRecord(entry)) {
+      const objectId = stringLike(entry.objectId) || stringLike(entry.object_id) || stringLike(entry.localObjectId) || key;
+      const url = stringLike(entry.url) || stringLike(entry.imageUrl) || stringLike(entry.image_url) || stringLike(entry.file_url);
+      if (objectId && url) output[objectId] = [...(output[objectId] ?? []), url];
+      collectObjectImages(entry, output);
+    }
+  });
+}
+
+function supabaseCountsFromOnlineData(data: Awaited<ReturnType<typeof loadSupabaseOnlineData>>): Record<string, number> {
+  return {
+    objects: data.objects.length,
+    documents: data.documents.supabaseDocumentCount,
+    cost_items: data.documents.supabaseCostItemCount,
+    projects: data.projects.length,
+    entrances: data.entrances.length,
+    assignments: Object.keys(data.assignments).length,
+    object_images: Object.values(data.objectImages).reduce((sum, images) => sum + images.length, 0)
+  };
+}
+
+function compareLocalAndSupabaseCounts(localCounts: Record<string, number>, supabaseCounts: Record<string, number>): string[] {
+  return ["objects", "documents", "cost_items", "projects", "entrances", "assignments", "object_images"]
+    .filter((table) => (localCounts[table] ?? 0) > (supabaseCounts[table] ?? 0))
+    .map((table) => `${table}: Supabase hat nach Import weniger Datensaetze als localStorage (${supabaseCounts[table] ?? 0} von ${localCounts[table] ?? 0}).`);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringLike(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function SupabaseDocumentImportSummaryView({ status }: { status: SupabaseDocumentImportStatus }) {
