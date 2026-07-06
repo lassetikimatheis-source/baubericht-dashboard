@@ -582,6 +582,18 @@ export async function loadQuarterlyReportBundle(): Promise<QuarterlyReportBundle
     supabase.from("quarterly_report_values").select("*").order("created_at", { ascending: true })
   ]);
 
+  const quarterlyErrors = [
+    fundsResult.error,
+    reportsResult.error,
+    filesResult.error,
+    powerBiResult.error,
+    valuesResult.error
+  ].filter(Boolean);
+  if (quarterlyErrors.some(isMissingQuarterlySchemaError)) {
+    console.warn("[Quartalsberichte] Supabase-Tabellen fehlen oder sind noch nicht im Schema Cache. Lokaler Fonds-Fallback wird angezeigt.", quarterlyErrors);
+    return emptyQuarterlyReportBundle();
+  }
+
   assertQuarterlyResult(fundsResult.error, "Fonds");
   assertQuarterlyResult(reportsResult.error, "Quartalsberichte");
   assertQuarterlyResult(filesResult.error, "Excel-Zuordnungen");
@@ -1671,6 +1683,12 @@ function emptyQuarterlyReportBundle(): QuarterlyReportBundle {
 function assertQuarterlyResult(error: { message?: string; details?: string | null; hint?: string | null; code?: string | null } | null, label: string): void {
   if (!error) return;
   throw new Error(`${label} konnten nicht geladen werden. Bitte supabase/quarterly-reports-schema.sql im Supabase SQL Editor ausfuehren. ${formatSupabaseError(error)}`);
+}
+
+function isMissingQuarterlySchemaError(error: { message?: string; details?: string | null; hint?: string | null; code?: string | null } | null): boolean {
+  if (!error) return false;
+  const text = [error.message, error.details, error.hint, error.code].filter(Boolean).join(" ").toLowerCase();
+  return error.code === "PGRST205" || text.includes("could not find the table") || text.includes("schema cache");
 }
 
 async function writeQuarterlyAuditLog(

@@ -49,6 +49,13 @@ const demoDocuments: FundDocument[] = [
   { id: "doc-fonds-22-1", fundId: "local-fonds-22", documentType: "Quelle", title: "Bewertungsannahmen", fileName: "Bewertungsannahmen_Fonds22.xlsx", status: "aktiv" }
 ];
 
+const localFallbackFunds: FundRecord[] = [
+  { id: "local-fonds-9", fundName: "Fonds 9", fundNumber: "Fonds 9", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+  { id: "local-fonds-22", fundName: "Fonds 22", fundNumber: "Fonds 22", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+  { id: "local-paif-1", fundName: "PAIF 1", fundNumber: "PAIF 1", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+  { id: "local-paif-2", fundName: "PAIF 2", fundNumber: "PAIF 2", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" }
+];
+
 export function FundsQuarterlyWorkspace() {
   const [funds, setFunds] = useState<FundRecord[]>([]);
   const [reports, setReports] = useState<QuarterlyReportRecord[]>([]);
@@ -81,8 +88,24 @@ export function FundsQuarterlyWorkspace() {
       setPowerBiLinks(bundle.powerBiLinks);
       setValues(bundle.values);
       setSelectedFundId((current) => current || bundle.funds[0]?.id || "");
-      setMessage({ type: "success", text: "Fonds und Quartalsbericht-Zuordnungen geladen." });
+      const usesLocalFallback = bundle.funds.some((fund) => fund.id.startsWith("local-"));
+      setMessage({
+        type: usesLocalFallback ? "info" : "success",
+        text: usesLocalFallback
+          ? "Lokale Beispiel-Fonds aktiv. Bitte supabase/quarterly-reports-schema.sql im Supabase SQL Editor ausfuehren."
+          : "Fonds und Quartalsbericht-Zuordnungen geladen."
+      });
     } catch (error) {
+      if (isMissingQuarterlySchemaMessage(error)) {
+        setFunds(localFallbackFunds);
+        setReports([]);
+        setFiles([]);
+        setPowerBiLinks([]);
+        setValues([]);
+        setSelectedFundId((current) => current || localFallbackFunds[0]?.id || "");
+        setMessage({ type: "info", text: "Lokale Beispiel-Fonds aktiv. Supabase kennt public.funds noch nicht; bitte supabase/quarterly-reports-schema.sql im SQL Editor ausfuehren." });
+        return;
+      }
       setMessage({ type: "error", text: errorMessage(error) });
     }
   }
@@ -216,4 +239,9 @@ function latestReportLabel(reports: QuarterlyReportRecord[]): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unbekannter Fehler im Quartalsbericht-Modul.";
+}
+
+function isMissingQuarterlySchemaMessage(error: unknown): boolean {
+  const text = errorMessage(error).toLowerCase();
+  return text.includes("pgrst205") || text.includes("could not find the table") || text.includes("schema cache") || text.includes("public.funds");
 }
