@@ -59,6 +59,94 @@ export interface ActivityLogInput {
   details?: Record<string, unknown>;
 }
 
+export type QuarterlyReportFileType =
+  | "Mieterliste"
+  | "Verkehrswerte/VKW"
+  | "CapEx/TDREV"
+  | "Budget"
+  | "Leerstand"
+  | "Sonstige";
+
+export interface FundRecord {
+  id: string;
+  fundName: string;
+  fundNumber: string;
+  company: string;
+  contactPerson: string;
+  status: string;
+  remark: string;
+  updatedAt: string;
+}
+
+export interface QuarterlyReportRecord {
+  id: string;
+  fundId: string;
+  quarter: string;
+  year: number;
+  reportDate: string;
+  status: string;
+  version: string;
+  editor: string;
+  lastChangedAt: string;
+}
+
+export interface QuarterlyReportFileRecord {
+  id: string;
+  reportId: string;
+  fundId: string;
+  fileType: QuarterlyReportFileType;
+  fileName: string;
+  uploadDate: string;
+  assignedQuarter: string;
+  assignedYear: number;
+  sheetName: string;
+  relevantCells: string;
+  relevantColumns: string;
+  importStatus: string;
+  errorLog: string;
+}
+
+export interface QuarterlyReportPowerBiLinkRecord {
+  id: string;
+  reportId: string;
+  fundId: string;
+  workspace: string;
+  reportDashboard: string;
+  dataset: string;
+  metric: string;
+  sourceCell: string;
+  reportDate: string;
+  value: string;
+  lastSyncAt: string;
+  isOverridden: boolean;
+  manualValue: string;
+  importStatus: string;
+  errorLog: string;
+}
+
+export interface QuarterlyReportValueRecord {
+  id: string;
+  reportId: string;
+  fundId: string;
+  valueKey: string;
+  label: string;
+  sourceType: string;
+  sourceReference: string;
+  value: string;
+  reviewedValue: string;
+  isReviewed: boolean;
+  status: string;
+  remark: string;
+}
+
+export interface QuarterlyReportBundle {
+  funds: FundRecord[];
+  reports: QuarterlyReportRecord[];
+  files: QuarterlyReportFileRecord[];
+  powerBiLinks: QuarterlyReportPowerBiLinkRecord[];
+  values: QuarterlyReportValueRecord[];
+}
+
 export async function getSupabaseClientAsync(): Promise<SupabaseClient | null> {
   const runtimeConfig = await getRuntimeSupabaseConfig();
   if (!runtimeConfig) return null;
@@ -476,6 +564,182 @@ export async function logActivity(input: ActivityLogInput): Promise<void> {
   };
   const { error } = await supabase.from("activity_logs").insert(row);
   if (error) console.warn("[Supabase Activity] Aktivitaet konnte nicht gespeichert werden", { row, error });
+}
+
+export async function loadQuarterlyReportBundle(): Promise<QuarterlyReportBundle> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) return emptyQuarterlyReportBundle();
+
+  const [fundsResult, reportsResult, filesResult, powerBiResult, valuesResult] = await Promise.all([
+    supabase.from("funds").select("*").order("fund_name", { ascending: true }),
+    supabase.from("quarterly_reports").select("*").order("last_changed_at", { ascending: false }),
+    supabase.from("quarterly_report_files").select("*").order("upload_date", { ascending: false }),
+    supabase.from("quarterly_report_powerbi_links").select("*").order("created_at", { ascending: false }),
+    supabase.from("quarterly_report_values").select("*").order("created_at", { ascending: true })
+  ]);
+
+  assertQuarterlyResult(fundsResult.error, "Fonds");
+  assertQuarterlyResult(reportsResult.error, "Quartalsberichte");
+  assertQuarterlyResult(filesResult.error, "Excel-Zuordnungen");
+  assertQuarterlyResult(powerBiResult.error, "PowerBI-Zuordnungen");
+  assertQuarterlyResult(valuesResult.error, "Pruefwerte");
+
+  return {
+    funds: (fundsResult.data ?? []).map((row) => fundFromSupabase(row as GenericSupabaseRow)),
+    reports: (reportsResult.data ?? []).map((row) => quarterlyReportFromSupabase(row as GenericSupabaseRow)),
+    files: (filesResult.data ?? []).map((row) => quarterlyReportFileFromSupabase(row as GenericSupabaseRow)),
+    powerBiLinks: (powerBiResult.data ?? []).map((row) => quarterlyPowerBiFromSupabase(row as GenericSupabaseRow)),
+    values: (valuesResult.data ?? []).map((row) => quarterlyValueFromSupabase(row as GenericSupabaseRow))
+  };
+}
+
+export async function saveFund(input: Omit<FundRecord, "id" | "updatedAt"> & { id?: string }): Promise<FundRecord> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) throw new Error(`Fonds konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  const row: GenericSupabaseRow = {
+    fund_name: input.fundName.trim(),
+    fund_number: input.fundNumber.trim(),
+    company: emptyToNull(input.company),
+    contact_person: emptyToNull(input.contactPerson),
+    status: input.status.trim() || "active",
+    remark: emptyToNull(input.remark),
+    updated_at: new Date().toISOString()
+  };
+  if (!row.fund_name || !row.fund_number) throw new Error("Fondsname und Fondsnummer sind Pflichtfelder.");
+  const query = input.id
+    ? supabase.from("funds").update(row).eq("id", input.id)
+    : supabase.from("funds").insert(row);
+  const { data, error } = await query.select("*").single();
+  if (error) throw new Error(`Fonds konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
+  return fundFromSupabase(data as GenericSupabaseRow);
+}
+
+export async function saveQuarterlyReport(input: {
+  id?: string;
+  fundId: string;
+  quarter: string;
+  year: number;
+  reportDate: string;
+  status: string;
+  version: string;
+  editor: string;
+}): Promise<QuarterlyReportRecord> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) throw new Error(`Quartalsbericht konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  if (!input.fundId) throw new Error("Quartalsbericht kann nicht ohne Fonds-Zuordnung gespeichert werden.");
+  const now = new Date().toISOString();
+  const row: GenericSupabaseRow = {
+    fund_id: input.fundId,
+    quarter: input.quarter,
+    year: input.year,
+    report_date: input.reportDate,
+    status: input.status || "draft",
+    version: input.version || "1.0",
+    editor: emptyToNull(input.editor),
+    last_changed_at: now,
+    updated_at: now
+  };
+  const query = input.id
+    ? supabase.from("quarterly_reports").update(row).eq("id", input.id)
+    : supabase.from("quarterly_reports").insert(row);
+  const { data, error } = await query.select("*").single();
+  if (error) throw new Error(`Quartalsbericht konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
+  await writeQuarterlyAuditLog(supabase, {
+    reportId: stringValue((data as GenericSupabaseRow).id),
+    fundId: input.fundId,
+    action: input.id ? "update_report" : "create_report",
+    area: "quarterly_reports",
+    details: row
+  });
+  return quarterlyReportFromSupabase(data as GenericSupabaseRow);
+}
+
+export async function saveQuarterlyReportFile(input: Omit<QuarterlyReportFileRecord, "id" | "uploadDate"> & { id?: string }): Promise<QuarterlyReportFileRecord> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) throw new Error(`Excel-Zuordnung konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  if (!input.reportId || !input.fundId || !input.assignedQuarter || !input.assignedYear) {
+    throw new Error("Excel-Dateien brauchen Fonds, Quartalsbericht, Quartal und Jahr.");
+  }
+  const row: GenericSupabaseRow = {
+    report_id: input.reportId,
+    fund_id: input.fundId,
+    file_type: input.fileType,
+    file_name: input.fileName.trim(),
+    assigned_quarter: input.assignedQuarter,
+    assigned_year: input.assignedYear,
+    sheet_name: emptyToNull(input.sheetName),
+    relevant_cells: emptyToNull(input.relevantCells),
+    relevant_columns: emptyToNull(input.relevantColumns),
+    import_status: input.importStatus || "pending",
+    error_log: emptyToNull(input.errorLog),
+    updated_at: new Date().toISOString()
+  };
+  if (!row.file_name) throw new Error("Dateiname ist ein Pflichtfeld.");
+  const query = input.id
+    ? supabase.from("quarterly_report_files").update(row).eq("id", input.id)
+    : supabase.from("quarterly_report_files").insert(row);
+  const { data, error } = await query.select("*").single();
+  if (error) throw new Error(`Excel-Zuordnung konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
+  return quarterlyReportFileFromSupabase(data as GenericSupabaseRow);
+}
+
+export async function saveQuarterlyPowerBiLink(input: Omit<QuarterlyReportPowerBiLinkRecord, "id"> & { id?: string }): Promise<QuarterlyReportPowerBiLinkRecord> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) throw new Error(`PowerBI-Zuordnung konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  if (!input.reportId || !input.fundId) throw new Error("PowerBI-Werte brauchen Fonds und Quartalsbericht.");
+  const row: GenericSupabaseRow = {
+    report_id: input.reportId,
+    fund_id: input.fundId,
+    workspace: input.workspace.trim(),
+    report_dashboard: input.reportDashboard.trim(),
+    dataset: input.dataset.trim(),
+    metric: input.metric.trim(),
+    source_cell: emptyToNull(input.sourceCell),
+    report_date: input.reportDate,
+    value: emptyToNull(input.value),
+    last_sync_at: emptyToNull(input.lastSyncAt),
+    is_overridden: input.isOverridden,
+    manual_value: emptyToNull(input.manualValue),
+    import_status: input.importStatus || "pending",
+    error_log: emptyToNull(input.errorLog),
+    updated_at: new Date().toISOString()
+  };
+  if (!row.workspace || !row.report_dashboard || !row.dataset || !row.metric) {
+    throw new Error("Workspace, Report/Dashboard, Dataset und Kennzahl sind Pflichtfelder.");
+  }
+  const query = input.id
+    ? supabase.from("quarterly_report_powerbi_links").update(row).eq("id", input.id)
+    : supabase.from("quarterly_report_powerbi_links").insert(row);
+  const { data, error } = await query.select("*").single();
+  if (error) throw new Error(`PowerBI-Zuordnung konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
+  return quarterlyPowerBiFromSupabase(data as GenericSupabaseRow);
+}
+
+export async function saveQuarterlyReportValue(input: Omit<QuarterlyReportValueRecord, "id"> & { id?: string }): Promise<QuarterlyReportValueRecord> {
+  const supabase = await getSupabaseClientAsync();
+  if (!supabase) throw new Error(`Pruefwert konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
+  if (!input.reportId || !input.fundId) throw new Error("Pruefwerte brauchen Fonds und Quartalsbericht.");
+  const row: GenericSupabaseRow = {
+    report_id: input.reportId,
+    fund_id: input.fundId,
+    value_key: input.valueKey.trim(),
+    label: input.label.trim(),
+    source_type: input.sourceType,
+    source_reference: emptyToNull(input.sourceReference),
+    value: emptyToNull(input.value),
+    reviewed_value: emptyToNull(input.reviewedValue),
+    is_reviewed: input.isReviewed,
+    status: input.status || "open",
+    remark: emptyToNull(input.remark),
+    updated_at: new Date().toISOString()
+  };
+  if (!row.value_key || !row.label) throw new Error("Wert-Schluessel und Bezeichnung sind Pflichtfelder.");
+  const query = input.id
+    ? supabase.from("quarterly_report_values").update(row).eq("id", input.id)
+    : supabase.from("quarterly_report_values").upsert(row, { onConflict: "report_id,value_key" });
+  const { data, error } = await query.select("*").single();
+  if (error) throw new Error(`Pruefwert konnte nicht gespeichert werden: ${formatSupabaseError(error)}`);
+  return quarterlyValueFromSupabase(data as GenericSupabaseRow);
 }
 
 type SupabaseObjectRow = {
@@ -1368,6 +1632,131 @@ export async function importDocumentsAndCostItemsToSupabase(documents: ObjectAna
 }
 
 type GenericSupabaseRow = Record<string, unknown>;
+
+function emptyQuarterlyReportBundle(): QuarterlyReportBundle {
+  return {
+    funds: [
+      { id: "local-fonds-9", fundName: "Fonds 9", fundNumber: "Fonds 9", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+      { id: "local-fonds-22", fundName: "Fonds 22", fundNumber: "Fonds 22", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+      { id: "local-paif-1", fundName: "PAIF 1", fundNumber: "PAIF 1", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+      { id: "local-paif-2", fundName: "PAIF 2", fundNumber: "PAIF 2", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" }
+    ],
+    reports: [],
+    files: [],
+    powerBiLinks: [],
+    values: []
+  };
+}
+
+function assertQuarterlyResult(error: { message?: string; details?: string | null; hint?: string | null; code?: string | null } | null, label: string): void {
+  if (!error) return;
+  throw new Error(`${label} konnten nicht geladen werden. Bitte supabase/quarterly-reports-schema.sql im Supabase SQL Editor ausfuehren. ${formatSupabaseError(error)}`);
+}
+
+async function writeQuarterlyAuditLog(
+  supabase: SupabaseClient,
+  input: { reportId: string; fundId: string; action: string; area: string; details: Record<string, unknown> }
+): Promise<void> {
+  const { data } = await supabase.auth.getUser();
+  const { error } = await supabase.from("quarterly_report_audit_log").insert({
+    report_id: input.reportId || null,
+    fund_id: input.fundId || null,
+    action: input.action,
+    area: input.area,
+    details: input.details,
+    created_by: data.user?.email ?? null
+  });
+  if (error) console.warn("[Quartalsberichte] Audit-Log konnte nicht geschrieben werden", { input, error });
+}
+
+function fundFromSupabase(row: GenericSupabaseRow): FundRecord {
+  return {
+    id: stringValue(row.id),
+    fundName: stringValue(row.fund_name),
+    fundNumber: stringValue(row.fund_number),
+    company: stringValue(row.company),
+    contactPerson: stringValue(row.contact_person),
+    status: stringValue(row.status) || "active",
+    remark: stringValue(row.remark),
+    updatedAt: stringValue(row.updated_at)
+  };
+}
+
+function quarterlyReportFromSupabase(row: GenericSupabaseRow): QuarterlyReportRecord {
+  return {
+    id: stringValue(row.id),
+    fundId: stringValue(row.fund_id),
+    quarter: stringValue(row.quarter),
+    year: Number(row.year ?? new Date().getFullYear()),
+    reportDate: stringValue(row.report_date),
+    status: stringValue(row.status) || "draft",
+    version: stringValue(row.version) || "1.0",
+    editor: stringValue(row.editor),
+    lastChangedAt: stringValue(row.last_changed_at)
+  };
+}
+
+function quarterlyReportFileFromSupabase(row: GenericSupabaseRow): QuarterlyReportFileRecord {
+  return {
+    id: stringValue(row.id),
+    reportId: stringValue(row.report_id),
+    fundId: stringValue(row.fund_id),
+    fileType: normalizeQuarterlyFileType(row.file_type),
+    fileName: stringValue(row.file_name),
+    uploadDate: stringValue(row.upload_date),
+    assignedQuarter: stringValue(row.assigned_quarter),
+    assignedYear: Number(row.assigned_year ?? new Date().getFullYear()),
+    sheetName: stringValue(row.sheet_name),
+    relevantCells: stringValue(row.relevant_cells),
+    relevantColumns: stringValue(row.relevant_columns),
+    importStatus: stringValue(row.import_status) || "pending",
+    errorLog: stringValue(row.error_log)
+  };
+}
+
+function quarterlyPowerBiFromSupabase(row: GenericSupabaseRow): QuarterlyReportPowerBiLinkRecord {
+  return {
+    id: stringValue(row.id),
+    reportId: stringValue(row.report_id),
+    fundId: stringValue(row.fund_id),
+    workspace: stringValue(row.workspace),
+    reportDashboard: stringValue(row.report_dashboard),
+    dataset: stringValue(row.dataset),
+    metric: stringValue(row.metric),
+    sourceCell: stringValue(row.source_cell),
+    reportDate: stringValue(row.report_date),
+    value: stringValue(row.value),
+    lastSyncAt: stringValue(row.last_sync_at),
+    isOverridden: Boolean(row.is_overridden),
+    manualValue: stringValue(row.manual_value),
+    importStatus: stringValue(row.import_status) || "pending",
+    errorLog: stringValue(row.error_log)
+  };
+}
+
+function quarterlyValueFromSupabase(row: GenericSupabaseRow): QuarterlyReportValueRecord {
+  return {
+    id: stringValue(row.id),
+    reportId: stringValue(row.report_id),
+    fundId: stringValue(row.fund_id),
+    valueKey: stringValue(row.value_key),
+    label: stringValue(row.label),
+    sourceType: stringValue(row.source_type),
+    sourceReference: stringValue(row.source_reference),
+    value: stringValue(row.value),
+    reviewedValue: stringValue(row.reviewed_value),
+    isReviewed: Boolean(row.is_reviewed),
+    status: stringValue(row.status) || "open",
+    remark: stringValue(row.remark)
+  };
+}
+
+function normalizeQuarterlyFileType(value: unknown): QuarterlyReportFileType {
+  const text = stringValue(value);
+  return text === "Mieterliste" || text === "Verkehrswerte/VKW" || text === "CapEx/TDREV" || text === "Budget" || text === "Leerstand" || text === "Sonstige"
+    ? text
+    : "Sonstige";
+}
 
 function objectAnalysisFromSupabase(
   documentRow: GenericSupabaseRow,

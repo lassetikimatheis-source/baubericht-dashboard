@@ -16,7 +16,7 @@ import {
   YAxis
 } from "recharts";
 import { UploadPanel } from "./upload-panel";
-import { QuarterlyReportsModule } from "./QuarterlyReportsModule";
+import { QuarterlyReportsWorkspace } from "./quarterly-reports-workspace";
 import { AdminPanel } from "./admin-panel";
 import { useAuth } from "./auth-gate";
 import type { ObjectMapEntry } from "./map/ObjectMap";
@@ -2283,7 +2283,7 @@ export function AnalysisDashboard() {
               ) : null}
 
               {view === "quarterlyReports" ? (
-              <QuarterlyReportsModule />
+              <QuarterlyReportsWorkspace />
               ) : null}
 
               {view === "admin" && canAdmin ? (

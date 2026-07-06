@@ -5735,6 +5735,17 @@ video {
   align-items: start;
 }
 
+.quarterlyGeneratorWide {
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.38fr);
+}
+
+.quarterlyButtonRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .quarterlyWorkflowPanel,
 .quarterlyStatusPanel,
 .quarterlyPreviewPanel {
@@ -5746,6 +5757,10 @@ video {
   grid-template-columns: repeat(5, minmax(130px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
+}
+
+.quarterlyWorkflowStepsSix {
+  grid-template-columns: repeat(6, minmax(118px, 1fr));
 }
 
 .quarterlyWorkflowStep {
@@ -5808,6 +5823,109 @@ video {
 .quarterlyInputGrid select {
   width: 100%;
   min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.quarterlySectionBlock {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.quarterlySectionBlock + .quarterlySectionBlock {
+  margin-top: 18px;
+}
+
+.quarterlyCompactForm {
+  align-items: end;
+}
+
+.quarterlyPreviewTable input,
+.quarterlyPreviewTable select {
+  width: 100%;
+  min-width: 120px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  margin-bottom: 6px;
+  padding: 0 8px;
+}
+
+.quarterlyReviewInline {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.quarterlyCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.quarterlyCheck input {
+  width: auto;
+  min-height: auto;
+  margin: 0;
+}
+
+.quarterlySubgrid,
+.quarterlyBlock {
+  display: grid;
+  gap: 14px;
+}
+
+.quarterlyBlock {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.quarterlyBlock h4 {
+  color: var(--navy);
+  font-size: 14px;
+  margin: 0;
+}
+
+.quarterlyMessage {
+  max-width: 460px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 10px 12px;
+}
+
+.quarterlyMessage-success {
+  border-color: rgba(79, 155, 98, 0.35);
+  background: var(--green-soft);
+}
+
+.quarterlyMessage-error {
+  border-color: rgba(185, 28, 28, 0.28);
+  background: #fff1f2;
+}
+
+.quarterlyDataGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.quarterlyInlineInput {
+  width: 100%;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fff;
@@ -5884,8 +6002,56 @@ video {
   overflow: auto;
 }
 
+.quarterlyAlert {
+  border: 1px solid rgba(185, 28, 28, 0.28);
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 12px 14px;
+}
+
+.quarterlyWorkflowStepsSix {
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+}
+
+.quarterlyFundGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.quarterlyPreviewTable input,
+.quarterlyPreviewTable select,
+.quarterlyFundGrid select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 8px;
+}
+
+.quarterlyPreviewTable input[type="file"] {
+  min-width: 210px;
+  padding-top: 6px;
+}
+
+.quarterlyReviewListWide {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin-bottom: 14px;
+}
+
+.quarterlyReviewItem-info {
+  background: #eef2f6;
+}
+
 @media (max-width: 1400px) {
-  .quarterlyWorkflowSteps {
+  .quarterlyWorkflowSteps,
+  .quarterlyWorkflowStepsSix {
     grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
 }
@@ -5893,7 +6059,10 @@ video {
 @media (max-width: 1180px) {
   .quarterlyProductHeader,
   .quarterlyGeneratorGrid,
-  .quarterlyInputGrid {
+  .quarterlyInputGrid,
+  .quarterlyDataGrid,
+  .quarterlyFundGrid,
+  .quarterlyReviewInline {
     grid-template-columns: 1fr;
   }
 
