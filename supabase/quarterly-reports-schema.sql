@@ -116,12 +116,51 @@ create unique index if not exists quarterly_report_powerbi_unique_idx on public.
 create index if not exists quarterly_report_values_report_idx on public.quarterly_report_values(quarterly_report_id, fund_id);
 create index if not exists quarterly_report_audit_report_idx on public.quarterly_report_audit_log(quarterly_report_id, fund_id);
 
+alter table public.funds add column if not exists address text;
+alter table public.funds add column if not exists commercial_register_number text;
+alter table public.funds add column if not exists current_value text;
+alter table public.funds add column if not exists object_count integer not null default 0;
+
+create table if not exists public.fund_energy_certificates (
+  id uuid primary key default gen_random_uuid(),
+  fund_id uuid not null references public.funds(id) on delete restrict,
+  object_label text,
+  file_name text not null,
+  file_url text,
+  valid_until date,
+  energy_value text,
+  assignment_note text,
+  status text not null default 'offen',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint fund_energy_certificates_file_not_empty check (length(trim(file_name)) > 0)
+);
+
+create table if not exists public.fund_source_documents (
+  id uuid primary key default gen_random_uuid(),
+  fund_id uuid not null references public.funds(id) on delete restrict,
+  document_type text not null default 'Sonstige',
+  title text not null,
+  file_name text,
+  file_url text,
+  source_status text not null default 'offen',
+  remark text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint fund_source_documents_title_not_empty check (length(trim(title)) > 0)
+);
+
+create index if not exists fund_energy_certificates_fund_idx on public.fund_energy_certificates(fund_id);
+create index if not exists fund_source_documents_fund_idx on public.fund_source_documents(fund_id);
+
 alter table public.funds enable row level security;
 alter table public.quarterly_reports enable row level security;
 alter table public.quarterly_report_files enable row level security;
 alter table public.quarterly_report_powerbi_links enable row level security;
 alter table public.quarterly_report_values enable row level security;
 alter table public.quarterly_report_audit_log enable row level security;
+alter table public.fund_energy_certificates enable row level security;
+alter table public.fund_source_documents enable row level security;
 
 insert into public.funds (fund_name, fund_number, company, status, remark)
 values

@@ -5933,6 +5933,195 @@ video {
   padding: 0 10px;
 }
 
+.quarterlyFundCards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.quarterlyFundCard {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 14px;
+  text-align: left;
+}
+
+.quarterlyFundCard:hover,
+.quarterlyFundCardActive {
+  border-color: rgba(31, 78, 121, 0.35);
+  box-shadow: 0 10px 28px rgba(33, 44, 56, 0.08);
+}
+
+.quarterlyFundCard span,
+.quarterlyFundCard small,
+.quarterlyInfoGrid dt,
+.quarterlySourceRow span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quarterlyFundCard > strong {
+  color: var(--navy);
+  font-size: 20px;
+}
+
+.quarterlyFundCard dl,
+.quarterlyInfoGrid {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.quarterlyFundCard dl div,
+.quarterlyInfoGrid div {
+  display: grid;
+  gap: 2px;
+}
+
+.quarterlyFundCard dt,
+.quarterlyInfoGrid dt {
+  font-weight: 900;
+}
+
+.quarterlyFundCard dd,
+.quarterlyInfoGrid dd {
+  margin: 0;
+  color: #2c333a;
+  font-size: 13px;
+}
+
+.quarterlyFundDetail {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px;
+}
+
+.quarterlyFundDetailHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.quarterlyFundDetailHeader h3 {
+  color: var(--navy);
+  font-size: 24px;
+}
+
+.quarterlyFundDetailMeta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quarterlyFundDetailMeta strong {
+  color: var(--navy);
+  font-size: 18px;
+}
+
+.quarterlyTabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.quarterlyTabs button,
+.quarterlySourceActions button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.quarterlyTabs button.active {
+  border-color: rgba(31, 78, 121, 0.35);
+  background: #eef2f6;
+}
+
+.quarterlyDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.quarterlyDetailPanel {
+  margin-bottom: 0;
+}
+
+.quarterlyKpiRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quarterlyKpiRow span,
+.quarterlySourceRow,
+.quarterlyEmpty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 10px 12px;
+}
+
+.quarterlyKpiRow strong {
+  display: block;
+  color: var(--navy);
+  font-size: 18px;
+}
+
+.quarterlySourceList {
+  display: grid;
+  gap: 8px;
+}
+
+.quarterlySourceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.quarterlySourceRow strong,
+.quarterlySourceRow span {
+  display: block;
+}
+
+.quarterlySourceRow em {
+  color: var(--navy);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.quarterlySourceActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.quarterlyEmpty {
+  color: var(--muted);
+  margin: 0;
+}
+
 .quarterlyStatusPanel {
   display: grid;
   gap: 14px;
@@ -6054,6 +6243,10 @@ video {
   .quarterlyWorkflowStepsSix {
     grid-template-columns: repeat(3, minmax(150px, 1fr));
   }
+
+  .quarterlyFundCards {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
 }
 
 @media (max-width: 1180px) {
@@ -6064,6 +6257,22 @@ video {
   .quarterlyFundGrid,
   .quarterlyReviewInline {
     grid-template-columns: 1fr;
+  }
+
+  .quarterlyFundCards,
+  .quarterlyDetailGrid,
+  .quarterlyKpiRow {
+    grid-template-columns: 1fr;
+  }
+
+  .quarterlyFundDetailHeader,
+  .quarterlySourceRow {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .quarterlyFundDetailMeta {
+    justify-items: start;
   }
 
   .quarterlyProductHeader {

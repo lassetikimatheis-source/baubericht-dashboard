@@ -71,7 +71,11 @@ export interface FundRecord {
   id: string;
   fundName: string;
   fundNumber: string;
+  address: string;
   company: string;
+  commercialRegisterNumber: string;
+  currentValue: string;
+  objectCount: number;
   contactPerson: string;
   status: string;
   remark: string;
@@ -593,15 +597,31 @@ export async function loadQuarterlyReportBundle(): Promise<QuarterlyReportBundle
   };
 }
 
-export async function saveFund(input: Omit<FundRecord, "id" | "updatedAt"> & { id?: string }): Promise<FundRecord> {
+export async function saveFund(input: {
+  id?: string;
+  fundName: string;
+  fundNumber: string;
+  address?: string;
+  company?: string;
+  commercialRegisterNumber?: string;
+  currentValue?: string;
+  objectCount?: number;
+  contactPerson?: string;
+  status?: string;
+  remark?: string;
+}): Promise<FundRecord> {
   const supabase = await getSupabaseClientAsync();
   if (!supabase) throw new Error(`Fonds konnte nicht gespeichert werden: ${formatMissingSupabaseEnvironment()}`);
   const row: GenericSupabaseRow = {
     fund_name: input.fundName.trim(),
     fund_number: input.fundNumber.trim(),
+    address: emptyToNull(input.address),
     company: emptyToNull(input.company),
+    commercial_register_number: emptyToNull(input.commercialRegisterNumber),
+    current_value: emptyToNull(input.currentValue),
+    object_count: input.objectCount ?? 0,
     contact_person: emptyToNull(input.contactPerson),
-    status: input.status.trim() || "active",
+    status: input.status?.trim() || "active",
     remark: emptyToNull(input.remark),
     updated_at: new Date().toISOString()
   };
@@ -1636,10 +1656,10 @@ type GenericSupabaseRow = Record<string, unknown>;
 function emptyQuarterlyReportBundle(): QuarterlyReportBundle {
   return {
     funds: [
-      { id: "local-fonds-9", fundName: "Fonds 9", fundNumber: "Fonds 9", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-      { id: "local-fonds-22", fundName: "Fonds 22", fundNumber: "Fonds 22", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-      { id: "local-paif-1", fundName: "PAIF 1", fundNumber: "PAIF 1", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-      { id: "local-paif-2", fundName: "PAIF 2", fundNumber: "PAIF 2", company: "", contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" }
+      { id: "local-fonds-9", fundName: "Fonds 9", fundNumber: "Fonds 9", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+      { id: "local-fonds-22", fundName: "Fonds 22", fundNumber: "Fonds 22", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+      { id: "local-paif-1", fundName: "PAIF 1", fundNumber: "PAIF 1", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+      { id: "local-paif-2", fundName: "PAIF 2", fundNumber: "PAIF 2", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" }
     ],
     reports: [],
     files: [],
@@ -1674,7 +1694,11 @@ function fundFromSupabase(row: GenericSupabaseRow): FundRecord {
     id: stringValue(row.id),
     fundName: stringValue(row.fund_name),
     fundNumber: stringValue(row.fund_number),
+    address: stringValue(row.address),
     company: stringValue(row.company),
+    commercialRegisterNumber: stringValue(row.commercial_register_number),
+    currentValue: stringValue(row.current_value),
+    objectCount: Number(row.object_count ?? 0),
     contactPerson: stringValue(row.contact_person),
     status: stringValue(row.status) || "active",
     remark: stringValue(row.remark),
