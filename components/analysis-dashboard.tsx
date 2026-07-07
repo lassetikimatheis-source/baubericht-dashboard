@@ -5147,6 +5147,25 @@ function SettingsView({
   const percent = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
   const currentSummary = summarizeCurrentAppData();
   const localStorageKeyDiagnostics = getLocalStorageKeyDiagnostics();
+  const [scoreboardCode, setScoreboardCode] = useState("");
+  const [scoreboardUnlocked, setScoreboardUnlocked] = useState(false);
+  const [scoreboardMessage, setScoreboardMessage] = useState("Code eingeben, um den versteckten Bereich zu oeffnen.");
+  const scoreboardRows = [
+    { rank: 1, name: "Upload-Serie", score: 67, detail: "Dokumente sauber zugeordnet" },
+    { rank: 2, name: "Objektpflege", score: 42, detail: "Stammdaten vervollstaendigt" },
+    { rank: 3, name: "Kostencheck", score: 28, detail: "Positionen geprueft" }
+  ];
+
+  function unlockScoreboard() {
+    if (scoreboardCode.trim() === "67") {
+      setScoreboardUnlocked(true);
+      setScoreboardMessage("Scoreboard freigeschaltet.");
+      return;
+    }
+    setScoreboardUnlocked(false);
+    setScoreboardMessage("Code stimmt nicht.");
+  }
+
   return (
     <section className="panel">
       <div className="panelHeader">
@@ -5224,6 +5243,42 @@ function SettingsView({
         <div className="metric"><span>KI-Modus</span><strong>Dokumentbasierte Extraktion</strong><small>Keine Fantasiewerte, k.A. bei fehlenden Angaben.</small></div>
         <div className="metric"><span>Zuordnung</span><strong>Vorschlag statt Entscheidung</strong><small>Der Nutzer entscheidet. Manuelle Eingaben haben Vorrang.</small></div>
         <div className="metric"><span>Summen</span><strong>Regex, Tabellenanalyse, KI-Prüfung</strong><small>Mehrere Summen werden im Debug erklärt.</small></div>
+      </div>
+      <div className="hiddenScorePanel">
+        <div className="panelHeader compactHeader">
+          <div>
+            <h3>Interner Bereich</h3>
+            <p>Versteckter Zugriff fuer kleine Zusatzfunktionen im Baukosten-Tool.</p>
+          </div>
+        </div>
+        <div className="scoreUnlockRow">
+          <label>
+            <span>Code</span>
+            <input value={scoreboardCode} onChange={(event) => setScoreboardCode(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") unlockScoreboard(); }} inputMode="numeric" placeholder="Code" />
+          </label>
+          <button type="button" onClick={unlockScoreboard}>Oeffnen</button>
+          <small>{scoreboardMessage}</small>
+        </div>
+        {scoreboardUnlocked ? (
+          <div className="scoreboardPanel">
+            <div className="scoreboardHeader">
+              <span>Scoreboard</span>
+              <strong>{scoreboardRows.reduce((total, row) => total + row.score, 0)} Punkte</strong>
+            </div>
+            <div className="scoreboardRows">
+              {scoreboardRows.map((row) => (
+                <article className="scoreboardRow" key={row.name}>
+                  <span>#{row.rank}</span>
+                  <div>
+                    <strong>{row.name}</strong>
+                    <small>{row.detail}</small>
+                  </div>
+                  <em>{row.score}</em>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

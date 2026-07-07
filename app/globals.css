@@ -1603,6 +1603,84 @@ tbody tr:hover,
   gap: 10px;
 }
 
+.hiddenScorePanel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.scoreUnlockRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) auto minmax(180px, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+
+.scoreUnlockRow label {
+  display: grid;
+  gap: 6px;
+}
+
+.scoreUnlockRow label span,
+.scoreUnlockRow small,
+.scoreboardHeader span,
+.scoreboardRow small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.scoreUnlockRow input {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+}
+
+.scoreUnlockRow button {
+  min-height: 38px;
+}
+
+.scoreboardPanel,
+.scoreboardRows {
+  display: grid;
+  gap: 8px;
+}
+
+.scoreboardHeader,
+.scoreboardRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.scoreboardHeader {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.scoreboardHeader strong,
+.scoreboardRow strong,
+.scoreboardRow em {
+  color: var(--navy);
+}
+
+.scoreboardRow em {
+  font-size: 18px;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .reanalysisPanel {
   display: grid;
   gap: 12px;
@@ -6273,6 +6351,12 @@ video {
 
   .quarterlyFundDetailMeta {
     justify-items: start;
+  }
+
+  .scoreUnlockRow,
+  .scoreboardHeader,
+  .scoreboardRow {
+    grid-template-columns: 1fr;
   }
 
   .quarterlyProductHeader {
