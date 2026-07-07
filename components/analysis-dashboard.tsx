@@ -5150,11 +5150,61 @@ function SettingsView({
   const [scoreboardCode, setScoreboardCode] = useState("");
   const [scoreboardUnlocked, setScoreboardUnlocked] = useState(false);
   const [scoreboardMessage, setScoreboardMessage] = useState("Code eingeben, um den versteckten Bereich zu oeffnen.");
+  const [cameraScore, setCameraScore] = useState(0);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraMessage, setCameraMessage] = useState("Kamera bereit.");
+  const scoreVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scoreStreamRef = useRef<MediaStream | null>(null);
   const scoreboardRows = [
-    { rank: 1, name: "Upload-Serie", score: 67, detail: "Dokumente sauber zugeordnet" },
-    { rank: 2, name: "Objektpflege", score: 42, detail: "Stammdaten vervollstaendigt" },
-    { rank: 3, name: "Kostencheck", score: 28, detail: "Positionen geprueft" }
-  ];
+    { rank: 1, name: "Kamera-Scans", score: cameraScore, detail: "Live im versteckten Bereich gezaehlt" },
+    { rank: 2, name: "Upload-Serie", score: 67, detail: "Dokumente sauber zugeordnet" },
+    { rank: 3, name: "Objektpflege", score: 42, detail: "Stammdaten vervollstaendigt" },
+    { rank: 4, name: "Kostencheck", score: 28, detail: "Positionen geprueft" }
+  ].sort((a, b) => b.score - a.score).map((row, index) => ({ ...row, rank: index + 1 }));
+
+  useEffect(() => {
+    return () => {
+      scoreStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  async function startScoreCamera() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraMessage("Kamera wird von diesem Browser nicht unterstuetzt.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      scoreStreamRef.current?.getTracks().forEach((track) => track.stop());
+      scoreStreamRef.current = stream;
+      if (scoreVideoRef.current) {
+        scoreVideoRef.current.srcObject = stream;
+        await scoreVideoRef.current.play();
+      }
+      setCameraActive(true);
+      setCameraMessage("Kamera laeuft. Treffer zaehlen ueber den Scan-Button.");
+    } catch (error) {
+      setCameraActive(false);
+      setCameraMessage(error instanceof Error ? error.message : "Kamera konnte nicht gestartet werden.");
+    }
+  }
+
+  function stopScoreCamera() {
+    scoreStreamRef.current?.getTracks().forEach((track) => track.stop());
+    scoreStreamRef.current = null;
+    if (scoreVideoRef.current) scoreVideoRef.current.srcObject = null;
+    setCameraActive(false);
+    setCameraMessage("Kamera gestoppt.");
+  }
+
+  function countCameraHit() {
+    if (!cameraActive) {
+      setCameraMessage("Erst Kamera starten, dann zaehlen.");
+      return;
+    }
+    setCameraScore((current) => current + 1);
+    setCameraMessage("Treffer gezaehlt.");
+  }
 
   function unlockScoreboard() {
     if (scoreboardCode.trim() === "67") {
@@ -5261,6 +5311,19 @@ function SettingsView({
         </div>
         {scoreboardUnlocked ? (
           <div className="scoreboardPanel">
+            <div className="cameraScorePanel">
+              <video ref={scoreVideoRef} muted playsInline />
+              <div>
+                <span>Kamera-Score</span>
+                <strong>{cameraScore}</strong>
+                <small>{cameraMessage}</small>
+                <div className="cameraScoreActions">
+                  <button type="button" onClick={startScoreCamera}>{cameraActive ? "Kamera neu starten" : "Kamera starten"}</button>
+                  <button type="button" onClick={countCameraHit}>Scan zaehlen</button>
+                  <button type="button" onClick={stopScoreCamera}>Stop</button>
+                </div>
+              </div>
+            </div>
             <div className="scoreboardHeader">
               <span>Scoreboard</span>
               <strong>{scoreboardRows.reduce((total, row) => total + row.score, 0)} Punkte</strong>
