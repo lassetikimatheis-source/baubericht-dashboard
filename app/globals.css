@@ -1672,6 +1672,10 @@ tbody tr:hover,
   object-fit: cover;
 }
 
+.cameraScoreCanvas {
+  display: none;
+}
+
 .cameraScorePanel > div {
   display: grid;
   align-content: start;
@@ -1688,6 +1692,35 @@ tbody tr:hover,
 .cameraScorePanel strong {
   color: var(--navy);
   font-size: 34px;
+}
+
+.moveTimer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 8px 10px;
+}
+
+.moveTimer strong {
+  font-size: 20px;
+}
+
+.moveIntensity {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8edf3;
+}
+
+.moveIntensity span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--navy);
 }
 
 .cameraScoreActions {

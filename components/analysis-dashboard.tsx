@@ -5153,8 +5153,16 @@ function SettingsView({
   const [cameraScore, setCameraScore] = useState(0);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraMessage, setCameraMessage] = useState("Kamera bereit.");
+  const [moveChallengeActive, setMoveChallengeActive] = useState(false);
+  const [moveTimeLeft, setMoveTimeLeft] = useState(20);
+  const [moveIntensity, setMoveIntensity] = useState(0);
   const scoreVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scoreCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scoreStreamRef = useRef<MediaStream | null>(null);
+  const scoreFrameRef = useRef<number | null>(null);
+  const scoreTimerRef = useRef<number | null>(null);
+  const previousFrameRef = useRef<Uint8ClampedArray | null>(null);
+  const lastMoveAtRef = useRef(0);
   const scoreboardRows = [
     { rank: 1, name: "Kamera-Scans", score: cameraScore, detail: "Live im versteckten Bereich gezaehlt" },
     { rank: 2, name: "Upload-Serie", score: 67, detail: "Dokumente sauber zugeordnet" },
@@ -5164,6 +5172,7 @@ function SettingsView({
 
   useEffect(() => {
     return () => {
+      stopMoveDetection();
       scoreStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -5190,10 +5199,12 @@ function SettingsView({
   }
 
   function stopScoreCamera() {
+    stopMoveDetection();
     scoreStreamRef.current?.getTracks().forEach((track) => track.stop());
     scoreStreamRef.current = null;
     if (scoreVideoRef.current) scoreVideoRef.current.srcObject = null;
     setCameraActive(false);
+    setMoveChallengeActive(false);
     setCameraMessage("Kamera gestoppt.");
   }
 
@@ -5204,6 +5215,75 @@ function SettingsView({
     }
     setCameraScore((current) => current + 1);
     setCameraMessage("Treffer gezaehlt.");
+  }
+
+  async function startMoveChallenge() {
+    if (!cameraActive) await startScoreCamera();
+    if (!scoreStreamRef.current) {
+      setCameraMessage("Kamera konnte nicht gestartet werden.");
+      return;
+    }
+    setCameraScore(0);
+    setMoveTimeLeft(20);
+    setMoveIntensity(0);
+    setMoveChallengeActive(true);
+    setCameraMessage("20 Sekunden laufen. 67 Move wird ueber Bewegung erkannt.");
+    previousFrameRef.current = null;
+    lastMoveAtRef.current = 0;
+    stopMoveDetection();
+    scoreTimerRef.current = window.setInterval(() => {
+      setMoveTimeLeft((current) => {
+        if (current <= 1) {
+          stopMoveDetection();
+          setMoveChallengeActive(false);
+          setCameraMessage("Zeit vorbei. Score gespeichert.");
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+    scoreFrameRef.current = window.requestAnimationFrame(detectMoveFrame);
+  }
+
+  function stopMoveDetection() {
+    if (scoreFrameRef.current !== null) window.cancelAnimationFrame(scoreFrameRef.current);
+    if (scoreTimerRef.current !== null) window.clearInterval(scoreTimerRef.current);
+    scoreFrameRef.current = null;
+    scoreTimerRef.current = null;
+  }
+
+  function detectMoveFrame() {
+    const video = scoreVideoRef.current;
+    const canvas = scoreCanvasRef.current;
+    const context = canvas?.getContext("2d", { willReadFrequently: true });
+    if (!video || !canvas || !context || video.readyState < 2) {
+      scoreFrameRef.current = window.requestAnimationFrame(detectMoveFrame);
+      return;
+    }
+
+    const width = 96;
+    const height = 72;
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, 0, 0, width, height);
+    const frame = context.getImageData(0, 0, width, height).data;
+    const previous = previousFrameRef.current;
+    if (previous) {
+      let diff = 0;
+      for (let index = 0; index < frame.length; index += 16) {
+        diff += Math.abs(frame[index] - previous[index]);
+      }
+      const intensity = Math.min(100, Math.round(diff / 180));
+      const now = Date.now();
+      setMoveIntensity(intensity);
+      if (intensity > 42 && now - lastMoveAtRef.current > 650) {
+        lastMoveAtRef.current = now;
+        setCameraScore((current) => current + 1);
+        setCameraMessage("67 Move erkannt.");
+      }
+    }
+    previousFrameRef.current = new Uint8ClampedArray(frame);
+    scoreFrameRef.current = window.requestAnimationFrame(detectMoveFrame);
   }
 
   function unlockScoreboard() {
@@ -5313,13 +5393,22 @@ function SettingsView({
           <div className="scoreboardPanel">
             <div className="cameraScorePanel">
               <video ref={scoreVideoRef} muted playsInline />
+              <canvas ref={scoreCanvasRef} className="cameraScoreCanvas" aria-hidden="true" />
               <div>
                 <span>Kamera-Score</span>
                 <strong>{cameraScore}</strong>
+                <div className="moveTimer">
+                  <span>{moveChallengeActive ? "Timer laeuft" : "Timer bereit"}</span>
+                  <strong>{moveTimeLeft}s</strong>
+                </div>
+                <div className="moveIntensity">
+                  <span style={{ width: `${moveIntensity}%` }} />
+                </div>
                 <small>{cameraMessage}</small>
                 <div className="cameraScoreActions">
                   <button type="button" onClick={startScoreCamera}>{cameraActive ? "Kamera neu starten" : "Kamera starten"}</button>
-                  <button type="button" onClick={countCameraHit}>Scan zaehlen</button>
+                  <button type="button" onClick={startMoveChallenge} disabled={moveChallengeActive}>20s 67 Move starten</button>
+                  <button type="button" onClick={countCameraHit}>Manuell +1</button>
                   <button type="button" onClick={stopScoreCamera}>Stop</button>
                 </div>
               </div>
