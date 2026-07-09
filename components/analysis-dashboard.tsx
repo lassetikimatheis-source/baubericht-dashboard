@@ -49,6 +49,7 @@ import {
 } from "../lib/supabase";
 import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
 import {
+  clearLegacyBrowserPersistence,
   createAnalysisBackup,
   deleteDocument as deleteStoredDocument,
   deleteEntrance as deleteStoredEntrance,
@@ -578,43 +579,35 @@ export function AnalysisDashboard() {
   });
 
   function loadStoredData() {
-    const storedObjects = getObjects();
-    const storedEntrances = getEntrances();
-    const storedProjects = getProjects();
-    const storedDocuments = getDocuments();
-    const storedAssignments = getAssignments();
-    const effectiveObjects = buildObjectsFromStoredData(storedObjects, storedDocuments, storedProjects, { deriveFallbackObjects: storedObjects.length === 0 });
-    if (!storedObjects.length && effectiveObjects.length) {
-      effectiveObjects.forEach(saveObject);
+    const cleared = clearLegacyBrowserPersistence();
+    if (
+      cleared.localStorageKeys.length > 0 ||
+      cleared.sessionStorageKeys.length > 0 ||
+      cleared.indexedDbNames.length > 0
+    ) {
+      console.log("[Storage] Alte Browser-Persistenz beim App-Start entfernt", cleared);
     }
 
-    setObjects(effectiveObjects);
-    setEntrances(storedEntrances);
-    setProjects(storedProjects);
-    setAssignments(storedAssignments);
-    setAnalysis(buildAnalysisFromDocuments(storedDocuments));
-    setSelectedObjectId(effectiveObjects[0]?.id ?? null);
-    setSelectedProjectId(storedProjects[0]?.id ?? null);
-    setSelectedDocumentId(storedDocuments[0]?.id ?? null);
+    setObjects([]);
+    setEntrances([]);
+    setProjects([]);
+    setObjectImages({});
+    setAssignments({});
+    setAnalysis(emptyAnalysisState);
+    setSelectedObjectId(null);
+    setSelectedProjectId(null);
+    setSelectedDocumentId(null);
   }
 
   function applySupabaseDocumentsToState(nextDocuments: ObjectAnalysis[], context: string) {
     setAnalysis((current) => {
-      if (current.objects.length > 0 && nextDocuments.length === 0) {
-        console.warn("[Online-Modus] Leerer Supabase-Stand ignoriert, lokale Dokumente bleiben erhalten", {
-          context,
-          currentDocuments: current.objects.length,
-          supabaseDocuments: nextDocuments.length
-        });
-        return current;
-      }
       const currentHasMeasures = current.objects.some((document) =>
         document.clusters.length > 0 || (document.measureDetails?.length ?? 0) > 0
       );
       const nextHasMeasures = nextDocuments.some((document) =>
         document.clusters.length > 0 || (document.measureDetails?.length ?? 0) > 0
       );
-      if (currentHasMeasures && !nextHasMeasures) {
+      if (nextDocuments.length > 0 && currentHasMeasures && !nextHasMeasures) {
         console.warn("[Online-Modus] Leerer Supabase-cost_items-Stand ignoriert, lokale Dokumente bleiben erhalten", {
           context,
           currentDocuments: current.objects.length,
@@ -689,16 +682,16 @@ export function AnalysisDashboard() {
       });
       console.log("[Online-Modus] lokale documents count", localDocuments.length);
       console.log("[Online-Modus] Supabase documents count", supabaseDocuments.supabaseDocumentCount);
-      console.log("[Online-Modus] verwendete documents-Quelle", hasSupabaseAppData ? "Supabase" : "localStorage fallback");
+      console.log("[Online-Modus] verwendete documents-Quelle", hasSupabaseAppData ? "Supabase" : "leer");
       console.log("[Online-Modus] Datenquelle App-Load", {
         supabaseActive,
-        objects: supabaseObjects.length > 0 ? "Supabase" : "localStorage fallback",
-        documents: supabaseDocuments.documents.length > 0 ? "Supabase" : "localStorage fallback",
-        costItems: supabaseDocuments.supabaseCostItemCount > 0 ? "Supabase" : "localStorage fallback",
-        projects: supabaseProjects.length > 0 ? "Supabase" : "localStorage fallback",
-        entrances: supabaseEntrances.length > 0 ? "Supabase" : "localStorage fallback",
-        assignments: supabaseAssignmentCount > 0 ? "Supabase" : "localStorage fallback",
-        objectImages: supabaseImageCount > 0 ? "Supabase" : "localStorage fallback"
+        objects: supabaseObjects.length > 0 ? "Supabase" : "leer",
+        documents: supabaseDocuments.documents.length > 0 ? "Supabase" : "leer",
+        costItems: supabaseDocuments.supabaseCostItemCount > 0 ? "Supabase" : "leer",
+        projects: supabaseProjects.length > 0 ? "Supabase" : "leer",
+        entrances: supabaseEntrances.length > 0 ? "Supabase" : "leer",
+        assignments: supabaseAssignmentCount > 0 ? "Supabase" : "leer",
+        objectImages: supabaseImageCount > 0 ? "Supabase" : "leer"
       });
       const shouldBackfillLocalData = false;
       if (shouldBackfillLocalData) {
@@ -731,7 +724,7 @@ export function AnalysisDashboard() {
       if (hasSupabaseAppData) {
         const nextObjects = supabaseObjects.length > 0
           ? supabaseObjects
-          : buildObjectsFromStoredData([], supabaseDocuments.documents, supabaseProjects, { deriveFallbackObjects: true });
+          : [];
         setObjects(nextObjects);
         setProjects(supabaseProjects);
         setEntrances(supabaseEntrances);
@@ -742,13 +735,23 @@ export function AnalysisDashboard() {
         }
         setSelectedObjectId((current) => nextObjects.some((object) => object.id === current) ? current : nextObjects[0]?.id ?? null);
         setSelectedProjectId((current) => supabaseProjects.some((project) => project.id === current) ? current : supabaseProjects[0]?.id ?? null);
+      } else {
+        setObjects([]);
+        setProjects([]);
+        setEntrances([]);
+        setAssignments({});
+        setObjectImages({});
+        setAnalysis(emptyAnalysisState);
+        setSelectedObjectId(null);
+        setSelectedProjectId(null);
+        setSelectedDocumentId(null);
       }
       setSupabaseDocumentLoadDiagnosis({
         message: hasSupabaseAppData
           ? `Supabase aktiv: ja. Daten aus Supabase geladen. Objects: ${supabaseObjects.length}, documents: ${supabaseDocuments.supabaseDocumentCount}, projects: ${supabaseProjects.length}.`
-          : `Supabase aktiv: ${supabaseActive ? "ja" : "nein"}. Keine Supabase-App-Daten gefunden, lokaler Fallback aktiv.`,
+          : `Supabase aktiv: ${supabaseActive ? "ja" : "nein"}. Keine Supabase-App-Daten gefunden, App bleibt leer.`,
         supabaseActive,
-        source: hasSupabaseAppData ? "Supabase" : "localStorage fallback",
+        source: hasSupabaseAppData ? "Supabase" : "leer",
         lastSyncAt: new Date().toISOString(),
         localObjectCount: localObjects.length,
         localProjectCount: localProjects.length,

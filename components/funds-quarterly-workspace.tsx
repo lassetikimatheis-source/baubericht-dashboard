@@ -41,20 +41,8 @@ const fundTabs: Array<{ key: FundTab; label: string }> = [
   { key: "documents", label: "Dokumente/Quellen" }
 ];
 
-const demoEnergyCertificates: EnergyCertificate[] = [
-  { id: "energy-fonds-22-1", fundId: "local-fonds-22", objectLabel: "Objekt 1", fileName: "Energieausweis_Fonds22_Objekt1.pdf", validUntil: "2030-12-31", energyValue: "92 kWh/m2a", status: "gueltig" }
-];
-
-const demoDocuments: FundDocument[] = [
-  { id: "doc-fonds-22-1", fundId: "local-fonds-22", documentType: "Quelle", title: "Bewertungsannahmen", fileName: "Bewertungsannahmen_Fonds22.xlsx", status: "aktiv" }
-];
-
-const localFallbackFunds: FundRecord[] = [
-  { id: "local-fonds-9", fundName: "Fonds 9", fundNumber: "Fonds 9", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 42,1 Mio.", objectCount: 6, contactPerson: "Asset Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-  { id: "local-fonds-22", fundName: "Fonds 22", fundNumber: "Fonds 22", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 67,0 Mio.", objectCount: 9, contactPerson: "Portfolio Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-  { id: "local-paif-1", fundName: "PAIF 1", fundNumber: "PAIF 1", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 118,4 Mio.", objectCount: 14, contactPerson: "Fund Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-  { id: "local-paif-2", fundName: "PAIF 2", fundNumber: "PAIF 2", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 94,8 Mio.", objectCount: 11, contactPerson: "Fund Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" }
-];
+const emptyEnergyCertificates: EnergyCertificate[] = [];
+const emptyFundDocuments: FundDocument[] = [];
 
 export function FundsQuarterlyWorkspace() {
   const [funds, setFunds] = useState<FundRecord[]>([]);
@@ -75,8 +63,8 @@ export function FundsQuarterlyWorkspace() {
   const fundFiles = files.filter((file) => file.fundId === selectedFundId);
   const fundPowerBiLinks = powerBiLinks.filter((link) => link.fundId === selectedFundId);
   const fundValues = values.filter((value) => value.fundId === selectedFundId);
-  const fundEnergyCertificates = demoEnergyCertificates.filter((certificate) => certificate.fundId === selectedFundId);
-  const fundDocuments = demoDocuments.filter((document) => document.fundId === selectedFundId);
+  const fundEnergyCertificates = emptyEnergyCertificates.filter((certificate) => certificate.fundId === selectedFundId);
+  const fundDocuments = emptyFundDocuments.filter((document) => document.fundId === selectedFundId);
   const selectedFundLastReport = useMemo(() => latestReportLabel(fundReports), [fundReports]);
 
   async function refreshBundle() {
@@ -88,22 +76,19 @@ export function FundsQuarterlyWorkspace() {
       setPowerBiLinks(bundle.powerBiLinks);
       setValues(bundle.values);
       setSelectedFundId((current) => current || bundle.funds[0]?.id || "");
-      const usesLocalFallback = bundle.funds.some((fund) => fund.id.startsWith("local-"));
       setMessage({
-        type: usesLocalFallback ? "info" : "success",
-        text: usesLocalFallback
-          ? "Lokale Beispiel-Fonds aktiv. Bitte supabase/quarterly-reports-schema.sql im Supabase SQL Editor ausfuehren."
-          : "Fonds und Quartalsbericht-Zuordnungen geladen."
+        type: "success",
+        text: "Fonds und Quartalsbericht-Zuordnungen geladen."
       });
     } catch (error) {
       if (isMissingQuarterlySchemaMessage(error)) {
-        setFunds(localFallbackFunds);
+        setFunds([]);
         setReports([]);
         setFiles([]);
         setPowerBiLinks([]);
         setValues([]);
-        setSelectedFundId((current) => current || localFallbackFunds[0]?.id || "");
-        setMessage({ type: "info", text: "Lokale Beispiel-Fonds aktiv. Supabase kennt public.funds noch nicht; bitte supabase/quarterly-reports-schema.sql im SQL Editor ausfuehren." });
+        setSelectedFundId("");
+        setMessage({ type: "info", text: "Keine Fonds geladen. Supabase kennt public.funds noch nicht; bitte Migration ausfuehren oder Fonds anlegen." });
         return;
       }
       setMessage({ type: "error", text: errorMessage(error) });

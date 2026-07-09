@@ -115,6 +115,41 @@ const STORAGE_KEYS = {
   reanalysisBackups: "paribus-baukosten.reanalysis-backups.v1"
 };
 
+const STORAGE_KEY_PREFIX = "paribus-baukosten.";
+
+export interface ClearedBrowserPersistence {
+  localStorageKeys: string[];
+  sessionStorageKeys: string[];
+  indexedDbNames: string[];
+}
+
+export function clearLegacyBrowserPersistence(): ClearedBrowserPersistence {
+  if (typeof window === "undefined") {
+    return { localStorageKeys: [], sessionStorageKeys: [], indexedDbNames: [] };
+  }
+
+  const localStorageKeys = removeStorageKeys(window.localStorage);
+  const sessionStorageKeys = removeStorageKeys(window.sessionStorage);
+  const indexedDbNames: string[] = [];
+
+  if ("indexedDB" in window && typeof window.indexedDB.databases === "function") {
+    window.indexedDB.databases()
+      .then((databases) => {
+        databases.forEach((database) => {
+          const name = database.name ?? "";
+          if (!isLegacyAppStorageKey(name)) return;
+          indexedDbNames.push(name);
+          window.indexedDB.deleteDatabase(name);
+        });
+      })
+      .catch((error) => {
+        console.warn("[Storage] IndexedDB-Bereinigung konnte nicht ausgefuehrt werden", error);
+      });
+  }
+
+  return { localStorageKeys, sessionStorageKeys, indexedDbNames };
+}
+
 export function saveObject(object: StoredObjectRecord): StoredObjectRecord {
   const now = timestamp();
   const next = { ...object, createdAt: object.createdAt ?? now, updatedAt: now };
@@ -400,6 +435,20 @@ function readAllParibusLocalStorageKeys(): LocalStorageKeySnapshot[] {
   }
   snapshots.sort((left, right) => left.key.localeCompare(right.key));
   return snapshots;
+}
+
+function removeStorageKeys(storage: Storage): string[] {
+  const keys = Array.from({ length: storage.length }, (_, index) => storage.key(index) ?? "")
+    .filter(isLegacyAppStorageKey);
+  keys.forEach((key) => storage.removeItem(key));
+  return keys;
+}
+
+function isLegacyAppStorageKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return normalized.startsWith(STORAGE_KEY_PREFIX) ||
+    normalized.includes("paribus-baukosten") ||
+    normalized.includes("baukosten");
 }
 
 function countFullLocalDataExport(exportData: Pick<FullLocalDataExport, "appKeys" | "allParibusKeys">): Record<string, number> {
