@@ -1681,49 +1681,46 @@ export function AnalysisDashboard() {
   async function createObject(seed?: ObjectAnalysis) {
     if (!canEdit) return;
     const draft = objectFromDocument(seed);
-    let object: ObjectRecord;
-    try {
-      object = saveObject(await createSupabaseObject(draft));
-      setMessage("Objekt wurde in Supabase gespeichert.");
-    } catch (error) {
-      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", {
-        error,
-        object: draft
-      });
-      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase gespeichert werden.");
-      return;
-    }
+    const object = saveObject(draft);
     setObjects((current) => [...current.filter((entry) => entry.id !== object.id), object]);
     setSelectedObjectId(object.id);
     setView("objects");
-    logActivity({ action: "Objekt erstellt", area: "Objekte", targetType: "object", targetId: object.id, targetLabel: objectLabel(object) });
+    setMessage("Objekt wurde lokal erstellt.");
+    createSupabaseObject(object).catch((error) => {
+      console.error("[Supabase] Objekt konnte nicht synchronisiert werden:", {
+        error,
+        object
+      });
+    });
+    logActivity({ action: "Objekt erstellt", area: "Objekte", targetType: "object", targetId: object.id, targetLabel: objectLabel(object) }).catch((error) => {
+      console.error("[Supabase] Aktivitaet konnte nicht gespeichert werden:", error);
+    });
   }
 
   async function saveUploadObject() {
     if (!canEdit) return;
     const draft = uploadDraftToObjectRecord(objectDraft, `object-${Date.now()}`);
-    let object: ObjectRecord;
-    try {
-      object = saveObject(await createSupabaseObject(draft));
-      setMessage("Objekt wurde in Supabase gespeichert.");
-    } catch (error) {
-      console.error("[Supabase] Objekt konnte nicht gespeichert werden:", {
+    const object = saveObject(draft);
+    setMessage("Objekt wurde lokal erstellt.");
+    createSupabaseObject(object).catch((error) => {
+      console.error("[Supabase] Objekt konnte nicht synchronisiert werden:", {
         error,
-        object: draft
+        object
       });
-      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase gespeichert werden.");
-      return;
-    }
+    });
     const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
     const createdProjects = await Promise.all(documentsToAssign.map(async (document, index) => {
-      const project = await upsertSupabaseProject({
+      const project = saveProject({
         ...projectFromDocument(document, objects),
         id: `project-${Date.now()}-${index}`,
         objectId: object.id,
         object: objectLabel(object),
         projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
       });
-      return saveProject(project);
+      upsertSupabaseProject(project).catch((error) => {
+        console.error("[Supabase] Projekt konnte nicht synchronisiert werden:", error);
+      });
+      return project;
     }));
     setObjects((current) => [...current, object]);
     setProjects((current) => [...current, ...createdProjects]);
@@ -1764,14 +1761,17 @@ export function AnalysisDashboard() {
     const object = objects.find((entry) => entry.id === objectId);
     if (!object) return;
     const createdProjects = await Promise.all(documentsToAssign.map(async (document, index) => {
-      const project = await upsertSupabaseProject({
+      const project = saveProject({
         ...projectFromDocument(document, objects),
         id: `project-${Date.now()}-${index}`,
         objectId: object.id,
         object: objectLabel(object),
         projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
       });
-      return saveProject(project);
+      upsertSupabaseProject(project).catch((error) => {
+        console.error("[Supabase] Projekt konnte nicht synchronisiert werden:", error);
+      });
+      return project;
     }));
     setProjects((current) => [...current, ...createdProjects]);
     setAssignments((current) => {
