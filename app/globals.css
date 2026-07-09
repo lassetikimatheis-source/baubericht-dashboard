@@ -1616,6 +1616,35 @@ tbody tr:hover,
   gap: 7px;
 }
 
+.objectTimingSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.objectTimingSummary > div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e3e9f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.objectTimingSummary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.objectTimingSummary strong {
+  color: var(--navy);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
 .tradeReviewRow {
   display: grid;
   grid-template-columns: minmax(150px, 1fr) minmax(120px, 0.6fr);
@@ -6874,7 +6903,8 @@ video {
   .reviewFieldGrid,
   .totalCostGrid,
   .tradeReviewRow,
-  .reviewActionBar {
+  .reviewActionBar,
+  .objectTimingSummary {
     grid-template-columns: minmax(0, 1fr);
   }
 

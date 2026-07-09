@@ -3422,7 +3422,7 @@ function ObjectsView({
         <div className="objectProfile">
           {selectedObject ? (
             <>
-              <ObjectDetailHeader
+              <ObjectRenovationHeader
                 object={selectedObject}
                 entrances={selectedEntrances}
                 projects={selectedProjects}
@@ -3570,6 +3570,7 @@ function ObjectDetailHeader({
   const averageApartmentSize = calculateAverageApartmentSize(object, documents);
   const averageCostPerDocument = calculateAverageCostPerDocument(grossCost, documents);
   const measureCount = standardTradeCatalog.length;
+  const energyClass = object.energyClass?.trim() || "";
   const status = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Aktiv" : "k.A.";
   const dataQuality = countReviewCases(documents) > 0 ? "Prüfung" : documents.length > 0 ? "Sicher erkannt" : "k.A.";
   return (
@@ -3582,8 +3583,8 @@ function ObjectDetailHeader({
       <div className="objectHeroContent">
         <div className="objectHeroTitle">
           <div>
-            <span className="eyebrow">Wirtschaftseinheit</span>
-            <h3>{object.objectNumber || object.objectName || "k.A."}</h3>
+            <span className="eyebrow">Sanierungs- und Kostenuebersicht</span>
+            <h3>{object.objectNumber || "Objektnummer k.A."}</h3>
             <p>{object.address || "Adressbereich k.A."}</p>
           </div>
           <span className={status === "Prüfung" ? "trafficBadge trafficYellow" : status === "Aktiv" ? "trafficBadge trafficGreen" : "trafficBadge"}>
@@ -3591,9 +3592,8 @@ function ObjectDetailHeader({
           </span>
         </div>
         <div className="objectMasterGrid">
-          <InfoLine label="Objektname" value={object.objectName || "k.A."} />
-          <InfoLine label="Fonds" value={object.fund || "k.A."} />
-          <InfoLine label="Baujahr" value={object.constructionYear || "k.A."} />
+          <InfoLine label="Adresse" value={object.address || "Adresse nicht hinterlegt"} />
+          <InfoLine label="Energieklasse" value={energyClass || "Keine Energieklasse hinterlegt"} />
           <InfoLine label="Wohneinheiten" value={object.unitCount || "k.A."} />
           <InfoLine label="Ø Wohnungsgröße" value={formatArea(averageApartmentSize)} />
           <InfoLine label="Gesamtfläche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "k.A."} />
@@ -3607,6 +3607,61 @@ function ObjectDetailHeader({
           <CostMetric label="Dokumente" value={`${formatNumber(documents.length)} / ${formatNumber(totalDocuments)}`} />
           <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
           <CostMetric label="Datenqualität" value={dataQuality} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ObjectRenovationHeader({
+  object,
+  documents,
+  totalDocuments,
+  images
+}: {
+  object: ObjectRecord;
+  entrances: EntranceRecord[];
+  projects: ProjectRecord[];
+  documents: ObjectAnalysis[];
+  totalDocuments: number;
+  costBasis: CostBasisMode;
+  images: string[];
+}) {
+  const grossCost = sumValues(documents.map((document) => document.totalCost.value));
+  const measureCount = buildMeasureRows(documents).length || standardTradeCatalog.length;
+  const energyClass = object.energyClass?.trim() || "";
+  const status = countReviewCases(documents) > 0 ? "Pruefung" : documents.length > 0 ? "Aktiv" : "k.A.";
+  return (
+    <div className={images[0] ? "objectDetailHeader objectDetailHeaderWithImage" : "objectDetailHeader objectDetailHeaderNoImage"}>
+      {images[0] ? (
+        <div className="objectHeroImage">
+          <img src={images[0]} alt={object.objectNumber || object.address || "Objektbild"} />
+        </div>
+      ) : null}
+      <div className="objectHeroContent">
+        <div className="objectHeroTitle">
+          <div>
+            <span className="eyebrow">Sanierungs- und Kostenuebersicht</span>
+            <h3>{object.objectNumber || "Objektnummer k.A."}</h3>
+            <p>{object.address || "Adresse nicht hinterlegt"}</p>
+          </div>
+          <span className={status === "Pruefung" ? "trafficBadge trafficYellow" : status === "Aktiv" ? "trafficBadge trafficGreen" : "trafficBadge"}>
+            {status}
+          </span>
+        </div>
+        <div className="objectMasterGrid">
+          <InfoLine label="Objektnummer" value={object.objectNumber || "Objektnummer k.A."} />
+          <InfoLine label="Adresse" value={object.address || "Adresse nicht hinterlegt"} />
+          <InfoLine label="Energieklasse" value={energyClass || "Keine Energieklasse hinterlegt"} />
+          <InfoLine label="Wohneinheiten" value={object.unitCount || "k.A."} />
+          <InfoLine label="Wohnflaeche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "Keine Wohnflaeche hinterlegt"} />
+        </div>
+        <div className="objectHeaderMetrics">
+          <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
+          <CostMetric label="Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
+          <CostMetric label="Kosten je m2" value={formatEuroPerSqm(costPerSqmForObject(object, grossCost))} />
+          <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
+          <CostMetric label="Dokumente" value={`${formatNumber(documents.length)} / ${formatNumber(totalDocuments)}`} />
         </div>
       </div>
     </div>
@@ -3767,6 +3822,7 @@ function ObjectDocumentsTab({
   ));
   return (
     <div className="documentBoard">
+      <ObjectDocumentTimingSummary documents={documents} />
       <div className="measureFilters">
         <label className="filterInput"><span>Jahr</span><input value={filters.year} onChange={(event) => setFilters({ ...filters, year: event.target.value })} placeholder="Alle" /></label>
         <label className="filterInput"><span>Gewerk</span><input value={filters.trade} onChange={(event) => setFilters({ ...filters, trade: event.target.value })} placeholder="Alle" /></label>
@@ -3790,6 +3846,7 @@ function ObjectDocumentsTab({
             <h3>{fieldOrUnknown(document.provider)}</h3>
             <p className="documentMetaLine">Objekt {fieldOrUnknown(document.objectNumber)}</p>
             <p className="documentMetaLine">{weLabel(document)}</p>
+            <DocumentTimingInline document={document} />
             <DocumentWeEditor document={document} apartmentOptions={apartmentOptions} onUpdate={onUpdate} readOnly={readOnly} />
             <DocumentInlineFields document={document} onUpdate={onUpdate} readOnly={readOnly} />
             <div className="documentWarnings">
@@ -3834,6 +3891,102 @@ function documentWarningItems(document: ObjectAnalysis): string[] {
   if (!document.clusters.length && !(document.measureDetails?.length)) warnings.push("⚠ Gewerk nicht erkannt");
   if (fieldOrUnknown(document.documentNumber) === "k.A.") warnings.push("⚠ Dokumentnummer nicht erkannt");
   return warnings;
+}
+
+function ObjectDocumentTimingSummary({ documents }: { documents: ObjectAnalysis[] }) {
+  const timing = buildObjectDocumentTiming(documents);
+  return (
+    <section className="objectTimingSummary">
+      <div>
+        <span>Angebot</span>
+        <strong>{timing.offerLabel}</strong>
+      </div>
+      <div>
+        <span>Rechnung</span>
+        <strong>{timing.invoiceLabel}</strong>
+      </div>
+      <div>
+        <span>Schlussrechnung</span>
+        <strong>{timing.finalInvoiceLabel}</strong>
+      </div>
+      <div>
+        <span>Dauer</span>
+        <strong>{timing.durationLabel}</strong>
+      </div>
+    </section>
+  );
+}
+
+function DocumentTimingInline({ document }: { document: ObjectAnalysis }) {
+  const type = documentTypeValue(document);
+  const date = parseDocumentDate(fieldOrUnknown(document.documentDate));
+  if (!date) return <p className="documentMetaLine">Datum nicht erkannt</p>;
+  if (isOfferDocument(document)) return <p className="documentMetaLine">Angebot: {formatDateLabel(date)}</p>;
+  if (isFinalInvoiceDocument(document)) return <p className="documentMetaLine">Schlussrechnung: {formatDateLabel(date)}</p>;
+  if (isInvoiceLikeDocument(document)) return <p className="documentMetaLine">Rechnung: {formatDateLabel(date)}</p>;
+  return <p className="documentMetaLine">{type}: {formatDateLabel(date)}</p>;
+}
+
+function buildObjectDocumentTiming(documents: ObjectAnalysis[]): {
+  offerLabel: string;
+  invoiceLabel: string;
+  finalInvoiceLabel: string;
+  durationLabel: string;
+} {
+  const offerDate = earliestDocumentDate(documents.filter(isOfferDocument));
+  const invoiceDate = earliestDocumentDate(documents.filter((document) => isInvoiceLikeDocument(document) && !isFinalInvoiceDocument(document)));
+  const finalInvoiceDate = latestDocumentDate(documents.filter(isFinalInvoiceDocument));
+  const endDate = finalInvoiceDate ?? invoiceDate;
+  let durationLabel = "Keine Zeitspanne berechenbar";
+  if (offerDate && endDate) {
+    durationLabel = `${differenceInDays(offerDate, endDate)} Tage`;
+  } else if (offerDate && !endDate) {
+    durationLabel = "Angebot vorhanden, noch keine Rechnung/Schlussrechnung.";
+  } else if (!offerDate && endDate) {
+    durationLabel = "Rechnung vorhanden, kein Angebotsdatum erkannt.";
+  }
+  return {
+    offerLabel: offerDate ? formatDateLabel(offerDate) : "Kein Angebotsdatum erkannt",
+    invoiceLabel: invoiceDate ? formatDateLabel(invoiceDate) : "Keine Rechnung erkannt",
+    finalInvoiceLabel: finalInvoiceDate ? formatDateLabel(finalInvoiceDate) : "Keine Schlussrechnung erkannt",
+    durationLabel
+  };
+}
+
+function earliestDocumentDate(documents: ObjectAnalysis[]): Date | null {
+  return sortedDocumentDates(documents)[0] ?? null;
+}
+
+function latestDocumentDate(documents: ObjectAnalysis[]): Date | null {
+  const dates = sortedDocumentDates(documents);
+  return dates[dates.length - 1] ?? null;
+}
+
+function sortedDocumentDates(documents: ObjectAnalysis[]): Date[] {
+  return documents
+    .map((document) => parseDocumentDate(fieldOrUnknown(document.documentDate)))
+    .filter((date): date is Date => Boolean(date))
+    .sort((left, right) => left.getTime() - right.getTime());
+}
+
+function parseDocumentDate(value: string): Date | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "k.A.") return null;
+  const german = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (german) {
+    const date = new Date(Number(german[3]), Number(german[2]) - 1, Number(german[1]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const iso = new Date(trimmed);
+  return Number.isNaN(iso.getTime()) ? null : iso;
+}
+
+function formatDateLabel(date: Date): string {
+  return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
+function differenceInDays(start: Date, end: Date): number {
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
 }
 
 function weLabel(document: ObjectAnalysis): string {
@@ -6362,18 +6515,13 @@ function ObjectForm({ object, onChange, readOnly = false }: { object: ObjectReco
   return (
     <div className="projectForm">
       {([
-        ["fund", "Fonds"],
         ["objectNumber", "Objektnummer"],
-        ["objectName", "Objektname"],
         ["address", "Adressbereich"],
         ["postalCode", "PLZ"],
         ["city", "Ort"],
-        ["federalState", "Bundesland"],
-        ["constructionYear", "Baujahr"],
+        ["energyClass", "Energieklasse"],
         ["unitCount", "Anzahl Wohneinheiten"],
         ["totalLivingAreaSqm", "Gesamtwohnflaeche m2"],
-        ["assetManager", "Asset Manager"],
-        ["portfolioManager", "Portfolio Manager"],
         ["latitude", "Latitude"],
         ["longitude", "Longitude"],
         ["wohnflaecheSanierteWohnung", "Wohnfläche sanierte Wohnung m²"]
@@ -6531,6 +6679,7 @@ function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
     unitCount: "",
     totalLivingAreaSqm: document ? emptyIfUnknown(fieldOrUnknown(document.totalAreaSqm)) || emptyIfUnknown(fieldOrUnknown(document.livingAreaSqm)) : "",
     wohnflaecheSanierteWohnung: document ? emptyIfUnknown(fieldOrUnknown(document.renovatedAreaSqm)) || emptyIfUnknown(fieldOrUnknown(document.livingAreaSqm)) : "",
+    energyClass: "",
     assetManager: "",
     portfolioManager: "",
     latitude: "",
@@ -6575,6 +6724,7 @@ function buildObjectsFromStoredData(
         unitCount: "",
         totalLivingAreaSqm: "",
         wohnflaecheSanierteWohnung: "",
+        energyClass: "",
         assetManager: "",
         portfolioManager: "",
         latitude: "",
@@ -6609,6 +6759,7 @@ function mergeObjectRecord(existing: ObjectRecord, incoming: ObjectRecord): Obje
     unitCount: firstKnown(existing.unitCount, incoming.unitCount),
     totalLivingAreaSqm: firstKnown(existing.totalLivingAreaSqm, incoming.totalLivingAreaSqm),
     wohnflaecheSanierteWohnung: firstKnown(existing.wohnflaecheSanierteWohnung, incoming.wohnflaecheSanierteWohnung),
+    energyClass: firstKnown(existing.energyClass ?? "", incoming.energyClass ?? ""),
     assetManager: firstKnown(existing.assetManager, incoming.assetManager),
     portfolioManager: firstKnown(existing.portfolioManager, incoming.portfolioManager),
     latitude: firstKnown(existing.latitude ?? "", incoming.latitude ?? ""),
@@ -6770,6 +6921,7 @@ function uploadDraftToObjectRecord(draft: UploadObjectDraft, id: string): Object
     unitCount: draft.unitCount,
     totalLivingAreaSqm: draft.totalLivingAreaSqm,
     wohnflaecheSanierteWohnung: draft.wohnflaecheSanierteWohnung,
+    energyClass: draft.energyClass,
     assetManager: draft.assetManager,
     portfolioManager: draft.portfolioManager,
     latitude: draft.latitude,

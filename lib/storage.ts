@@ -14,6 +14,7 @@ export interface StoredObjectRecord {
   unitCount: string;
   totalLivingAreaSqm: string;
   wohnflaecheSanierteWohnung: string;
+  energyClass?: string;
   assetManager: string;
   portfolioManager: string;
   latitude?: string;
@@ -170,7 +171,8 @@ export function deleteObject(id: string): void {
 export function getObjects(): StoredObjectRecord[] {
   const objects = readCollection<StoredObjectRecord>(STORAGE_KEYS.objects).map((object) => ({
     ...object,
-    wohnflaecheSanierteWohnung: object.wohnflaecheSanierteWohnung ?? ""
+    wohnflaecheSanierteWohnung: object.wohnflaecheSanierteWohnung ?? "",
+    energyClass: object.energyClass ?? ""
   }));
   const deduped = dedupeStoredObjects(objects);
   if (deduped.length !== objects.length) {
