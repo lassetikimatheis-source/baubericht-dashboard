@@ -5,6 +5,7 @@ import type { User } from "@supabase/supabase-js";
 import {
   getCurrentSupabaseProfile,
   getSupabaseClientAsync,
+  getSupabaseRuntimeConfigStatus,
   logActivity,
   touchCurrentProfileLogin,
   type UserProfile,
@@ -58,8 +59,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     async function initAuth() {
       const supabase = await getSupabaseClientAsync();
       if (!supabase) {
+        const runtimeStatus = await getSupabaseRuntimeConfigStatus();
         if (mounted) {
-          setError("Supabase-Konfiguration konnte nicht geladen werden.");
+          setError(formatSupabaseConfigError(runtimeStatus));
           setLoading(false);
         }
         return;
@@ -237,6 +239,16 @@ export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth muss innerhalb von AuthGate verwendet werden.");
   return context;
+}
+
+function formatSupabaseConfigError(status: Awaited<ReturnType<typeof getSupabaseRuntimeConfigStatus>>): string {
+  return [
+    "Supabase-Konfiguration konnte nicht geladen werden.",
+    `URL: ${status.hasUrl ? "vorhanden" : "fehlt"}.`,
+    `Anon Key: ${status.hasAnonKey ? "vorhanden" : "fehlt"}.`,
+    `HTTP: ${status.httpStatus ?? "k.A."}.`,
+    `Runtime: ${status.runtime}.`
+  ].join(" ");
 }
 
 function AuthForm({

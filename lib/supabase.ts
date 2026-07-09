@@ -216,6 +216,22 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
     const response = await fetch("/api/supabase-config", { cache: "no-store" });
     const responseText = await response.text();
     if (!response.ok) {
+      const fallbackConfig = getBuildTimeSupabaseConfig();
+      if (fallbackConfig) {
+        runtimeSupabaseConfig = fallbackConfig;
+        runtimeSupabaseStatus = {
+          loaded: true,
+          hasUrl: true,
+          hasAnonKey: true,
+          hasNextPublicAnonKey: true,
+          hasServerAnonKey: false,
+          runtime: "browser-fallback",
+          httpStatus: response.status,
+          responseText,
+          error: null
+        };
+        return runtimeSupabaseConfig;
+      }
       runtimeSupabaseStatus = {
         loaded: false,
         hasUrl: false,
