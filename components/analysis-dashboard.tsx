@@ -7949,6 +7949,7 @@ function getDocumentTradeNames(document: ObjectAnalysis): string[] {
 
 function getTradeAllocations(document: ObjectAnalysis): TradeAllocation[] {
   if (document.measureDetails?.length) {
+    const detailCount = document.measureDetails.length;
     return document.measureDetails.map((detail) => {
       const matchingCluster = document.clusters.find((entry) =>
         normalizeTradeCluster(fieldOrUnknown(entry.cluster), fieldOrUnknown(entry.description)) === normalizeTradeCluster(detail.cluster, detail.beschreibung)
@@ -7956,7 +7957,7 @@ function getTradeAllocations(document: ObjectAnalysis): TradeAllocation[] {
       );
       return {
         cluster: normalizeTradeCluster(detail.cluster, detail.beschreibung),
-        value: detail.summe ?? reliableClusterCost(document, matchingCluster ?? null),
+        value: reliableMeasureDetailCost(document, detail, matchingCluster ?? null, detailCount),
         document
       };
     });
@@ -8002,6 +8003,21 @@ function reliableClusterCost(
   }
 
   return clusterValue;
+}
+
+function reliableMeasureDetailCost(
+  document: ObjectAnalysis,
+  detail: NonNullable<ObjectAnalysis["measureDetails"]>[number],
+  matchingCluster: ObjectAnalysis["clusters"][number] | null,
+  detailCount: number
+): number | null {
+  if (detail.summe !== null && detail.summe !== undefined) return detail.summe;
+  const clusterCost = reliableClusterCost(document, matchingCluster);
+  if (clusterCost !== null) return clusterCost;
+  if (document.totalCost.value !== null && detailCount > 0) {
+    return roundMoney(document.totalCost.value / detailCount);
+  }
+  return null;
 }
 
 function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
@@ -8309,9 +8325,11 @@ function formatEuroPerSqm(value: number | null): string {
 function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
   return documents.flatMap((document) => {
     if (document.measureDetails?.length) {
+      const detailCount = document.measureDetails.length;
       return document.measureDetails.map((detail, index) => {
         const measure = document.clusters.find((entry) => entry.cluster.value === detail.cluster || entry.description.value === detail.abschnitt);
         const source = detail.quelle || measure?.totalCost.sources[0]?.textSnippet || "k.A.";
+        const grossCost = reliableMeasureDetailCost(document, detail, measure ?? null, detailCount);
         return {
           id: `${document.id}-detail-${index}`,
           documentId: document.id,
@@ -8320,7 +8338,7 @@ function buildMeasureRows(documents: ObjectAnalysis[]): MeasureRow[] {
           description: germanizeUiText(detail.beschreibung || "k.A."),
           netCost: null,
           vatCost: null,
-          grossCost: detail.summe,
+          grossCost,
           source,
           status: germanizeUiText(fieldOrUnknown(document.dataQuality)),
           section: detail.abschnitt || "k.A.",
