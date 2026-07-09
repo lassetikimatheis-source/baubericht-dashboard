@@ -1375,6 +1375,121 @@ tbody tr:hover,
   min-width: 0;
 }
 
+.documentAnalysisGrid {
+  grid-template-columns: minmax(0, 3fr) minmax(420px, 2fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.documentViewerPanel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: calc(100vh - 132px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eef2f6;
+}
+
+.documentViewerToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  padding: 12px 16px;
+}
+
+.documentViewerToolbar h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+}
+
+.viewerControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.viewerControls button {
+  min-width: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 7px 10px;
+}
+
+.viewerControls span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pdfCanvasShell {
+  min-height: 0;
+  overflow: auto;
+  padding: 28px;
+}
+
+.pdfPageMock {
+  width: min(860px, 100%);
+  min-height: 1120px;
+  margin: 0 auto 80px;
+  border: 1px solid #d8dee8;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(20, 31, 43, 0.18);
+  padding: 56px;
+}
+
+.pdfMockHeader,
+.pdfMockMeta,
+.pdfMockTotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pdfPageMock h3 {
+  margin: 42px 0 18px;
+  font-size: 30px;
+  color: var(--navy);
+}
+
+.pdfMockMeta {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  border-top: 1px solid #e5eaf0;
+  border-bottom: 1px solid #e5eaf0;
+  padding: 14px 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.pdfMockLines {
+  display: grid;
+  gap: 14px;
+  margin: 42px 0;
+  color: #263241;
+  line-height: 1.6;
+}
+
+.pdfMockLines p {
+  margin: 0;
+  border-bottom: 1px solid #edf1f5;
+  padding-bottom: 12px;
+}
+
+.pdfMockTotal {
+  margin-top: 56px;
+  border-top: 2px solid var(--navy);
+  padding-top: 18px;
+  font-size: 22px;
+}
+
 .editorPanel {
   position: sticky;
   top: 18px;
@@ -1385,6 +1500,160 @@ tbody tr:hover,
   background: #fff;
   box-shadow: 0 8px 22px rgba(33, 44, 56, 0.06);
   padding: 16px;
+}
+
+.documentReviewForm {
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 132px);
+  padding: 14px;
+}
+
+.documentReviewHeader,
+.reviewSectionTitle {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.documentReviewHeader h2 {
+  margin: 2px 0 4px;
+  font-size: 20px;
+}
+
+.documentReviewHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.reviewStatusPill,
+.reviewSectionTitle span {
+  border: 1px solid #dfe7f0;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: var(--navy);
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.reviewSection {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e3e9f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.reviewSection h3 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.reviewFieldGrid,
+.totalCostGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reviewField {
+  display: grid;
+  gap: 5px;
+}
+
+.reviewFieldWide {
+  margin-top: 2px;
+}
+
+.reviewField span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.reviewField input,
+.reviewField select,
+.tradeReviewRow > input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #dbe4ee;
+  border-radius: 6px;
+  background: #fbfcfe;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.tradeReviewList {
+  display: grid;
+  gap: 7px;
+}
+
+.tradeReviewRow {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(120px, 0.6fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  background: #fbfcfe;
+  padding: 8px;
+}
+
+.tradeCheck {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-weight: 900;
+  color: #263241;
+}
+
+.tradeCheck input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--navy);
+}
+
+.tradeCheck span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aiHintsSection ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+  color: #39485a;
+  font-size: 13px;
+}
+
+.reviewActionBar {
+  position: sticky;
+  bottom: -14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  padding-top: 12px;
+}
+
+.reviewActionBar button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 9px 10px;
+  font-weight: 900;
 }
 
 .editorActions {
@@ -6559,5 +6828,48 @@ video {
 
   .quarterlyProductHeader {
     flex-direction: column;
+  }
+}
+/* Document analysis review surface */
+.documentAnalysisGrid {
+  grid-template-columns: minmax(0, 3fr) minmax(420px, 2fr);
+}
+
+@media (max-width: 1180px) {
+  .documentAnalysisGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .documentReviewForm {
+    position: static;
+    max-height: none;
+  }
+
+  .documentViewerPanel {
+    min-height: 620px;
+  }
+}
+
+@media (max-width: 760px) {
+  .reviewFieldGrid,
+  .totalCostGrid,
+  .tradeReviewRow,
+  .reviewActionBar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .documentViewerToolbar,
+  .documentReviewHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pdfCanvasShell {
+    padding: 14px;
+  }
+
+  .pdfPageMock {
+    min-height: 760px;
+    padding: 28px;
   }
 }

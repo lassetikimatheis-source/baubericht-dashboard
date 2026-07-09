@@ -2101,7 +2101,7 @@ export function AnalysisDashboard() {
   }
 
   const pageTitle = getPageTitle(view);
-  const showDocumentEditor = view === "projects" || view === "unassigned" || view === "reports" || view === "settings";
+  const showDocumentEditor = Boolean(selectedDocument) && (view === "projects" || view === "unassigned" || view === "reports" || view === "settings");
   const showUploadPanel = view === "upload";
   const visibleNavItems = navItems.filter((item) => {
     if (item.key === "admin") return canAdmin;
@@ -2189,9 +2189,13 @@ export function AnalysisDashboard() {
             onOpenObjects={() => setView("objects")}
           />
         ) : (
-          <section className={showDocumentEditor || showUploadPanel ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}>
+          <section className={`${showDocumentEditor || showUploadPanel ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}${showDocumentEditor ? " documentAnalysisGrid" : ""}`}>
             <div className="workspaceMain">
-              {view === "objects" ? (
+              {showDocumentEditor ? (
+              <DocumentPdfViewer document={selectedDocument} />
+              ) : null}
+
+              {!showDocumentEditor && view === "objects" ? (
               <ObjectsView
                 objects={objects}
                 entrances={entrances}
@@ -2223,7 +2227,7 @@ export function AnalysisDashboard() {
               />
               ) : null}
 
-              {view === "map" ? (
+              {!showDocumentEditor && view === "map" ? (
               <MapView
                 objects={objects}
                 projects={projects}
@@ -2235,7 +2239,7 @@ export function AnalysisDashboard() {
               />
               ) : null}
 
-              {view === "upload" ? (
+              {!showDocumentEditor && view === "upload" ? (
               <DocumentUploadView
                 previews={previews}
                 isAnalyzing={isAnalyzing}
@@ -2247,7 +2251,7 @@ export function AnalysisDashboard() {
               />
               ) : null}
 
-              {view === "projects" ? (
+              {!showDocumentEditor && view === "projects" ? (
               <ProjectsView
                 projects={projects}
                 objects={objects}
@@ -2269,7 +2273,7 @@ export function AnalysisDashboard() {
               />
               ) : null}
 
-              {view === "unassigned" ? (
+              {!showDocumentEditor && view === "unassigned" ? (
               <UnassignedView
                 documents={unassignedDocuments}
                 projects={projects}
@@ -2281,19 +2285,19 @@ export function AnalysisDashboard() {
               />
               ) : null}
 
-              {view === "reports" ? (
+              {!showDocumentEditor && view === "reports" ? (
               <ReportsView documents={filteredDocuments} projects={projects} assignments={assignments} />
               ) : null}
 
-              {view === "quarterlyReports" ? (
+              {!showDocumentEditor && view === "quarterlyReports" ? (
               <FundsQuarterlyWorkspace />
               ) : null}
 
-              {view === "admin" && canAdmin ? (
+              {!showDocumentEditor && view === "admin" && canAdmin ? (
               <AdminPanel />
               ) : null}
 
-              {view === "settings" ? (
+              {!showDocumentEditor && view === "settings" ? (
               <SettingsView
                 progress={reanalysisProgress}
                 dataTransferStatus={dataTransferStatus}
@@ -2318,7 +2322,7 @@ export function AnalysisDashboard() {
             </div>
 
             {showDocumentEditor ? (
-              <DocumentEditor
+              <DocumentReviewPanel
                 document={selectedDocument}
                 projects={projects}
                 assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
@@ -5789,6 +5793,203 @@ function AsbestosDebugReportView({ report }: { report: AsbestosDebugReport }) {
   );
 }
 
+function DocumentPdfViewer({ document }: { document: ObjectAnalysis | null }) {
+  const [zoom, setZoom] = useState(100);
+  const [page, setPage] = useState(1);
+  const sourceSnippets = document ? collectDocumentSourceSnippets(document) : [];
+  return (
+    <section className="documentViewerPanel">
+      <div className="documentViewerToolbar">
+        <div>
+          <span className="eyebrow">Dokument</span>
+          <h2>{document ? fieldOrUnknown(document.documentNumber) : "Kein Dokument ausgewaehlt"}</h2>
+        </div>
+        <div className="viewerControls">
+          <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))}>Zurueck</button>
+          <span>Seite {page}</span>
+          <button type="button" onClick={() => setPage((current) => current + 1)}>Weiter</button>
+          <button type="button" onClick={() => setZoom((current) => Math.max(70, current - 10))}>-</button>
+          <span>{zoom}%</span>
+          <button type="button" onClick={() => setZoom((current) => Math.min(160, current + 10))}>+</button>
+        </div>
+      </div>
+      <div className="pdfCanvasShell">
+        <div className="pdfPageMock" style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center" }}>
+          {document ? (
+            <>
+              <div className="pdfMockHeader">
+                <strong>{fieldOrUnknown(document.provider)}</strong>
+                <span>{fieldOrUnknown(document.documentDate)}</span>
+              </div>
+              <h3>{fieldOrUnknown(document.documentType)}</h3>
+              <div className="pdfMockMeta">
+                <span>Nr. {fieldOrUnknown(document.documentNumber)}</span>
+                <span>Objekt {fieldOrUnknown(document.objectNumber)}</span>
+                <span>WE {fieldOrUnknown(document.apartmentNumber)}</span>
+              </div>
+              <div className="pdfMockLines">
+                {(sourceSnippets.length ? sourceSnippets : [
+                  fieldOrUnknown(document.measureDescription),
+                  sourceLabel(document.totalCost),
+                  document.costDebug?.summaryBlock ?? ""
+                ]).filter(Boolean).slice(0, 8).map((line, index) => (
+                  <p key={`${line}-${index}`}>{line}</p>
+                ))}
+              </div>
+              <div className="pdfMockTotal">
+                <span>Brutto</span>
+                <strong>{formatNullableCurrency(document.totalCost.value)}</strong>
+              </div>
+            </>
+          ) : (
+            <div className="emptyState"><p>Bitte ein Dokument auswaehlen.</p></div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DocumentReviewPanel({
+  document,
+  projects,
+  assignedProjectId,
+  onAssign,
+  onCreateProject,
+  onDelete,
+  onUpdate,
+  readOnly
+}: {
+  document: ObjectAnalysis | null;
+  projects: ProjectRecord[];
+  assignedProjectId: string | null;
+  onAssign: (projectId: string | null) => void;
+  onCreateProject: () => void;
+  onDelete: () => void;
+  onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
+  readOnly: boolean;
+}) {
+  if (!document) {
+    return (
+      <aside className="editorPanel documentReviewForm">
+        <h2>Dokument pruefen</h2>
+        <div className="emptyState"><p>Kein Dokument ausgewaehlt.</p></div>
+      </aside>
+    );
+  }
+
+  const setText = (field: TextFieldKey, value: string) => {
+    onUpdate(document.id, (current) => updateManualTextField(current, field, value));
+  };
+  const setNumber = (field: NumberFieldKey, value: string) => {
+    onUpdate(document.id, (current) => updateManualNumberField(current, field, value));
+  };
+  const tradeRows = buildTradeReviewRows(document);
+  const objectOptions = uniqueStrings([
+    fieldOrUnknown(document.objectNumber),
+    fieldOrUnknown(document.objectAddress),
+    ...projects.map((project) => project.object).filter(Boolean)
+  ].filter((value) => value && value !== "k.A."));
+  const aiHints = buildDocumentReviewHints(document, tradeRows);
+
+  return (
+    <aside className="editorPanel documentReviewForm">
+      <div className="documentReviewHeader">
+        <div>
+          <span className="eyebrow">KI-Pruefung</span>
+          <h2>Dokumentdaten kontrollieren</h2>
+          <p>{fieldOrUnknown(document.documentType)} - {fieldOrUnknown(document.provider)}</p>
+        </div>
+        <span className="reviewStatusPill">{formatKiStatus(document)}</span>
+      </div>
+
+      <section className="reviewSection">
+        <h3>Allgemeine Informationen</h3>
+        <div className="reviewFieldGrid">
+          <ReviewSelect label="Dokumenttyp" value={fieldValue(document.documentType)} options={documentTypeOptions(document)} disabled={readOnly} onChange={(value) => setText("documentType", value)} />
+          <ReviewSelect label="Objekt" value={fieldValue(document.objectNumber) || fieldValue(document.objectAddress)} options={objectOptions} disabled={readOnly} onChange={(value) => setText("objectNumber", value)} />
+          <ReviewInput label="WE-Nummer" value={fieldValue(document.apartmentNumber)} disabled={readOnly} onChange={(value) => setText("apartmentNumber", value)} />
+          <ReviewInput label="Rechnungs-/Angebotsnummer" value={fieldValue(document.documentNumber)} disabled={readOnly} onChange={(value) => setText("documentNumber", value)} />
+          <ReviewInput label="Lieferant" value={fieldValue(document.provider)} disabled={readOnly} onChange={(value) => setText("provider", value)} />
+          <ReviewInput label="Rechnungsdatum" value={fieldValue(document.documentDate)} disabled={readOnly} onChange={(value) => setText("documentDate", value)} />
+        </div>
+        <label className="reviewField reviewFieldWide">
+          <span>Projektzuordnung</span>
+          <select value={assignedProjectId ?? ""} disabled={readOnly} onChange={(event) => onAssign(event.target.value || null)}>
+            <option value="">Unzugeordnet</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.projectName || "k.A."}</option>)}
+          </select>
+        </label>
+      </section>
+
+      <section className="reviewSection reviewTradesSection">
+        <div className="reviewSectionTitle">
+          <h3>Gewerke</h3>
+          <span>{formatNumber(tradeRows.filter((row) => row.active).length)} erkannt</span>
+        </div>
+        <div className="tradeReviewList">
+          {tradeRows.map((row) => (
+            <div className="tradeReviewRow" key={row.trade}>
+              <label className="tradeCheck">
+                <input type="checkbox" checked={row.active} disabled={readOnly} onChange={(event) => updateTradeReviewRow(document, row.trade, event.target.checked, row.amount, onUpdate)} />
+                <span>{row.trade}</span>
+              </label>
+              <input aria-label={`${row.trade} Kosten`} inputMode="decimal" value={row.amount} disabled={readOnly} placeholder="0,00 EUR" onChange={(event) => updateTradeReviewRow(document, row.trade, row.active || Boolean(event.target.value.trim()), event.target.value, onUpdate)} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="reviewSection">
+        <h3>Gesamtkosten</h3>
+        <div className="totalCostGrid">
+          <ReviewInput label="Netto" value={numberFieldValue(document.netCost)} disabled={readOnly} onChange={(value) => setNumber("netCost", value)} />
+          <ReviewInput label="MwSt." value={numberFieldValue(document.vatCost)} disabled={readOnly} onChange={(value) => setNumber("vatCost", value)} />
+          <ReviewInput label="Brutto" value={numberFieldValue(document.totalCost)} disabled={readOnly} onChange={(value) => setNumber("totalCost", value)} />
+        </div>
+      </section>
+
+      <section className="reviewSection aiHintsSection">
+        <h3>KI-Hinweise</h3>
+        <ul>{aiHints.map((hint) => <li key={hint}>{hint}</li>)}</ul>
+      </section>
+
+      {!readOnly ? (
+        <div className="reviewActionBar">
+          <button className="buttonPrimary" type="button">Aenderungen speichern</button>
+          <button type="button">Analyse erneut starten</button>
+          <button type="button" onClick={onCreateProject}>Dokument freigeben</button>
+          <button type="button" onClick={onDelete}>Loeschen</button>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function ReviewInput({ label, value, disabled, onChange }: { label: string; value: string; disabled: boolean; onChange: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <label className="reviewField">
+      <span>{label}</span>
+      <input value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => onChange(draft)} />
+    </label>
+  );
+}
+
+function ReviewSelect({ label, value, options, disabled, onChange }: { label: string; value: string; options: string[]; disabled: boolean; onChange: (value: string) => void }) {
+  const normalizedOptions = uniqueStrings([value, ...options].filter(Boolean));
+  return (
+    <label className="reviewField">
+      <span>{label}</span>
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Nicht erkannt</option>
+        {normalizedOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
 function DocumentEditor({
   document,
   projects,
@@ -8472,6 +8673,160 @@ function setCluster(
       ]
     }, "clusters", originalValue, value.trim());
   });
+}
+
+const documentReviewTrades = [
+  "Malerarbeiten",
+  "Bodenbelaege",
+  "Sanitaer",
+  "Elektro",
+  "Fenster",
+  "Tischlerarbeiten",
+  "Fliesen / Estrich",
+  "Heizung",
+  "Sonstige"
+] as const;
+
+type DocumentReviewTrade = typeof documentReviewTrades[number];
+
+interface TradeReviewRow {
+  trade: DocumentReviewTrade;
+  active: boolean;
+  amount: string;
+  confidence: number | null;
+}
+
+function buildTradeReviewRows(document: ObjectAnalysis): TradeReviewRow[] {
+  return documentReviewTrades.map((trade) => {
+    const entries = collectTradeEntries(document, trade);
+    const amount = sumValues(entries.map((entry) => entry.amount));
+    const confidenceValues = entries.map((entry) => entry.confidence).filter((value): value is number => value !== null);
+    return {
+      trade,
+      active: entries.length > 0,
+      amount: amount === null ? "" : formatNumberInput(amount),
+      confidence: confidenceValues.length ? Math.round((confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length) * 100) / 100 : null
+    };
+  });
+}
+
+function collectTradeEntries(document: ObjectAnalysis, trade: DocumentReviewTrade): Array<{ amount: number | null; confidence: number | null }> {
+  const entries: Array<{ amount: number | null; confidence: number | null }> = [];
+  document.clusters.forEach((cluster) => {
+    if (reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) !== trade) return;
+    entries.push({ amount: cluster.totalCost.value, confidence: cluster.cluster.confidence ?? cluster.totalCost.confidence ?? null });
+  });
+  document.measureDetails?.forEach((detail) => {
+    if (reviewTradeFromValue(detail.cluster, detail.beschreibung) !== trade) return;
+    entries.push({ amount: detail.summe, confidence: null });
+  });
+  return entries;
+}
+
+function updateTradeReviewRow(
+  document: ObjectAnalysis,
+  trade: DocumentReviewTrade,
+  active: boolean,
+  amountValue: string,
+  onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void
+) {
+  onUpdate(document.id, (current) => {
+    const amount = parseGermanNumber(amountValue);
+    const hasExisting = current.clusters.some((cluster) => reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) === trade);
+    const nextClusters = current.clusters
+      .filter((cluster) => active || reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) !== trade)
+      .map((cluster) => {
+        if (reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) !== trade) return cluster;
+        return { ...cluster, totalCost: manualNumberField(amountValue), cluster: manualField(reviewTradeToCluster(trade)) as ExtractedField<MeasureCluster> };
+      });
+    if (active && !hasExisting) {
+      nextClusters.push({
+        id: `${current.id}-${trade.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}`,
+        cluster: manualField(reviewTradeToCluster(trade)) as ExtractedField<MeasureCluster>,
+        description: manualField(trade),
+        totalCost: amount === null ? emptyField<number>() : manualNumberField(amountValue),
+        allocation: emptyField<CostAllocation>(),
+        sourceDocumentId: current.id
+      });
+    }
+    return appendManualChange({ ...current, clusters: nextClusters }, `trade:${trade}`, "", active ? amountValue : "");
+  });
+}
+
+function reviewTradeFromValue(value: string, description = ""): DocumentReviewTrade {
+  const normalized = `${value} ${description}`.toLowerCase();
+  if (/maler|anstrich|tapezier/.test(normalized)) return "Malerarbeiten";
+  if (/boden|belag|parkett|vinyl|teppich/.test(normalized)) return "Bodenbelaege";
+  if (/sanit|bad|wc|wasser|abwasser/.test(normalized)) return "Sanitaer";
+  if (/elektro|strom|kabel|schalter/.test(normalized)) return "Elektro";
+  if (/fenster|verglas/.test(normalized)) return "Fenster";
+  if (/tischler|tuer|tür|innentuer|innentür/.test(normalized)) return "Tischlerarbeiten";
+  if (/fliesen|estrich/.test(normalized)) return "Fliesen / Estrich";
+  if (/heizung|therme|heizkoerper|heizkörper/.test(normalized)) return "Heizung";
+  return "Sonstige";
+}
+
+function reviewTradeToCluster(trade: DocumentReviewTrade): MeasureCluster {
+  const mapping: Record<DocumentReviewTrade, MeasureCluster> = {
+    Malerarbeiten: "Malerarbeiten",
+    Bodenbelaege: "Bodenbelagsarbeiten",
+    Sanitaer: "Sanitär",
+    Elektro: "Elektroarbeiten",
+    Fenster: "Fensterarbeiten",
+    Tischlerarbeiten: "Tischlerarbeiten",
+    "Fliesen / Estrich": "Fliesen und Estricharbeiten",
+    Heizung: "Heizung",
+    Sonstige: "Sonstige"
+  };
+  return mapping[trade];
+}
+
+function buildDocumentReviewHints(document: ObjectAnalysis, rows: TradeReviewRow[]): string[] {
+  const hints = rows
+    .filter((row) => row.active)
+    .slice(0, 3)
+    .map((row) => `${row.trade} ${row.confidence !== null ? `mit ${Math.round(row.confidence * 100)} % Sicherheit ` : ""}erkannt.`);
+  if (rows.filter((row) => row.active).length > 1) hints.push("Mehrere Gewerke auf einer Position erkannt.");
+  if (document.missingInformation.value?.length) hints.push(document.missingInformation.value[0]);
+  if (!hints.length) hints.push("Keine eindeutigen Gewerke erkannt.");
+  return hints.slice(0, 4);
+}
+
+function collectDocumentSourceSnippets(document: ObjectAnalysis): string[] {
+  return uniqueStrings([
+    ...document.clusters.flatMap((cluster) => [
+      cluster.description.sources[0]?.textSnippet ?? "",
+      cluster.totalCost.sources[0]?.textSnippet ?? ""
+    ]),
+    ...(document.costDebug?.matches.map((match) => match.raw) ?? []),
+    ...(document.measureDebug?.notes ?? [])
+  ].filter(Boolean));
+}
+
+function fieldValue<T>(field: ExtractedField<T>): string {
+  if (field.value === null || field.value === undefined) return "";
+  if (Array.isArray(field.value)) return field.value.join(", ");
+  return String(field.value);
+}
+
+function numberFieldValue(field: ExtractedField<number>): string {
+  return field.value === null ? "" : formatNumberInput(field.value);
+}
+
+function formatNumberInput(value: number): string {
+  return new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
+
+function documentTypeOptions(document: ObjectAnalysis): string[] {
+  return uniqueStrings([
+    fieldValue(document.documentType),
+    "Angebot",
+    "Auftrag",
+    "Eingangsrechnung",
+    "Abschlagsrechnung",
+    "Schlussrechnung",
+    "Gutschrift"
+  ].filter(Boolean));
 }
 
 function manualField<T extends string>(value: T): ExtractedField<T> {
