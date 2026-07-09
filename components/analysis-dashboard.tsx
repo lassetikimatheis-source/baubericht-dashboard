@@ -260,6 +260,7 @@ type ObjectRecord = StoredObjectRecord;
 type EntranceRecord = StoredEntranceRecord;
 type ProjectRecord = StoredProjectRecord;
 type UploadPhase = "idle" | "selected" | "analyzing" | "analyzed";
+type UploadFilePreview = { name: string; type: string; url: string };
 
 interface UploadObjectDraft extends ObjectRecord {
   year: string;
@@ -506,6 +507,7 @@ export function AnalysisDashboard() {
   const [objectDraft, setObjectDraft] = useState<UploadObjectDraft>(() => uploadDraftFromDocument());
   const [uploadSourceDocument, setUploadSourceDocument] = useState<SourceDocument | null>(null);
   const [uploadSourceDocuments, setUploadSourceDocuments] = useState<SourceDocument[]>([]);
+  const [uploadFilePreviews, setUploadFilePreviews] = useState<UploadFilePreview[]>([]);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>("idle");
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [reanalysisProgress, setReanalysisProgress] = useState<ReanalysisProgress>({
@@ -1136,6 +1138,10 @@ export function AnalysisDashboard() {
     setUploadDocuments([]);
     setUploadSourceDocument(null);
     setUploadSourceDocuments([]);
+    setUploadFilePreviews((current) => {
+      current.forEach((preview) => URL.revokeObjectURL(preview.url));
+      return files.map((file) => ({ name: file.name, type: file.type, url: URL.createObjectURL(file) }));
+    });
     setSelectedDocumentId(null);
     setSelectedObjectId(null);
     setUploadedFileName(uploadSourceName(files));
@@ -2103,6 +2109,7 @@ export function AnalysisDashboard() {
   const pageTitle = getPageTitle(view);
   const showDocumentEditor = Boolean(selectedDocument) && (view === "projects" || view === "unassigned" || view === "reports" || view === "settings");
   const showUploadPanel = view === "upload";
+  const showUploadReview = showUploadPanel && Boolean(uploadDocument);
   const visibleNavItems = navItems.filter((item) => {
     if (item.key === "admin") return canAdmin;
     if (item.key === "upload") return canEdit;
@@ -2189,10 +2196,13 @@ export function AnalysisDashboard() {
             onOpenObjects={() => setView("objects")}
           />
         ) : (
-          <section className={`${showDocumentEditor || showUploadPanel ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}${showDocumentEditor ? " documentAnalysisGrid" : ""}`}>
+          <section className={`${showDocumentEditor || showUploadPanel ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}${showDocumentEditor || showUploadReview ? " documentAnalysisGrid" : ""}`}>
             <div className="workspaceMain">
               {showDocumentEditor ? (
               <DocumentPdfViewer document={selectedDocument} />
+              ) : null}
+              {showUploadReview ? (
+              <DocumentPdfViewer document={uploadDocument} filePreview={uploadFilePreviews[0] ?? null} />
               ) : null}
 
               {!showDocumentEditor && view === "objects" ? (
@@ -2239,7 +2249,7 @@ export function AnalysisDashboard() {
               />
               ) : null}
 
-              {!showDocumentEditor && view === "upload" ? (
+              {!showDocumentEditor && !showUploadReview && view === "upload" ? (
               <DocumentUploadView
                 previews={previews}
                 isAnalyzing={isAnalyzing}
@@ -2333,7 +2343,19 @@ export function AnalysisDashboard() {
                 readOnly={!canEdit}
               />
             ) : null}
-            {showUploadPanel ? (
+            {showUploadReview ? (
+              <DocumentReviewPanel
+                document={uploadDocument}
+                projects={projects}
+                assignedProjectId={uploadDocument ? assignments[uploadDocument.id] ?? null : null}
+                onAssign={(projectId) => uploadDocument && assignDocument(uploadDocument.id, projectId)}
+                onCreateProject={() => uploadDocument && createProject(uploadDocument)}
+                onDelete={() => uploadDocument && deleteDocument(uploadDocument.id)}
+                onUpdate={updateDocument}
+                readOnly={!canEdit}
+              />
+            ) : null}
+            {showUploadPanel && !showUploadReview ? (
               <UploadObjectPanel
                 document={uploadDocument}
                 documents={uploadDocuments}
@@ -5793,16 +5815,18 @@ function AsbestosDebugReportView({ report }: { report: AsbestosDebugReport }) {
   );
 }
 
-function DocumentPdfViewer({ document }: { document: ObjectAnalysis | null }) {
+function DocumentPdfViewer({ document, filePreview = null }: { document: ObjectAnalysis | null; filePreview?: UploadFilePreview | null }) {
   const [zoom, setZoom] = useState(100);
   const [page, setPage] = useState(1);
   const sourceSnippets = document ? collectDocumentSourceSnippets(document) : [];
+  const isPdf = filePreview?.type === "application/pdf" || /\.pdf$/i.test(filePreview?.name ?? "");
+  const isImage = Boolean(filePreview && /^image\//i.test(filePreview.type));
   return (
     <section className="documentViewerPanel">
       <div className="documentViewerToolbar">
         <div>
           <span className="eyebrow">Dokument</span>
-          <h2>{document ? fieldOrUnknown(document.documentNumber) : "Kein Dokument ausgewaehlt"}</h2>
+          <h2>{filePreview?.name ?? (document ? fieldOrUnknown(document.documentNumber) : "Kein Dokument ausgewaehlt")}</h2>
         </div>
         <div className="viewerControls">
           <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))}>Zurueck</button>
@@ -5814,7 +5838,12 @@ function DocumentPdfViewer({ document }: { document: ObjectAnalysis | null }) {
         </div>
       </div>
       <div className="pdfCanvasShell">
-        <div className="pdfPageMock" style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center" }}>
+        {isPdf && filePreview ? (
+          <iframe className="pdfFrame" title={filePreview.name} src={`${filePreview.url}#page=${page}&zoom=${zoom}`} />
+        ) : isImage && filePreview ? (
+          <img className="imageDocumentPreview" src={filePreview.url} alt={filePreview.name} style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center" }} />
+        ) : (
+          <div className="pdfPageMock" style={{ transform: `scale(${zoom / 100})`, transformOrigin: "top center" }}>
           {document ? (
             <>
               <div className="pdfMockHeader">
@@ -5844,7 +5873,8 @@ function DocumentPdfViewer({ document }: { document: ObjectAnalysis | null }) {
           ) : (
             <div className="emptyState"><p>Bitte ein Dokument auswaehlen.</p></div>
           )}
-        </div>
+          </div>
+        )}
       </div>
     </section>
   );

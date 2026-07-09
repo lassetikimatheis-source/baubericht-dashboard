@@ -1433,6 +1433,26 @@ tbody tr:hover,
   padding: 28px;
 }
 
+.pdfFrame {
+  width: 100%;
+  height: calc(100vh - 220px);
+  min-height: 720px;
+  border: 0;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(20, 31, 43, 0.18);
+}
+
+.imageDocumentPreview {
+  display: block;
+  max-width: min(980px, 100%);
+  margin: 0 auto 80px;
+  border: 1px solid #d8dee8;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(20, 31, 43, 0.18);
+}
+
 .pdfPageMock {
   width: min(860px, 100%);
   min-height: 1120px;
