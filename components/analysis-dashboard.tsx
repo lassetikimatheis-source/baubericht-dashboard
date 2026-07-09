@@ -737,8 +737,9 @@ export function AnalysisDashboard() {
         setEntrances(supabaseEntrances);
         setAssignments(supabaseAssignments);
         setObjectImages(supabaseObjectImages);
-        setAnalysis(buildAnalysisFromDocuments(supabaseDocuments.documents));
-        setSelectedDocumentId((current) => supabaseDocuments.documents.some((document) => document.id === current) ? current : supabaseDocuments.documents[0]?.id ?? null);
+        if (shouldUseSupabaseDocumentLoad(localDocuments, supabaseDocuments, "App-Load")) {
+          applySupabaseDocumentsToState(supabaseDocuments.documents, "App-Load");
+        }
         setSelectedObjectId((current) => nextObjects.some((object) => object.id === current) ? current : nextObjects[0]?.id ?? null);
         setSelectedProjectId((current) => supabaseProjects.some((project) => project.id === current) ? current : supabaseProjects[0]?.id ?? null);
       }
@@ -7272,6 +7273,8 @@ function mergeDocumentsPreferManual(existing: ObjectAnalysis[], incoming: Object
 }
 
 function mergeDocumentPreferManual(existing: ObjectAnalysis, incoming: ObjectAnalysis): ObjectAnalysis {
+  const existingHasMeasures = existing.clusters.length > 0 || (existing.measureDetails?.length ?? 0) > 0;
+  const incomingHasMeasures = incoming.clusters.length > 0 || (incoming.measureDetails?.length ?? 0) > 0;
   return {
     ...incoming,
     id: existing.id,
@@ -7304,10 +7307,14 @@ function mergeDocumentPreferManual(existing: ObjectAnalysis, incoming: ObjectAna
     measureDescription: mergeFieldPreferManual(existing.measureDescription, incoming.measureDescription),
     dataQuality: mergeFieldPreferManual(existing.dataQuality, incoming.dataQuality),
     missingInformation: mergeFieldPreferManual(existing.missingInformation, incoming.missingInformation),
-    clusters: existing.clusters.some((cluster) => hasManualSource(cluster.cluster) || hasManualSource(cluster.totalCost))
+    clusters: existingHasMeasures && !incomingHasMeasures
+      ? existing.clusters
+      : existing.clusters.some((cluster) => hasManualSource(cluster.cluster) || hasManualSource(cluster.totalCost))
       ? existing.clusters
       : incoming.clusters,
-    measureDetails: incoming.measureDetails ?? existing.measureDetails,
+    measureDetails: existingHasMeasures && !incomingHasMeasures
+      ? existing.measureDetails
+      : incoming.measureDetails ?? existing.measureDetails,
     measureDebug: incoming.measureDebug ?? existing.measureDebug ?? null,
     costDebug: incoming.costDebug ?? existing.costDebug,
     remarks: existing.remarks ? mergeFieldPreferManual(existing.remarks, incoming.remarks ?? emptyField<string>()) : incoming.remarks,
@@ -7982,10 +7989,15 @@ function reliableClusterCost(
   const repeatedDocumentTotalCount = document.clusters.filter((entry) =>
     entry.totalCost.value !== null && Math.abs(entry.totalCost.value - document.totalCost.value!) < 0.01
   ).length;
-  if (repeatedDocumentTotalCount > 1 && Math.abs(clusterValue - document.totalCost.value) < 0.01) return null;
+  if (repeatedDocumentTotalCount > 1 && Math.abs(clusterValue - document.totalCost.value) < 0.01) {
+    return roundMoney(document.totalCost.value / repeatedDocumentTotalCount);
+  }
 
   const clusterSum = sumValues(document.clusters.map((entry) => entry.totalCost.value));
   if (clusterSum !== null && clusterSum > document.totalCost.value * 1.03) {
+    if (Math.abs(clusterValue - document.totalCost.value) < 0.01 && repeatedDocumentTotalCount > 1) {
+      return roundMoney(document.totalCost.value / repeatedDocumentTotalCount);
+    }
     return Math.abs(clusterValue - document.totalCost.value) < 0.01 ? null : clusterValue;
   }
 

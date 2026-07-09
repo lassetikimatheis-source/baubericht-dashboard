@@ -1414,18 +1414,12 @@ export async function loadSupabaseDocumentsWithCostItems(options: { autoRepair?:
     if (id) objectById.set(id, objectRow);
   });
 
-  const costItemsByDocumentId = new Map<string, GenericSupabaseRow[]>();
-  const costItemsByLocalDocumentId = new Map<string, GenericSupabaseRow[]>();
+  const costItemsByDocumentKey = new Map<string, GenericSupabaseRow[]>();
   (costItemsResult.data ?? []).forEach((row) => {
     const costItem = row as GenericSupabaseRow;
-    const documentId = stringValue(costItem.document_id);
-    if (documentId) {
-      costItemsByDocumentId.set(documentId, [...(costItemsByDocumentId.get(documentId) ?? []), costItem]);
-    }
-    const localDocumentId = stringValue(readMetadataValue(costItem, "localDocumentId") || costItem.local_document_id || costItem.source_document_id);
-    if (localDocumentId) {
-      costItemsByLocalDocumentId.set(localDocumentId, [...(costItemsByLocalDocumentId.get(localDocumentId) ?? []), costItem]);
-    }
+    costItemDocumentLookupKeys(costItem).forEach((key) => {
+      costItemsByDocumentKey.set(key, [...(costItemsByDocumentKey.get(key) ?? []), costItem]);
+    });
   });
 
   const tradeNameById = new Map<string, string>();
@@ -1447,15 +1441,8 @@ export async function loadSupabaseDocumentsWithCostItems(options: { autoRepair?:
 
   const appDocuments = (documentsResult.data ?? []).map((row) => {
     const documentRow = row as GenericSupabaseRow;
-    const documentId = stringValue(documentRow.id);
-    const localDocumentId = stringValue(documentRow.local_document_id || readMetadataValue(documentRow, "localId"));
-    const sourceDocumentId = stringValue(documentRow.source_document_id || documentRow.file_name || documentRow.document_name || documentRow.name);
     const objectRow = objectById.get(stringValue(documentRow.object_id)) ?? {};
-    const costItems = uniqueRowsById([
-      ...(costItemsByDocumentId.get(documentId) ?? []),
-      ...(localDocumentId ? costItemsByLocalDocumentId.get(localDocumentId) ?? [] : []),
-      ...(sourceDocumentId ? costItemsByLocalDocumentId.get(sourceDocumentId) ?? [] : [])
-    ]);
+    const costItems = uniqueRowsById(documentLookupKeys(documentRow).flatMap((key) => costItemsByDocumentKey.get(key) ?? []));
     return objectAnalysisFromSupabase(documentRow, objectRow, costItems, tradeNameById);
   });
 
@@ -1824,9 +1811,8 @@ function objectAnalysisFromSupabase(
 ): ObjectAnalysis {
   const documentId = stringValue(documentRow.local_document_id || documentRow.id || `supabase-document-${Date.now()}`);
   const sourceDocumentId = stringValue(documentRow.source_document_id || documentRow.file_name || documentRow.document_name || documentRow.name || documentId);
-  const grossAmount = numberValue(documentRow.total_amount ?? documentRow.gross_amount ?? documentRow.amount ?? documentRow.cost_gross) ?? sumNumbers(costItems.map((item) =>
-    numberValue(item.total_amount ?? item.gross_amount ?? item.amount ?? item.cost_gross)
-  ));
+  const grossAmount = firstKnownNumber(documentRow.total_amount, documentRow.gross_amount, documentRow.amount, documentRow.cost_gross, documentRow.gross_cost, documentRow.total_cost)
+    ?? sumNumbers(costItems.map(costItemAmount));
   const clusters = costItems.map((item, index) => costItemRowToMeasureItem(item, documentId, sourceDocumentId, index, tradeNameById));
   const measureDetails = costItems.map((item) => costItemRowToMeasureDetail(item, tradeNameById));
 
@@ -1880,7 +1866,7 @@ function costItemRowToMeasureItem(
 ): ObjectAnalysis["clusters"][number] {
   const tradeName = costItemTradeName(row, tradeNameById);
   const description = stringValue(row.description || row.title || tradeName);
-  const amount = numberValue(row.gross_amount ?? row.amount ?? row.cost_gross);
+  const amount = costItemAmount(row);
   return {
     id: stringValue(row.local_cost_item_id || row.id || `${documentId}:cost-item:${index}`),
     cluster: textField((tradeName || "Unklar") as MeasureCluster),
@@ -1898,7 +1884,7 @@ function costItemRowToMeasureDetail(row: GenericSupabaseRow, tradeNameById: Map<
   return {
     abschnitt: stringValue(row.title || row.description || tradeName),
     cluster: (tradeName || "Unklar") as MeasureCluster,
-    summe: numberValue(row.gross_amount ?? row.amount ?? row.cost_gross),
+    summe: costItemAmount(row),
     beschreibung: description,
     quelle: stringValue(row.source || row.document_id)
   };
@@ -1915,6 +1901,72 @@ function costItemTradeName(row: GenericSupabaseRow, tradeNameById: Map<string, s
   const fromLookup = tradeId ? tradeNameById.get(tradeId) ?? "" : "";
   if (fromLookup) return fromLookup;
   return firstNonEmptyString(stringValue(row.title), stringValue(row.description), "Unklar");
+}
+
+function costItemDocumentLookupKeys(row: GenericSupabaseRow): string[] {
+  return uniqueLookupKeys([
+    row.document_id,
+    row.local_document_id,
+    row.source_document_id,
+    row.file_name,
+    row.document_name,
+    row.name,
+    row.source,
+    readMetadataValue(row, "localDocumentId"),
+    readMetadataValue(row, "sourceDocumentId"),
+    readMetadataValue(row, "documentId"),
+    readMetadataValue(row, "localId"),
+    readMetadataValue(row, "fileName")
+  ]);
+}
+
+function documentLookupKeys(row: GenericSupabaseRow): string[] {
+  return uniqueLookupKeys([
+    row.id,
+    row.local_document_id,
+    row.source_document_id,
+    row.file_name,
+    row.document_name,
+    row.name,
+    row.file_url,
+    readMetadataValue(row, "localDocumentId"),
+    readMetadataValue(row, "sourceDocumentId"),
+    readMetadataValue(row, "documentId"),
+    readMetadataValue(row, "localId"),
+    readMetadataValue(row, "fileName")
+  ]);
+}
+
+function uniqueLookupKeys(values: unknown[]): string[] {
+  const keys = values
+    .map((value) => stringValue(value).trim())
+    .filter(Boolean);
+  return Array.from(new Set(keys));
+}
+
+function costItemAmount(row: GenericSupabaseRow): number | null {
+  return firstKnownNumber(
+    row.gross_amount,
+    row.total_amount,
+    row.amount,
+    row.cost_gross,
+    row.gross_cost,
+    row.total_cost,
+    row.net_amount,
+    row.summe,
+    row.value_number,
+    readMetadataValue(row, "grossAmount"),
+    readMetadataValue(row, "totalAmount"),
+    readMetadataValue(row, "amount")
+  );
+}
+
+function firstKnownNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = numberValue(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
 }
 
 function firstNonEmptyString(...values: string[]): string {
