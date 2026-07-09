@@ -446,9 +446,7 @@ function removeStorageKeys(storage: Storage): string[] {
 
 function isLegacyAppStorageKey(key: string): boolean {
   const normalized = key.toLowerCase();
-  return normalized.startsWith(STORAGE_KEY_PREFIX) ||
-    normalized.includes("paribus-baukosten") ||
-    normalized.includes("baukosten");
+  return normalized.startsWith(STORAGE_KEY_PREFIX);
 }
 
 function countFullLocalDataExport(exportData: Pick<FullLocalDataExport, "appKeys" | "allParibusKeys">): Record<string, number> {
