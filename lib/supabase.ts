@@ -196,6 +196,22 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
     return runtimeSupabaseConfig;
   }
   if (typeof window === "undefined") return null;
+  const buildTimeConfig = getBuildTimeSupabaseConfig();
+  if (buildTimeConfig && !options.forceRefresh) {
+    runtimeSupabaseConfig = buildTimeConfig;
+    runtimeSupabaseStatus = {
+      loaded: true,
+      hasUrl: true,
+      hasAnonKey: true,
+      hasNextPublicAnonKey: true,
+      hasServerAnonKey: false,
+      runtime: "browser",
+      httpStatus: null,
+      responseText: "",
+      error: null
+    };
+    return runtimeSupabaseConfig;
+  }
   try {
     const response = await fetch("/api/supabase-config", { cache: "no-store" });
     const responseText = await response.text();
@@ -248,6 +264,21 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
       runtime: data.runtime ?? "server"
     });
     if (!data.supabaseUrl || !data.supabaseAnonKey || !isHttpUrl(data.supabaseUrl)) {
+      const fallbackConfig = getBuildTimeSupabaseConfig();
+      if (fallbackConfig) {
+        runtimeSupabaseConfig = fallbackConfig;
+        runtimeSupabaseStatus = {
+          ...runtimeSupabaseStatus,
+          loaded: true,
+          hasUrl: true,
+          hasAnonKey: true,
+          hasNextPublicAnonKey: true,
+          hasServerAnonKey: Boolean(data.hasServerAnonKey),
+          runtime: "browser-fallback",
+          error: null
+        };
+        return runtimeSupabaseConfig;
+      }
       runtimeSupabaseStatus = {
         ...runtimeSupabaseStatus,
         loaded: false,
@@ -261,6 +292,22 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
     };
     return runtimeSupabaseConfig;
   } catch (error) {
+    const fallbackConfig = getBuildTimeSupabaseConfig();
+    if (fallbackConfig) {
+      runtimeSupabaseConfig = fallbackConfig;
+      runtimeSupabaseStatus = {
+        loaded: true,
+        hasUrl: true,
+        hasAnonKey: true,
+        hasNextPublicAnonKey: true,
+        hasServerAnonKey: false,
+        runtime: "browser-fallback",
+        httpStatus: null,
+        responseText: "",
+        error: null
+      };
+      return runtimeSupabaseConfig;
+    }
     console.error("[Supabase] Runtime-Konfiguration fehlgeschlagen.", error);
     runtimeSupabaseStatus = {
       loaded: false,
@@ -275,6 +322,13 @@ export async function getRuntimeSupabaseConfig(options: { forceRefresh?: boolean
     };
     return null;
   }
+}
+
+function getBuildTimeSupabaseConfig(): { supabaseUrl: string; supabaseAnonKey: string } | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (typeof supabaseUrl !== "string" || !isHttpUrl(supabaseUrl) || !supabaseAnonKey) return null;
+  return { supabaseUrl, supabaseAnonKey };
 }
 
 export async function runSupabaseConnectionTest(): Promise<void> {
