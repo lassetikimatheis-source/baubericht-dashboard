@@ -50,10 +50,10 @@ const demoDocuments: FundDocument[] = [
 ];
 
 const localFallbackFunds: FundRecord[] = [
-  { id: "local-fonds-9", fundName: "Fonds 9", fundNumber: "Fonds 9", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-  { id: "local-fonds-22", fundName: "Fonds 22", fundNumber: "Fonds 22", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-  { id: "local-paif-1", fundName: "PAIF 1", fundNumber: "PAIF 1", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
-  { id: "local-paif-2", fundName: "PAIF 2", fundNumber: "PAIF 2", address: "", company: "", commercialRegisterNumber: "", currentValue: "", objectCount: 0, contactPerson: "", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" }
+  { id: "local-fonds-9", fundName: "Fonds 9", fundNumber: "Fonds 9", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 42,1 Mio.", objectCount: 6, contactPerson: "Asset Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+  { id: "local-fonds-22", fundName: "Fonds 22", fundNumber: "Fonds 22", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 67,0 Mio.", objectCount: 9, contactPerson: "Portfolio Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+  { id: "local-paif-1", fundName: "PAIF 1", fundNumber: "PAIF 1", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 118,4 Mio.", objectCount: 14, contactPerson: "Fund Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" },
+  { id: "local-paif-2", fundName: "PAIF 2", fundNumber: "PAIF 2", address: "Hamburg", company: "Paribus", commercialRegisterNumber: "HRB offen", currentValue: "EUR 94,8 Mio.", objectCount: 11, contactPerson: "Fund Management", status: "active", remark: "Lokaler Beispiel-Fonds", updatedAt: "" }
 ];
 
 export function FundsQuarterlyWorkspace() {
@@ -128,31 +128,46 @@ export function FundsQuarterlyWorkspace() {
 
   return (
     <div className="quarterlyProduct">
-      <section className="quarterlyProductHeader">
+      <section className="quarterlyDirectoryHeader">
         <div>
           <p className="eyebrow">Fonds</p>
-          <h2>Fonds-Struktur</h2>
-          <p className="muted">Keine losen Filter: erst Fonds auswaehlen, dann alle Berichte und Quellen im Fonds sehen.</p>
+          <h2>Quartalsberichte nach Fonds</h2>
+          <p className="muted">Fonds auswaehlen, dann Stammdaten, Berichte und alle Quellen im Detail sehen.</p>
         </div>
-        <div className={`quarterlyMessage quarterlyMessage-${message.type}`}>{message.text}</div>
+        <div className="quarterlyDirectoryStats">
+          <span><strong>{funds.length}</strong> Fonds</span>
+          <span><strong>{reports.length}</strong> Berichte</span>
+          <span><strong>{files.length + powerBiLinks.length}</strong> Quellen</span>
+        </div>
       </section>
+      <div className={`quarterlyMessage quarterlyMessage-${message.type}`}>{message.text}</div>
 
       <section className="quarterlyFundCards">
         {funds.map((fund) => {
           const reportsForFund = reports.filter((report) => report.fundId === fund.id);
+          const fileCount = files.filter((file) => file.fundId === fund.id).length;
+          const powerBiCount = powerBiLinks.filter((link) => link.fundId === fund.id).length;
           const isSelected = fund.id === selectedFundId;
           return (
             <button className={`quarterlyFundCard ${isSelected ? "quarterlyFundCardActive" : ""}`} type="button" key={fund.id} onClick={() => { setSelectedFundId(fund.id); setActiveTab("overview"); }}>
-              <span>{fund.status || "Status offen"}</span>
+              <div className="quarterlyFundCardTop">
+                <span>{fund.status || "Status offen"}</span>
+                <em>{latestReportLabel(reportsForFund)}</em>
+              </div>
               <strong>{fund.fundName}</strong>
-              <small>Fondsnummer {fund.fundNumber}</small>
+              <small>Nr. {fund.fundNumber} · {fund.company || "Gesellschaft offen"}</small>
+              <div className="quarterlyFundCardValue">
+                <span>Verkehrswert / aktueller Wert</span>
+                <strong>{fund.currentValue || "nicht hinterlegt"}</strong>
+              </div>
+              <div className="quarterlyFundMiniStats">
+                <span><strong>{fund.objectCount || 0}</strong> Objekte</span>
+                <span><strong>{reportsForFund.length}</strong> Berichte</span>
+                <span><strong>{fileCount + powerBiCount}</strong> Quellen</span>
+              </div>
               <dl>
                 <div><dt>Adresse/Sitz</dt><dd>{fund.address || "nicht hinterlegt"}</dd></div>
-                <div><dt>Gesellschaft</dt><dd>{fund.company || "nicht hinterlegt"}</dd></div>
                 <div><dt>Handelsregister</dt><dd>{fund.commercialRegisterNumber || "nicht hinterlegt"}</dd></div>
-                <div><dt>Verkehrswert</dt><dd>{fund.currentValue || "nicht hinterlegt"}</dd></div>
-                <div><dt>Anzahl Objekte</dt><dd>{fund.objectCount || 0}</dd></div>
-                <div><dt>Letzter Bericht</dt><dd>{latestReportLabel(reportsForFund)}</dd></div>
                 <div><dt>Ansprechpartner</dt><dd>{fund.contactPerson || "nicht hinterlegt"}</dd></div>
               </dl>
             </button>
@@ -163,13 +178,15 @@ export function FundsQuarterlyWorkspace() {
       <section className="quarterlyFundDetail">
         <div className="quarterlyFundDetailHeader">
           <div>
-            <p className="eyebrow">Fonds-Detailseite</p>
+            <button className="quarterlyBackButton" type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Zur Fondsuebersicht</button>
+            <p className="eyebrow">Fonds-Detail</p>
             <h3>{selectedFund.fundName}</h3>
             <p className="muted">{selectedFund.company || "Gesellschaft offen"} | {selectedFund.address || "Sitz offen"}</p>
           </div>
           <div className="quarterlyFundDetailMeta">
-            <span>{selectedFund.currentValue || "Wert offen"}</span>
-            <strong>{selectedFundLastReport}</strong>
+            <span>Aktueller Wert</span>
+            <strong>{selectedFund.currentValue || "Wert offen"}</strong>
+            <small>Letzter Bericht: {selectedFundLastReport}</small>
           </div>
         </div>
 
@@ -200,28 +217,28 @@ function OverviewTab({ fund, reports, files, powerBiLinks, values }: { fund: Fun
 }
 
 function ReportsTab({ reports, fund }: { reports: QuarterlyReportRecord[]; fund: FundRecord }) {
-  return <SourcePanel title="Quartalsberichte" empty="Keine Quartalsberichte fuer diesen Fonds vorhanden.">{reports.map((report) => <SourceRow key={report.id} title={`${report.quarter}/${report.year} - Stichtag ${report.reportDate}`} subtitle={`Version ${report.version} | Bearbeiter ${report.editor || "offen"} | Fonds ${fund.fundName}`} meta={report.status} actions={["oeffnen", "exportieren"]} />)}</SourcePanel>;
+  return <SourcePanel title="Quartalsberichte" intro={`${fund.fundName}: alle vorhandenen Quartalsberichte in zeitlicher Reihenfolge.`} empty="Keine Quartalsberichte fuer diesen Fonds vorhanden.">{reports.map((report) => <SourceRow key={report.id} title={`${report.quarter}/${report.year} - Stichtag ${report.reportDate}`} subtitle={`Version ${report.version} | Bearbeiter ${report.editor || "offen"} | Fonds ${fund.fundName}`} meta={report.status} actions={["oeffnen", "exportieren"]} />)}</SourcePanel>;
 }
 
 function ExcelTab({ files, fund }: { files: QuarterlyReportFileRecord[]; fund: FundRecord }) {
-  return <SourcePanel title="Excel-Quellen" empty="Keine Excel-Dateien fuer diesen Fonds hinterlegt.">{files.map((file) => <SourceRow key={file.id} title={`${file.fileType}: ${file.fileName}`} subtitle={`${fund.fundName} | ${file.assignedQuarter}/${file.assignedYear} | Blatt ${file.sheetName || "offen"} | Zellen/Spalten ${file.relevantCells || file.relevantColumns || "offen"}`} meta={file.importStatus} actions={["Datei oeffnen", "Quelle bearbeiten"]} />)}</SourcePanel>;
+  return <SourcePanel title="Excel-Quellen" intro="Mieterliste, Verkehrswerte, CapEx, Budget, Leerstand und sonstige Dateien je Fonds." empty="Keine Excel-Dateien fuer diesen Fonds hinterlegt.">{files.map((file) => <SourceRow key={file.id} title={`${file.fileType}: ${file.fileName}`} subtitle={`${fund.fundName} | ${file.assignedQuarter}/${file.assignedYear} | Blatt ${file.sheetName || "offen"} | Zellen/Spalten ${file.relevantCells || file.relevantColumns || "offen"}`} meta={file.importStatus} actions={["Datei oeffnen", "Quelle bearbeiten"]} />)}</SourcePanel>;
 }
 
 function PowerBiTab({ links, fund }: { links: QuarterlyReportPowerBiLinkRecord[]; fund: FundRecord }) {
-  return <SourcePanel title="PowerBI-Verbindungen" empty="Keine PowerBI-Verbindungen fuer diesen Fonds hinterlegt.">{links.map((link) => <SourceRow key={link.id} title={`${link.metric} - ${link.value || link.manualValue || "Wert offen"}`} subtitle={`${fund.fundName} | ${link.workspace} | ${link.reportDashboard} | Dataset ${link.dataset} | Quelle ${link.sourceCell || "offen"} | Stichtag ${link.reportDate}`} meta={link.lastSyncAt || "kein Sync"} actions={["Werte oeffnen", "bearbeiten"]} />)}</SourcePanel>;
+  return <SourcePanel title="PowerBI-Verbindungen" intro="Workspace, Report, Dataset, Kennzahlen und letzter Sync je Fonds." empty="Keine PowerBI-Verbindungen fuer diesen Fonds hinterlegt.">{links.map((link) => <SourceRow key={link.id} title={`${link.metric} - ${link.value || link.manualValue || "Wert offen"}`} subtitle={`${fund.fundName} | ${link.workspace} | ${link.reportDashboard} | Dataset ${link.dataset} | Quelle ${link.sourceCell || "offen"} | Stichtag ${link.reportDate}`} meta={link.lastSyncAt || "kein Sync"} actions={["Werte oeffnen", "bearbeiten"]} />)}</SourcePanel>;
 }
 
 function EnergyTab({ certificates, fund }: { certificates: EnergyCertificate[]; fund: FundRecord }) {
-  return <SourcePanel title="Energieausweise" empty="Keine Energieausweise fuer diesen Fonds hinterlegt.">{certificates.map((certificate) => <SourceRow key={certificate.id} title={certificate.fileName} subtitle={`${fund.fundName} | Objekt ${certificate.objectLabel} | gueltig bis ${certificate.validUntil} | Kennwert ${certificate.energyValue}`} meta={certificate.status} actions={["Datei oeffnen", "Objektzuordnung"]} />)}</SourcePanel>;
+  return <SourcePanel title="Energieausweise" intro="Energieausweise mit Objektzuordnung, Gueltigkeit und Kennwerten." empty="Keine Energieausweise fuer diesen Fonds hinterlegt.">{certificates.map((certificate) => <SourceRow key={certificate.id} title={certificate.fileName} subtitle={`${fund.fundName} | Objekt ${certificate.objectLabel} | gueltig bis ${certificate.validUntil} | Kennwert ${certificate.energyValue}`} meta={certificate.status} actions={["Datei oeffnen", "Objektzuordnung"]} />)}</SourcePanel>;
 }
 
 function DocumentsTab({ documents, fund }: { documents: FundDocument[]; fund: FundRecord }) {
-  return <SourcePanel title="Dokumente/Quellen" empty="Keine sonstigen Quellen fuer diesen Fonds hinterlegt.">{documents.map((document) => <SourceRow key={document.id} title={document.title} subtitle={`${fund.fundName} | ${document.documentType} | ${document.fileName || "keine Datei"}`} meta={document.status} actions={["Upload", "oeffnen", "bearbeiten"]} />)}</SourcePanel>;
+  return <SourcePanel title="Dokumente/Quellen" intro="Alle sonstigen Quellen mit eindeutiger Fondszuordnung." empty="Keine sonstigen Quellen fuer diesen Fonds hinterlegt.">{documents.map((document) => <SourceRow key={document.id} title={document.title} subtitle={`${fund.fundName} | ${document.documentType} | ${document.fileName || "keine Datei"}`} meta={document.status} actions={["Upload", "oeffnen", "bearbeiten"]} />)}</SourcePanel>;
 }
 
-function SourcePanel({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+function SourcePanel({ title, intro, empty, children }: { title: string; intro: string; empty: string; children: React.ReactNode }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
-  return <article className="panel quarterlyDetailPanel"><h3>{title}</h3><div className="quarterlySourceList">{hasChildren ? children : <p className="quarterlyEmpty">{empty}</p>}</div></article>;
+  return <article className="panel quarterlyDetailPanel"><div className="panelHeader compactHeader"><div><h3>{title}</h3><p>{intro}</p></div></div><div className="quarterlySourceList">{hasChildren ? children : <p className="quarterlyEmpty">{empty}</p>}</div></article>;
 }
 
 function InfoGrid({ rows }: { rows: Array<[string, string]> }) {

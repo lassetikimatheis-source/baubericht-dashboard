@@ -6093,19 +6093,60 @@ video {
 
 .quarterlyFundCards {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.quarterlyDirectoryHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.quarterlyDirectoryHeader h2 {
+  color: var(--navy);
+  font-size: 26px;
+}
+
+.quarterlyDirectoryStats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.quarterlyDirectoryStats span {
+  min-width: 92px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 9px 11px;
+}
+
+.quarterlyDirectoryStats strong {
+  display: block;
+  color: var(--navy);
+  font-size: 18px;
 }
 
 .quarterlyFundCard {
   display: grid;
-  gap: 10px;
+  align-content: start;
+  gap: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   color: var(--ink);
   cursor: pointer;
-  padding: 14px;
+  min-height: 310px;
+  padding: 16px;
   text-align: left;
 }
 
@@ -6123,9 +6164,61 @@ video {
   font-size: 12px;
 }
 
+.quarterlyFundCardTop,
+.quarterlyFundMiniStats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.quarterlyFundCardTop span,
+.quarterlyFundCardTop em {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfcfd;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 5px 8px;
+}
+
 .quarterlyFundCard > strong {
   color: var(--navy);
-  font-size: 20px;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.quarterlyFundCardValue {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 10px 12px;
+}
+
+.quarterlyFundCardValue strong {
+  color: var(--navy);
+  font-size: 18px;
+}
+
+.quarterlyFundMiniStats span {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  flex: 1;
+  font-size: 11px;
+  padding: 8px;
+}
+
+.quarterlyFundMiniStats strong {
+  color: var(--navy);
+  font-size: 16px;
 }
 
 .quarterlyFundCard dl,
@@ -6159,7 +6252,8 @@ video {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  padding: 16px;
+  box-shadow: 0 8px 22px rgba(33, 44, 56, 0.045);
+  padding: 18px;
 }
 
 .quarterlyFundDetailHeader {
@@ -6171,7 +6265,8 @@ video {
 
 .quarterlyFundDetailHeader h3 {
   color: var(--navy);
-  font-size: 24px;
+  font-size: 28px;
+  line-height: 1.1;
 }
 
 .quarterlyFundDetailMeta {
@@ -6184,15 +6279,34 @@ video {
 
 .quarterlyFundDetailMeta strong {
   color: var(--navy);
-  font-size: 18px;
+  font-size: 22px;
+}
+
+.quarterlyFundDetailMeta small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quarterlyBackButton {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--navy);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  padding: 5px 9px;
 }
 
 .quarterlyTabs {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--line);
-  padding-bottom: 10px;
+  padding-bottom: 8px;
 }
 
 .quarterlyTabs button,
@@ -6211,6 +6325,7 @@ video {
 .quarterlyTabs button.active {
   border-color: rgba(31, 78, 121, 0.35);
   background: #eef2f6;
+  box-shadow: inset 0 -2px 0 var(--navy);
 }
 
 .quarterlyDetailGrid {
@@ -6221,6 +6336,7 @@ video {
 
 .quarterlyDetailPanel {
   margin-bottom: 0;
+  padding: 14px;
 }
 
 .quarterlyKpiRow {
@@ -6254,6 +6370,7 @@ video {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
+  background: #fff;
 }
 
 .quarterlySourceRow strong,
