@@ -2144,7 +2144,6 @@ export function AnalysisDashboard() {
         <div className="sideNote">
           <span>{auth.profile?.fullName || auth.profile?.email}</span>
           <strong>{auth.profile?.role}</strong>
-          <button type="button" onClick={auth.signOut}>Abmelden</button>
         </div>
         <div className="sideNote">
           <span>Struktur</span>
