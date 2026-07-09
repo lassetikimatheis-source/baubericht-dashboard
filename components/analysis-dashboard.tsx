@@ -3456,7 +3456,7 @@ function ObjectsView({
                   readOnly={readOnly}
                 />
               ) : null}
-              {activeTab === "trades" ? <ObjectTradesTab documents={selectedCostDocuments} /> : null}
+              {activeTab === "trades" ? <ObjectTradesTab documents={objectFilteredDocuments} /> : null}
               {activeTab === "documents" ? (
                 <ObjectDocumentsTab
                   documents={selectedDocuments}

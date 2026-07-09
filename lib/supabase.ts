@@ -1378,15 +1378,17 @@ export async function loadSupabaseDocumentsWithCostItems(options: { autoRepair?:
     };
   }
 
-  const [objectsResult, documentsResult, costItemsResult] = await Promise.all([
+  const [objectsResult, documentsResult, costItemsResult, tradesResult] = await Promise.all([
     supabase.from("objects").select("*"),
     supabase.from("documents").select("*"),
-    supabase.from("cost_items").select("*")
+    supabase.from("cost_items").select("*"),
+    supabase.from("trades").select("*")
   ]);
 
   if (objectsResult.error) throw new Error(`Supabase-Objekte konnten nicht geladen werden: ${formatSupabaseError(objectsResult.error)}`);
   if (documentsResult.error) throw new Error(`Supabase-Dokumente konnten nicht geladen werden: ${formatSupabaseError(documentsResult.error)}`);
   if (costItemsResult.error) throw new Error(`Supabase-Kostenpositionen konnten nicht geladen werden: ${formatSupabaseError(costItemsResult.error)}`);
+  if (tradesResult.error) console.warn("[Supabase] Gewerke-Lookup konnte nicht geladen werden; cost_items.trade_id wird nicht aufgeloest.", tradesResult.error);
 
   let autoRepair = emptyDocumentAutoRepairSummary(documentsResult.data?.length ?? 0, autoRepairEnabled);
   if (autoRepairEnabled) {
@@ -1426,6 +1428,20 @@ export async function loadSupabaseDocumentsWithCostItems(options: { autoRepair?:
     }
   });
 
+  const tradeNameById = new Map<string, string>();
+  (tradesResult.data ?? []).forEach((row) => {
+    const trade = row as GenericSupabaseRow;
+    const id = stringValue(trade.id);
+    const name = firstNonEmptyString(
+      stringValue(trade.name),
+      stringValue(trade.trade_name),
+      stringValue(trade.label),
+      stringValue(trade.title),
+      stringValue(trade.slug)
+    );
+    if (id && name) tradeNameById.set(id, name);
+  });
+
   console.log("[Supabase] documents geladen", documentsResult.data?.length ?? 0);
   console.log("[Supabase] cost_items geladen", costItemsResult.data?.length ?? 0);
 
@@ -1440,7 +1456,7 @@ export async function loadSupabaseDocumentsWithCostItems(options: { autoRepair?:
       ...(localDocumentId ? costItemsByLocalDocumentId.get(localDocumentId) ?? [] : []),
       ...(sourceDocumentId ? costItemsByLocalDocumentId.get(sourceDocumentId) ?? [] : [])
     ]);
-    return objectAnalysisFromSupabase(documentRow, objectRow, costItems);
+    return objectAnalysisFromSupabase(documentRow, objectRow, costItems, tradeNameById);
   });
 
   console.log("[Supabase] App-Dokumente erzeugt", appDocuments.length);
@@ -1803,15 +1819,16 @@ function normalizeQuarterlyFileType(value: unknown): QuarterlyReportFileType {
 function objectAnalysisFromSupabase(
   documentRow: GenericSupabaseRow,
   objectRow: GenericSupabaseRow,
-  costItems: GenericSupabaseRow[]
+  costItems: GenericSupabaseRow[],
+  tradeNameById: Map<string, string> = new Map()
 ): ObjectAnalysis {
   const documentId = stringValue(documentRow.local_document_id || documentRow.id || `supabase-document-${Date.now()}`);
   const sourceDocumentId = stringValue(documentRow.source_document_id || documentRow.file_name || documentRow.document_name || documentRow.name || documentId);
   const grossAmount = numberValue(documentRow.total_amount ?? documentRow.gross_amount ?? documentRow.amount ?? documentRow.cost_gross) ?? sumNumbers(costItems.map((item) =>
     numberValue(item.total_amount ?? item.gross_amount ?? item.amount ?? item.cost_gross)
   ));
-  const clusters = costItems.map((item, index) => costItemRowToMeasureItem(item, documentId, sourceDocumentId, index));
-  const measureDetails = costItems.map((item) => costItemRowToMeasureDetail(item));
+  const clusters = costItems.map((item, index) => costItemRowToMeasureItem(item, documentId, sourceDocumentId, index, tradeNameById));
+  const measureDetails = costItems.map((item) => costItemRowToMeasureDetail(item, tradeNameById));
 
   return {
     id: documentId,
@@ -1858,9 +1875,10 @@ function costItemRowToMeasureItem(
   row: GenericSupabaseRow,
   documentId: string,
   sourceDocumentId: string,
-  index: number
+  index: number,
+  tradeNameById: Map<string, string>
 ): ObjectAnalysis["clusters"][number] {
-  const tradeName = stringValue(row.trade_name || row.trade || row.trade_label || row.title || "Unklar");
+  const tradeName = costItemTradeName(row, tradeNameById);
   const description = stringValue(row.description || row.title || tradeName);
   const amount = numberValue(row.gross_amount ?? row.amount ?? row.cost_gross);
   return {
@@ -1874,8 +1892,8 @@ function costItemRowToMeasureItem(
   };
 }
 
-function costItemRowToMeasureDetail(row: GenericSupabaseRow): MeasureDetail {
-  const tradeName = stringValue(row.trade_name || row.trade || row.trade_label || "Unklar");
+function costItemRowToMeasureDetail(row: GenericSupabaseRow, tradeNameById: Map<string, string>): MeasureDetail {
+  const tradeName = costItemTradeName(row, tradeNameById);
   const description = stringValue(row.description || row.title || tradeName);
   return {
     abschnitt: stringValue(row.title || row.description || tradeName),
@@ -1884,6 +1902,23 @@ function costItemRowToMeasureDetail(row: GenericSupabaseRow): MeasureDetail {
     beschreibung: description,
     quelle: stringValue(row.source || row.document_id)
   };
+}
+
+function costItemTradeName(row: GenericSupabaseRow, tradeNameById: Map<string, string>): string {
+  const explicit = firstNonEmptyString(
+    stringValue(row.trade_name),
+    stringValue(row.trade),
+    stringValue(row.trade_label)
+  );
+  if (explicit) return explicit;
+  const tradeId = stringValue(row.trade_id);
+  const fromLookup = tradeId ? tradeNameById.get(tradeId) ?? "" : "";
+  if (fromLookup) return fromLookup;
+  return firstNonEmptyString(stringValue(row.title), stringValue(row.description), "Unklar");
+}
+
+function firstNonEmptyString(...values: string[]): string {
+  return values.find((value) => value.trim())?.trim() ?? "";
 }
 
 function textField<T extends string | MeasureCluster | CostAllocation>(value: T | null | undefined) {
