@@ -9010,6 +9010,9 @@ function updateTradeReviewRow(
         if (reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) !== trade) return cluster;
         return { ...cluster, totalCost: manualNumberField(amountValue), cluster: manualField(reviewTradeToCluster(trade)) as ExtractedField<MeasureCluster> };
       });
+    const nextMeasureDetails = active
+      ? current.measureDetails
+      : current.measureDetails?.filter((detail) => reviewTradeFromValue(detail.cluster, detail.beschreibung) !== trade);
     if (active && !hasExisting) {
       nextClusters.push({
         id: `${current.id}-${trade.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}`,
@@ -9020,7 +9023,7 @@ function updateTradeReviewRow(
         sourceDocumentId: current.id
       });
     }
-    return appendManualChange({ ...current, clusters: nextClusters }, `trade:${trade}`, "", active ? amountValue : "");
+    return appendManualChange({ ...current, clusters: nextClusters, measureDetails: nextMeasureDetails }, `trade:${trade}`, "", active ? amountValue : "");
   });
 }
 
