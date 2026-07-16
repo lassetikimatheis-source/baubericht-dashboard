@@ -1701,8 +1701,15 @@ tbody tr:hover,
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #fff;
+  color: var(--ink);
   padding: 9px 10px;
   font-weight: 900;
+}
+
+.reviewActionBar .buttonPrimary {
+  border-color: var(--navy);
+  background: var(--navy);
+  color: #fff;
 }
 
 .editorActions {

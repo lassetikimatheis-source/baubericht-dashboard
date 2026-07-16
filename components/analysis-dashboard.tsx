@@ -2376,8 +2376,8 @@ export function AnalysisDashboard() {
                 projects={projects}
                 assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
                 onAssign={(projectId) => selectedDocument && assignDocument(selectedDocument.id, projectId)}
-                onCreateProject={() => selectedDocument && createProject(selectedDocument)}
                 onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
+                onReanalyze={reanalyzeAllObjects}
                 onUpdate={updateDocument}
                 readOnly={!canEdit}
               />
@@ -2388,8 +2388,8 @@ export function AnalysisDashboard() {
                 projects={projects}
                 assignedProjectId={uploadDocument ? assignments[uploadDocument.id] ?? null : null}
                 onAssign={(projectId) => uploadDocument && assignDocument(uploadDocument.id, projectId)}
-                onCreateProject={() => uploadDocument && createProject(uploadDocument)}
                 onDelete={() => uploadDocument && deleteDocument(uploadDocument.id)}
+                onReanalyze={reanalyzeAllObjects}
                 onUpdate={updateDocument}
                 readOnly={!canEdit}
               />
@@ -6513,8 +6513,8 @@ function DocumentReviewPanel({
   projects,
   assignedProjectId,
   onAssign,
-  onCreateProject,
   onDelete,
+  onReanalyze,
   onUpdate,
   readOnly
 }: {
@@ -6522,8 +6522,8 @@ function DocumentReviewPanel({
   projects: ProjectRecord[];
   assignedProjectId: string | null;
   onAssign: (projectId: string | null) => void;
-  onCreateProject: () => void;
   onDelete: () => void;
+  onReanalyze: () => void;
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
   readOnly: boolean;
 }) {
@@ -6541,6 +6541,17 @@ function DocumentReviewPanel({
   };
   const setNumber = (field: NumberFieldKey, value: string) => {
     onUpdate(document.id, (current) => updateManualNumberField(current, field, value));
+  };
+  const saveCurrentEdits = () => {
+    if (globalThis.document.activeElement instanceof HTMLElement) globalThis.document.activeElement.blur();
+  };
+  const releaseDocument = () => {
+    saveCurrentEdits();
+    onUpdate(document.id, (current) => updateManualTextField(current, "dataQuality", "Freigegeben"));
+  };
+  const restartAnalysis = () => {
+    saveCurrentEdits();
+    onReanalyze();
   };
   const tradeRows = buildTradeReviewRows(document);
   const objectOptions = uniqueStrings([
@@ -6620,9 +6631,9 @@ function DocumentReviewPanel({
 
       {!readOnly ? (
         <div className="reviewActionBar">
-          <button className="buttonPrimary" type="button">Aenderungen speichern</button>
-          <button type="button">Analyse erneut starten</button>
-          <button type="button" onClick={onCreateProject}>Dokument freigeben</button>
+          <button className="buttonPrimary" type="button" onClick={saveCurrentEdits}>Aenderungen speichern</button>
+          <button type="button" onClick={restartAnalysis}>Analyse erneut starten</button>
+          <button type="button" onClick={releaseDocument}>Dokument freigeben</button>
           <button type="button" onClick={onDelete}>Loeschen</button>
         </div>
       ) : null}
