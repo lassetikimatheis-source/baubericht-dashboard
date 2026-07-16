@@ -982,6 +982,15 @@ h4 {
   gap: 14px;
 }
 
+.uploadDropPanel {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.uploadDropPanelActive {
+  border-color: rgba(255, 110, 66, 0.55);
+  box-shadow: 0 0 0 3px rgba(255, 110, 66, 0.14);
+}
+
 .uploadWorkspace {
   display: grid;
   gap: 16px;
@@ -1004,6 +1013,13 @@ h4 {
   background: #fbfcfd;
   text-align: center;
   padding: 20px;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dropzoneActive {
+  border-color: #ff6e42;
+  background: #fff7f3;
+  box-shadow: inset 0 0 0 2px rgba(255, 110, 66, 0.16);
 }
 
 .dropzone input {

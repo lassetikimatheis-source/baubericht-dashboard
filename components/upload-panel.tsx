@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface UploadPanelProps {
   isAnalyzing: boolean;
@@ -12,14 +12,59 @@ interface UploadPanelProps {
 
 export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFilesSelected }: UploadPanelProps) {
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDepth = useRef(0);
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   const selectFiles = (nextFiles: File[]) => {
     setFiles(nextFiles);
     onFilesSelected?.(nextFiles);
   };
+  const handleDroppedFiles = (fileList: FileList | null) => {
+    const nextFiles = Array.from(fileList ?? []);
+    if (nextFiles.length > 0) selectFiles(nextFiles);
+    dragDepth.current = 0;
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    const preventBrowserFileOpen = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
+      event.preventDefault();
+    };
+    window.addEventListener("dragover", preventBrowserFileOpen);
+    window.addEventListener("drop", preventBrowserFileOpen);
+    return () => {
+      window.removeEventListener("dragover", preventBrowserFileOpen);
+      window.removeEventListener("drop", preventBrowserFileOpen);
+    };
+  }, []);
 
   return (
-    <section className="panel" id="upload">
+    <section
+      className={`panel uploadDropPanel ${isDragging ? "uploadDropPanelActive" : ""}`}
+      id="upload"
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        dragDepth.current += 1;
+        setIsDragging(true);
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setIsDragging(false);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        handleDroppedFiles(event.dataTransfer.files);
+      }}
+    >
       <div className="panelHeader">
         <div>
           <h2>Upload Bereich</h2>
@@ -33,20 +78,20 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
 
       <div className="uploadBox">
         <label
-          className="dropzone"
+          className={`dropzone ${isDragging ? "dropzoneActive" : ""}`}
           onDragOver={(event) => {
             event.preventDefault();
             event.dataTransfer.dropEffect = "copy";
           }}
           onDrop={(event) => {
             event.preventDefault();
-            selectFiles(Array.from(event.dataTransfer.files ?? []));
+            handleDroppedFiles(event.dataTransfer.files);
           }}
         >
           <span>
-            <strong>Dateien auswaehlen</strong>
+            <strong>{isDragging ? "Datei loslassen zum Hochladen" : "Dateien auswaehlen"}</strong>
             <br />
-            <span className="muted">Klicken oder Datei hier ablegen. PDF, XLSX, XLS, CSV, PNG oder JPG</span>
+            <span className="muted">Klicken oder irgendwo auf dieser Upload-Karte ablegen. PDF, XLSX, XLS, CSV, PNG oder JPG</span>
           </span>
           <input
             type="file"
@@ -70,7 +115,7 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
           <span className="pill">Dublettenpruefung</span>
           <span className="pill">Quellen je Feld</span>
         </div>
-        <p className="muted uploadHint">Wenn Windows ein Kopierfenster oeffnet, wurde die Datei ausserhalb der Uploadflaeche abgelegt. Bitte direkt in dieses Feld ziehen oder ueber Klick auswaehlen.</p>
+        <p className="muted uploadHint">OneDrive-Dateien funktionieren am stabilsten, wenn sie lokal verfuegbar sind. Ziehe die Datei ins Browserfenster und lasse sie erst los, wenn die Uploadflaeche markiert ist.</p>
 
         <div className="uploadFooter">
           <div>
