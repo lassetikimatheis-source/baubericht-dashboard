@@ -2135,7 +2135,7 @@ export function AnalysisDashboard() {
   }
 
   const pageTitle = getPageTitle(view);
-  const showDocumentEditor = Boolean(selectedDocument) && (view === "projects" || view === "unassigned" || view === "reports" || view === "settings");
+  const showDocumentEditor = Boolean(selectedDocument) && view === "projects";
   const showUploadPanel = view === "upload";
   const showUploadReview = showUploadPanel && Boolean(uploadDocument);
   const visibleNavItems = navItems.filter((item) => {
@@ -6156,7 +6156,13 @@ function DocumentReviewPanel({
                 <input type="checkbox" checked={row.active} disabled={readOnly} onChange={(event) => updateTradeReviewRow(document, row.trade, event.target.checked, row.amount, onUpdate)} />
                 <span>{row.trade}</span>
               </label>
-              <input aria-label={`${row.trade} Kosten`} inputMode="decimal" value={row.amount} disabled={readOnly} placeholder="0,00 EUR" onChange={(event) => updateTradeReviewRow(document, row.trade, row.active || Boolean(event.target.value.trim()), event.target.value, onUpdate)} />
+              <TradeAmountInput
+                trade={row.trade}
+                value={row.amount}
+                active={row.active}
+                disabled={readOnly}
+                onCommit={(value) => updateTradeReviewRow(document, row.trade, row.active || Boolean(value.trim()), value, onUpdate)}
+              />
             </div>
           ))}
         </div>
@@ -6196,6 +6202,38 @@ function ReviewInput({ label, value, disabled, onChange }: { label: string; valu
       <span>{label}</span>
       <input value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onBlur={() => onChange(draft)} />
     </label>
+  );
+}
+
+function TradeAmountInput({
+  trade,
+  value,
+  active,
+  disabled,
+  onCommit
+}: {
+  trade: string;
+  value: string;
+  active: boolean;
+  disabled: boolean;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      aria-label={`${trade} Kosten`}
+      inputMode="decimal"
+      value={draft}
+      disabled={disabled}
+      placeholder="0,00 EUR"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => onCommit(draft)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+      data-active={active ? "true" : "false"}
+    />
   );
 }
 
@@ -8908,6 +8946,7 @@ function setCluster(
 }
 
 const documentReviewTrades = [
+  "Asbest",
   "Malerarbeiten",
   "Bodenbelaege",
   "Sanitaer",
@@ -8987,6 +9026,7 @@ function updateTradeReviewRow(
 
 function reviewTradeFromValue(value: string, description = ""): DocumentReviewTrade {
   const normalized = `${value} ${description}`.toLowerCase();
+  if (/asbest|schadstoff|trgs\s*519|gefahrstoff|pcb|kmf/.test(normalized)) return "Asbest";
   if (/maler|anstrich|tapezier/.test(normalized)) return "Malerarbeiten";
   if (/boden|belag|parkett|vinyl|teppich/.test(normalized)) return "Bodenbelaege";
   if (/sanit|bad|wc|wasser|abwasser/.test(normalized)) return "Sanitaer";
@@ -9000,6 +9040,7 @@ function reviewTradeFromValue(value: string, description = ""): DocumentReviewTr
 
 function reviewTradeToCluster(trade: DocumentReviewTrade): MeasureCluster {
   const mapping: Record<DocumentReviewTrade, MeasureCluster> = {
+    Asbest: "Schadstoffsanierung / Asbest",
     Malerarbeiten: "Malerarbeiten",
     Bodenbelaege: "Bodenbelagsarbeiten",
     Sanitaer: "Sanitär",
