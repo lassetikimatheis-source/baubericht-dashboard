@@ -13,6 +13,10 @@ interface UploadPanelProps {
 export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFilesSelected }: UploadPanelProps) {
   const [files, setFiles] = useState<File[]>([]);
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const selectFiles = (nextFiles: File[]) => {
+    setFiles(nextFiles);
+    onFilesSelected?.(nextFiles);
+  };
 
   return (
     <section className="panel" id="upload">
@@ -28,20 +32,32 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
       </div>
 
       <div className="uploadBox">
-        <label className="dropzone">
+        <label
+          className="dropzone"
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            selectFiles(Array.from(event.dataTransfer.files ?? []));
+          }}
+        >
           <span>
             <strong>Dateien auswaehlen</strong>
             <br />
-            <span className="muted">PDF, XLSX, XLS, CSV, PNG oder JPG</span>
+            <span className="muted">Klicken oder Datei hier ablegen. PDF, XLSX, XLS, CSV, PNG oder JPG</span>
           </span>
           <input
             type="file"
             accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg"
             multiple
+            onClick={(event) => {
+              event.currentTarget.value = "";
+            }}
             onChange={(event) => {
               const nextFiles = Array.from(event.target.files ?? []);
-              setFiles(nextFiles);
-              onFilesSelected?.(nextFiles);
+              selectFiles(nextFiles);
             }}
           />
         </label>
@@ -54,6 +70,7 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
           <span className="pill">Dublettenpruefung</span>
           <span className="pill">Quellen je Feld</span>
         </div>
+        <p className="muted uploadHint">Wenn Windows ein Kopierfenster oeffnet, wurde die Datei ausserhalb der Uploadflaeche abgelegt. Bitte direkt in dieses Feld ziehen oder ueber Klick auswaehlen.</p>
 
         <div className="uploadFooter">
           <div>
