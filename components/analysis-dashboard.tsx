@@ -6153,7 +6153,7 @@ function DocumentReviewPanel({
           {tradeRows.map((row) => (
             <div className="tradeReviewRow" key={row.trade}>
               <label className="tradeCheck">
-                <input type="checkbox" checked={row.active} disabled={readOnly} onChange={(event) => updateTradeReviewRow(document, row.trade, event.target.checked, row.amount, onUpdate)} />
+                <input type="checkbox" checked={row.active} disabled={readOnly} onChange={(event) => updateTradeReviewActive(document, row.trade, event.target.checked, row.amount, onUpdate)} />
                 <span>{row.trade}</span>
               </label>
               <TradeAmountInput
@@ -6161,7 +6161,7 @@ function DocumentReviewPanel({
                 value={row.amount}
                 active={row.active}
                 disabled={readOnly}
-                onCommit={(value) => updateTradeReviewRow(document, row.trade, row.active || Boolean(value.trim()), value, onUpdate)}
+                onCommit={(value) => updateTradeReviewAmount(document, row.trade, value, onUpdate)}
               />
             </div>
           ))}
@@ -9021,6 +9021,50 @@ function updateTradeReviewRow(
       });
     }
     return appendManualChange({ ...current, clusters: nextClusters }, `trade:${trade}`, "", active ? amountValue : "");
+  });
+}
+
+function updateTradeReviewActive(
+  document: ObjectAnalysis,
+  trade: DocumentReviewTrade,
+  active: boolean,
+  amountValue: string,
+  onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void
+) {
+  updateTradeReviewRow(document, trade, active, amountValue, onUpdate);
+}
+
+function updateTradeReviewAmount(
+  document: ObjectAnalysis,
+  trade: DocumentReviewTrade,
+  amountValue: string,
+  onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void
+) {
+  onUpdate(document.id, (current) => {
+    const isActive = current.clusters.some((cluster) =>
+      reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) === trade
+    );
+    if (!isActive && !amountValue.trim()) return current;
+    const nextActive = isActive || Boolean(amountValue.trim());
+    const amount = parseGermanNumber(amountValue);
+    const hasExisting = current.clusters.some((cluster) =>
+      reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) === trade
+    );
+    const nextClusters = current.clusters.map((cluster) => {
+      if (reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) !== trade) return cluster;
+      return { ...cluster, totalCost: manualNumberField(amountValue), cluster: manualField(reviewTradeToCluster(trade)) as ExtractedField<MeasureCluster> };
+    });
+    if (nextActive && !hasExisting) {
+      nextClusters.push({
+        id: `${current.id}-${trade.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}`,
+        cluster: manualField(reviewTradeToCluster(trade)) as ExtractedField<MeasureCluster>,
+        description: manualField(trade),
+        totalCost: amount === null ? emptyField<number>() : manualNumberField(amountValue),
+        allocation: emptyField<CostAllocation>(),
+        sourceDocumentId: current.id
+      });
+    }
+    return appendManualChange({ ...current, clusters: nextClusters }, `trade:${trade}:amount`, "", amountValue);
   });
 }
 
