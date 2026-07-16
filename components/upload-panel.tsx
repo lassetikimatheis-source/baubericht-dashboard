@@ -12,6 +12,7 @@ interface UploadPanelProps {
 
 export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFilesSelected }: UploadPanelProps) {
   const [files, setFiles] = useState<File[]>([]);
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
 
   return (
     <section className="panel" id="upload">
@@ -29,7 +30,7 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
       <div className="uploadBox">
         <label className="dropzone">
           <span>
-            <strong>Dateien auswählen</strong>
+            <strong>Dateien auswaehlen</strong>
             <br />
             <span className="muted">PDF, XLSX, XLS, CSV, PNG oder JPG</span>
           </span>
@@ -46,17 +47,18 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
         </label>
 
         <div className="uploadTypes" aria-label="Erlaubte Dateitypen">
-          <span className="pill">OCR für Scans</span>
+          <span className="pill">OCR fuer Scans</span>
           <span className="pill">PDF Analyse</span>
           <span className="pill">Excel Analyse</span>
           <span className="pill">KI Extraktion</span>
-          <span className="pill">Dublettenprüfung</span>
+          <span className="pill">Dublettenpruefung</span>
           <span className="pill">Quellen je Feld</span>
         </div>
 
         <div className="uploadFooter">
           <div>
-            <strong>{files.length}</strong> Datei(en) ausgewählt
+            <strong>{files.length}</strong> Datei(en) ausgewaehlt
+            {files.length > 0 ? <p className="muted">Gesamtgroesse: {formatFileSize(totalBytes)}</p> : null}
             {message ? <p className="muted">{message}</p> : null}
           </div>
           <button
@@ -77,4 +79,9 @@ export function UploadPanel({ isAnalyzing, message, onAnalyze, onPreview, onFile
       </div>
     </section>
   );
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(bytes / 1024)} KB`;
+  return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(bytes / (1024 * 1024))} MB`;
 }

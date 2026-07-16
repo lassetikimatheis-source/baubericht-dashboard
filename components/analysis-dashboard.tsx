@@ -424,6 +424,8 @@ const emptyFilters: Filters = {
   status: ""
 };
 
+const maxDirectUploadBytes = 4 * 1024 * 1024;
+
 const navItems: Array<{ key: ViewKey; label: string; locked?: boolean }> = [
   { key: "dashboard", label: "Dashboard" },
   { key: "map", label: "Karte" },
@@ -1109,6 +1111,11 @@ export function AnalysisDashboard() {
       setMessage("Deine Rolle erlaubt keine KI-Auswertung.");
       return;
     }
+    const uploadIssue = validateDirectUpload(files);
+    if (uploadIssue) {
+      setMessage(uploadIssue);
+      return;
+    }
     setIsAnalyzing(true);
     setMessage(null);
     setUploadDocument(null);
@@ -1128,10 +1135,13 @@ export function AnalysisDashboard() {
         method: "POST",
         body: formData
       });
-      const data = await response.json();
+      const data = await readApiJson(response);
 
       if (!response.ok || !data.ok) {
         throw new Error(data.message || "Analyse fehlgeschlagen.");
+      }
+      if (!data.analysis) {
+        throw new Error("Analyse fehlgeschlagen: Server hat keine Analysedaten geliefert.");
       }
 
       const mergedDocuments = mergeDocumentsPreferManual(analysis.objects, data.analysis.objects);
@@ -1164,7 +1174,7 @@ export function AnalysisDashboard() {
       setMessage(hasRecognizedUploadValues(nextDraft) ? `${formatNumber(analyzedCount)} Dokument(e) analysiert - bitte Daten prüfen.` : "Analyse abgeschlossen - keine Werte erkannt. Bitte manuell ergänzen.");
     } catch (error) {
       setUploadPhase(files.length > 0 ? "selected" : "idle");
-      setMessage(error instanceof Error ? error.message : "Analyse fehlgeschlagen.");
+      setMessage(formatUploadError(error, files));
     } finally {
       setIsAnalyzing(false);
     }
@@ -1193,21 +1203,30 @@ export function AnalysisDashboard() {
       setMessage("Deine Rolle erlaubt keine Textpruefung.");
       return;
     }
+    const uploadIssue = validateDirectUpload(files);
+    if (uploadIssue) {
+      setMessage(uploadIssue);
+      return;
+    }
     setMessage(null);
     handleFilesSelected(files);
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file));
-    const response = await fetch("/api/parse-preview", {
-      method: "POST",
-      body: formData
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) {
-      setMessage(data.message || "Textvorschau fehlgeschlagen.");
-      return;
+    try {
+      const response = await fetch("/api/parse-preview", {
+        method: "POST",
+        body: formData
+      });
+      const data = await readApiJson(response);
+      if (!response.ok || !data.ok) {
+        setMessage(data.message || "Textvorschau fehlgeschlagen.");
+        return;
+      }
+      setPreviews(data.documents ?? []);
+      setMessage("Textvorschau erstellt.");
+    } catch (error) {
+      setMessage(formatUploadError(error, files));
     }
-    setPreviews(data.documents);
-    setMessage("Textvorschau erstellt.");
   }
 
   async function exportFile(type: "excel" | "pdf") {
@@ -7327,6 +7346,46 @@ function uploadSourceName(files: File[]): string {
   if (files.length === 0) return "";
   if (files.length === 1) return files[0].name;
   return files.map((file) => file.name).join(", ");
+}
+
+function validateDirectUpload(files: File[]): string | null {
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  if (totalBytes <= maxDirectUploadBytes) return null;
+  return `Upload zu gross fuer die direkte Vercel-Analyse (${formatFileSize(totalBytes)}). Bitte Angebot/Rechnung als komprimiertes PDF hochladen oder einzeln unter ${formatFileSize(maxDirectUploadBytes)} testen.`;
+}
+
+async function readApiJson(response: Response): Promise<{ ok?: boolean; message?: string; analysis?: PortfolioAnalysisState; documents?: ParsedPreview[] }> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return {
+      ok: false,
+      message: response.ok ? "Leere Serverantwort." : `Serverfehler ${response.status}.`
+    };
+  }
+  try {
+    return JSON.parse(text) as { ok?: boolean; message?: string; analysis?: PortfolioAnalysisState; documents?: ParsedPreview[] };
+  } catch {
+    return {
+      ok: false,
+      message: response.ok
+        ? "Serverantwort konnte nicht gelesen werden."
+        : `Serverfehler ${response.status}: ${text.slice(0, 180)}`
+    };
+  }
+}
+
+function formatUploadError(error: unknown, files: File[]): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Failed to fetch|NetworkError|Load failed|fetch/i.test(message)) {
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    return `Upload konnte den Server nicht erreichen. Haeufige Ursache: Datei zu gross (${formatFileSize(totalBytes)}) oder Vercel hat die Analyse abgebrochen. Bitte zuerst eine kleinere/komprimierte PDF-Datei testen.`;
+  }
+  return message || "Analyse fehlgeschlagen.";
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 }).format(bytes / 1024)} KB`;
+  return `${new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(bytes / (1024 * 1024))} MB`;
 }
 
 function shouldUseSupabaseDocumentLoad(
