@@ -8,11 +8,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
     "start": "next start",
     "lint": "next lint || true"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@supabase/supabase-js": "^2.108.2",
+    "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
     "jspdf": "^2.5.2",
     "leaflet": "^1.9.4",
@@ -30,6 +35,7 @@
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.23",
     "typescript": "^5.5.3"
