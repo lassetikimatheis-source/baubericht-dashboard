@@ -85,6 +85,19 @@ import {
   type StoredObjectRecord,
   type StoredProjectRecord
 } from "../lib/storage";
+import {
+  deleteNeonDocument,
+  deleteNeonEntrance,
+  deleteNeonObject,
+  deleteNeonProject,
+  loadNeonAppData,
+  saveNeonAssignments,
+  saveNeonDocument,
+  saveNeonEntrance,
+  saveNeonObject,
+  saveNeonObjectImages,
+  saveNeonProject
+} from "../lib/neon-client";
 import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState, SourceDocument } from "../types/analysis";
 
 const ObjectMap = dynamic<{ entries: ObjectMapEntry[]; onOpenObject: (id: string) => void }>(
@@ -626,6 +639,44 @@ export function AnalysisDashboard() {
 
   async function loadSupabaseObjectData() {
     try {
+      const neonData = await loadNeonAppData();
+      setObjects(neonData.objects);
+      setProjects(neonData.projects);
+      setEntrances(neonData.entrances);
+      setAssignments(neonData.assignments);
+      setObjectImages(neonData.objectImages);
+      setAnalysis(neonData.documents.length ? buildAnalysisFromDocuments(neonData.documents, emptyAnalysisState) : emptyAnalysisState);
+      setSelectedObjectId((current) => neonData.objects.some((object) => object.id === current) ? current : neonData.objects[0]?.id ?? null);
+      setSelectedProjectId((current) => neonData.projects.some((project) => project.id === current) ? current : neonData.projects[0]?.id ?? null);
+      setSelectedDocumentId((current) => neonData.documents.some((document) => document.id === current) ? current : neonData.documents[0]?.id ?? null);
+      setSupabaseOnlineStatus({
+        objectCount: neonData.objects.length,
+        documentCount: neonData.documents.length,
+        costItemCount: neonData.documents.reduce((sum, document) => sum + document.clusters.length + (document.measureDetails?.length ?? 0), 0),
+        projectCount: neonData.projects.length,
+        assignmentCount: Object.keys(neonData.assignments).length
+      });
+      setSupabaseDocumentLoadDiagnosis({
+        message: `Neon aktiv: ja. Daten aus Neon geladen. Objects: ${neonData.objects.length}, documents: ${neonData.documents.length}, projects: ${neonData.projects.length}.`,
+        supabaseActive: true,
+        source: "Neon",
+        lastSyncAt: new Date().toISOString(),
+        localDocumentsTotal: 0,
+        supabaseObjectCount: neonData.objects.length,
+        supabaseProjectCount: neonData.projects.length,
+        supabaseDocumentCount: neonData.documents.length,
+        supabaseCostItemCount: neonData.documents.reduce((sum, document) => sum + document.clusters.length + (document.measureDetails?.length ?? 0), 0),
+        appDocumentCount: neonData.documents.length,
+        measureDetailsCount: neonData.documents.reduce((sum, document) => sum + (document.measureDetails?.length ?? 0), 0),
+        clustersCount: neonData.documents.reduce((sum, document) => sum + document.clusters.length, 0)
+      });
+      return;
+    } catch (neonError) {
+      console.error("[Neon] Daten konnten nicht geladen werden:", neonError);
+      setMessage(neonError instanceof Error ? neonError.message : "Neon-Daten konnten nicht geladen werden.");
+    }
+
+    try {
       const localObjects = getObjects();
       const localDocuments = getDocuments();
       const localProjects = getProjects();
@@ -1083,8 +1134,8 @@ export function AnalysisDashboard() {
         throw new Error(data.message || "Analyse fehlgeschlagen.");
       }
 
-      const mergedDocuments = mergeDocumentsPreferManual(getDocuments(), data.analysis.objects);
-      mergedDocuments.forEach(saveDocument);
+      const mergedDocuments = mergeDocumentsPreferManual(analysis.objects, data.analysis.objects);
+      await Promise.all(mergedDocuments.map((document) => saveNeonDocument(document)));
       const currentDocument = data.analysis.objects[0] ?? null;
       const currentSourceDocument = data.analysis.sourceDocuments?.[0] ?? null;
       const nextDraft = uploadDraftFromDocument(currentDocument ?? undefined, uploadSourceName(files));
@@ -1098,28 +1149,16 @@ export function AnalysisDashboard() {
       setSelectedDocumentId(currentDocument?.id ?? null);
       setAssignments((current) => {
         const next = autoAssignDocuments(mergedDocuments, projects, current);
-        saveAssignments(next);
+        saveNeonAssignments(next).catch((error) => {
+          console.error("[Neon] Automatische Zuordnung konnte nicht gespeichert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Neon gespeichert werden.");
+        });
         return next;
       });
       if ((data.analysis.objects ?? []).length > 0) {
-        console.log("[Upload Workflow] Starte automatische Supabase-Synchronisierung nach Analyse", {
-          documentCount: data.analysis.objects.length,
-          documents: data.analysis.objects.map((document: ObjectAnalysis) => ({
-            id: document.id,
-            objectNumber: document.objectNumber.value,
-            documentNumber: document.documentNumber.value,
-            totalCost: document.totalCost.value
-          }))
+        console.log("[Upload Workflow] Dokumente wurden in Neon gespeichert", {
+          documentCount: data.analysis.objects.length
         });
-        importDocumentsAndCostItemsToSupabase(data.analysis.objects)
-          .then((summary) => {
-            console.log("[Upload Workflow] Automatische Supabase-Synchronisierung abgeschlossen", summary);
-            return loadSupabaseObjectData();
-          })
-          .catch((syncError) => {
-            console.error("[Upload Workflow] Automatische Supabase-Synchronisierung fehlgeschlagen", syncError);
-            setMessage(syncError instanceof Error ? `Analyse gespeichert, aber Supabase-Sync fehlgeschlagen: ${syncError.message}` : "Analyse gespeichert, aber Supabase-Sync fehlgeschlagen.");
-          });
       }
       const analyzedCount = (data.analysis.objects ?? []).length;
       setMessage(hasRecognizedUploadValues(nextDraft) ? `${formatNumber(analyzedCount)} Dokument(e) analysiert - bitte Daten prüfen.` : "Analyse abgeschlossen - keine Werte erkannt. Bitte manuell ergänzen.");
@@ -1681,17 +1720,11 @@ export function AnalysisDashboard() {
   async function createObject(seed?: ObjectAnalysis) {
     if (!canEdit) return;
     const draft = objectFromDocument(seed);
-    const object = saveObject(draft);
+    const object = await saveNeonObject(draft);
     setObjects((current) => [...current.filter((entry) => entry.id !== object.id), object]);
     setSelectedObjectId(object.id);
     setView("objects");
-    setMessage("Objekt wurde lokal erstellt.");
-    createSupabaseObject(object).catch((error) => {
-      console.error("[Supabase] Objekt konnte nicht synchronisiert werden:", {
-        error,
-        object
-      });
-    });
+    setMessage("Objekt wurde in Neon erstellt.");
     logActivity({ action: "Objekt erstellt", area: "Objekte", targetType: "object", targetId: object.id, targetLabel: objectLabel(object) }).catch((error) => {
       console.error("[Supabase] Aktivitaet konnte nicht gespeichert werden:", error);
     });
@@ -1700,25 +1733,16 @@ export function AnalysisDashboard() {
   async function saveUploadObject() {
     if (!canEdit) return;
     const draft = uploadDraftToObjectRecord(objectDraft, `object-${Date.now()}`);
-    const object = saveObject(draft);
-    setMessage("Objekt wurde lokal erstellt.");
-    createSupabaseObject(object).catch((error) => {
-      console.error("[Supabase] Objekt konnte nicht synchronisiert werden:", {
-        error,
-        object
-      });
-    });
+    const object = await saveNeonObject(draft);
+    setMessage("Objekt wurde in Neon erstellt.");
     const documentsToAssign = uploadDocuments.length ? uploadDocuments : uploadDocument ? [uploadDocument] : [];
     const createdProjects = await Promise.all(documentsToAssign.map(async (document, index) => {
-      const project = saveProject({
+      const project = await saveNeonProject({
         ...projectFromDocument(document, objects),
         id: `project-${Date.now()}-${index}`,
         objectId: object.id,
         object: objectLabel(object),
         projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
-      });
-      upsertSupabaseProject(project).catch((error) => {
-        console.error("[Supabase] Projekt konnte nicht synchronisiert werden:", error);
       });
       return project;
     }));
@@ -1729,17 +1753,16 @@ export function AnalysisDashboard() {
         const next = { ...current };
         documentsToAssign.forEach((document, index) => {
           next[document.id] = createdProjects[index]?.id ?? null;
-          saveSupabaseAssignment(document.id, createdProjects[index]?.id ?? null).catch((error) => {
-            console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
-            setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
-          });
         });
-        saveAssignments(next);
+        saveNeonAssignments(next).catch((error) => {
+          console.error("[Neon] Zuordnung konnte nicht gespeichert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Neon gespeichert werden.");
+        });
         return next;
       });
-      importDocumentsAndCostItemsToSupabase(documentsToAssign).then(() => loadSupabaseObjectData()).catch((error) => {
-        console.error("[Supabase] Dokumente konnten nicht gespeichert werden:", error);
-        setMessage(error instanceof Error ? error.message : "Dokumente konnten nicht in Supabase gespeichert werden.");
+      Promise.all(documentsToAssign.map((document) => saveNeonDocument(document))).then(() => loadSupabaseObjectData()).catch((error) => {
+        console.error("[Neon] Dokumente konnten nicht gespeichert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Dokumente konnten nicht in Neon gespeichert werden.");
       });
     }
     setSelectedObjectId(object.id);
@@ -1761,15 +1784,12 @@ export function AnalysisDashboard() {
     const object = objects.find((entry) => entry.id === objectId);
     if (!object) return;
     const createdProjects = await Promise.all(documentsToAssign.map(async (document, index) => {
-      const project = saveProject({
+      const project = await saveNeonProject({
         ...projectFromDocument(document, objects),
         id: `project-${Date.now()}-${index}`,
         objectId: object.id,
         object: objectLabel(object),
         projectName: fieldOrUnknown(document.projectSuggestion) !== "k.A." ? fieldOrUnknown(document.projectSuggestion) : `Dokument ${fieldOrUnknown(document.documentNumber)}`
-      });
-      upsertSupabaseProject(project).catch((error) => {
-        console.error("[Supabase] Projekt konnte nicht synchronisiert werden:", error);
       });
       return project;
     }));
@@ -1778,17 +1798,16 @@ export function AnalysisDashboard() {
       const next = { ...current };
       documentsToAssign.forEach((document, index) => {
         next[document.id] = createdProjects[index]?.id ?? null;
-        saveSupabaseAssignment(document.id, createdProjects[index]?.id ?? null).catch((error) => {
-          console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
-          setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
-        });
       });
-      saveAssignments(next);
+      saveNeonAssignments(next).catch((error) => {
+        console.error("[Neon] Zuordnung konnte nicht gespeichert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Neon gespeichert werden.");
+      });
       return next;
     });
-    importDocumentsAndCostItemsToSupabase(documentsToAssign).then(() => loadSupabaseObjectData()).catch((error) => {
-      console.error("[Supabase] Dokumente konnten nicht gespeichert werden:", error);
-      setMessage(error instanceof Error ? error.message : "Dokumente konnten nicht in Supabase gespeichert werden.");
+    Promise.all(documentsToAssign.map((document) => saveNeonDocument(document))).then(() => loadSupabaseObjectData()).catch((error) => {
+      console.error("[Neon] Dokumente konnten nicht gespeichert werden:", error);
+      setMessage(error instanceof Error ? error.message : "Dokumente konnten nicht in Neon gespeichert werden.");
     });
     setSelectedObjectId(object.id);
     setUploadDocument(null);
@@ -1806,36 +1825,36 @@ export function AnalysisDashboard() {
     if (!canEdit) return;
     const currentObject = objects.find((object) => object.id === objectId);
     if (!currentObject) return;
-    const updatedObject = updateStoredObject({ ...currentObject, [field]: value });
+    const updatedObject = { ...currentObject, [field]: value, updatedAt: new Date().toISOString() };
     setObjects((current) => current.map((object) => object.id === objectId ? updatedObject : object));
     logActivity({ action: "Objekt bearbeitet", area: "Objekte", targetType: "object", targetId: objectId, targetLabel: objectLabel(updatedObject), details: { field } });
-    updateSupabaseObject(updatedObject).catch((error) => {
-      console.error("[Supabase] Objekt konnte nicht aktualisiert werden:", error);
-      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Supabase aktualisiert werden.");
+    saveNeonObject(updatedObject).catch((error) => {
+      console.error("[Neon] Objekt konnte nicht aktualisiert werden:", error);
+      setMessage(error instanceof Error ? error.message : "Objekt konnte nicht in Neon aktualisiert werden.");
     });
   }
 
   function deleteObject(objectId: string) {
     if (!canEdit) return;
-    deleteStoredObject(objectId);
-    deleteSupabaseObject(objectId).catch((error) => {
+    deleteNeonObject(objectId).catch((error) => {
       console.error("[Supabase] Objekt konnte nicht gelöscht werden:", error);
       setMessage(error instanceof Error ? error.message : "Objekt konnte nicht aus Supabase gelöscht werden.");
     });
-    entrances.filter((entrance) => entrance.objectId === objectId).forEach((entrance) => deleteStoredEntrance(entrance.id));
     setObjects((current) => current.filter((object) => object.id !== objectId));
     setEntrances((current) => current.filter((entrance) => entrance.objectId !== objectId));
     setProjects((current) => current.map((project) => {
       if (project.objectId !== objectId) return project;
-      return updateStoredProject({ ...project, objectId: "", object: "", entranceId: "", entrance: "" });
+      const updated = { ...project, objectId: "", object: "", entranceId: "", entrance: "", updatedAt: new Date().toISOString() };
+      saveNeonProject(updated).catch((error) => console.error("[Neon] Projekt konnte nach Objektloeschung nicht aktualisiert werden:", error));
+      return updated;
     }));
     setSelectedObjectId(null);
     logActivity({ action: "Objekt geloescht", area: "Objekte", targetType: "object", targetId: objectId });
   }
 
-  function createEntrance(objectId: string) {
+  async function createEntrance(objectId: string) {
     if (!canEdit) return;
-    const entrance = saveEntrance(emptyEntrance(objectId));
+    const entrance = await saveNeonEntrance(emptyEntrance(objectId));
     setEntrances((current) => [...current.filter((entry) => entry.id !== entrance.id), entrance]);
     setObjectTab("entrances");
   }
@@ -1845,51 +1864,50 @@ export function AnalysisDashboard() {
     let updatedEntrance: EntranceRecord | null = null;
     setEntrances((current) => current.map((entrance) => {
       if (entrance.id !== entranceId) return entrance;
-      const updated = updateStoredEntrance({ ...entrance, [field]: value });
+      const updated = { ...entrance, [field]: value, updatedAt: new Date().toISOString() };
       updatedEntrance = updated;
+      saveNeonEntrance(updated).catch((error) => {
+        console.error("[Neon] Hauseingang konnte nicht aktualisiert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Hauseingang konnte nicht in Neon aktualisiert werden.");
+      });
       return updated;
     }));
     if (updatedEntrance) {
       const entranceName = entranceLabel(updatedEntrance);
       setProjects((current) => current.map((project) => {
         if (project.entranceId !== entranceId) return project;
-        return updateStoredProject({ ...project, entrance: entranceName });
+        const updated = { ...project, entrance: entranceName, updatedAt: new Date().toISOString() };
+        saveNeonProject(updated).catch((error) => console.error("[Neon] Projekt konnte nach Hauseingangsaenderung nicht aktualisiert werden:", error));
+        return updated;
       }));
     }
   }
 
   function deleteEntrance(entranceId: string) {
     if (!canEdit) return;
-    deleteStoredEntrance(entranceId);
+    void deleteNeonEntrance(entranceId);
     setEntrances((current) => current.filter((entrance) => entrance.id !== entranceId));
     setProjects((current) => current.map((project) => {
       if (project.entranceId !== entranceId) return project;
-      return updateStoredProject({ ...project, entranceId: "", entrance: "" });
+      const updated = { ...project, entranceId: "", entrance: "", updatedAt: new Date().toISOString() };
+      saveNeonProject(updated).catch((error) => console.error("[Neon] Projekt konnte nach Hauseingangsloeschung nicht aktualisiert werden:", error));
+      return updated;
     }));
   }
 
   async function createProject(seed?: ObjectAnalysis) {
     if (!canEdit) return;
-    let project = projectFromDocument(seed, objects);
-    try {
-      project = await upsertSupabaseProject(project);
-      setMessage("Projekt wurde in Supabase gespeichert.");
-    } catch (error) {
-      console.error("[Supabase] Projekt konnte nicht gespeichert werden:", error);
-      setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase gespeichert werden.");
-      return;
-    }
-    project = saveProject(project);
+    const project = await saveNeonProject(projectFromDocument(seed, objects));
+    setMessage("Projekt wurde in Neon gespeichert.");
     setProjects((current) => [...current.filter((entry) => entry.id !== project.id), project]);
     setSelectedProjectId(project.id);
     setProjectTab("overview");
     if (seed) {
       setAssignments((current) => {
         const next = { ...current, [seed.id]: project.id };
-        saveAssignments(next);
-        saveSupabaseAssignment(seed.id, project.id).catch((error) => {
-          console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
-          setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
+        saveNeonAssignments(next).catch((error) => {
+          console.error("[Neon] Zuordnung konnte nicht gespeichert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Neon gespeichert werden.");
         });
         return next;
       });
@@ -1901,10 +1919,9 @@ export function AnalysisDashboard() {
 
   function deleteProject(projectId: string) {
     if (!canEdit) return;
-    deleteStoredProject(projectId);
-    deleteSupabaseProject(projectId).catch((error) => {
-      console.error("[Supabase] Projekt konnte nicht geloescht werden:", error);
-      setMessage(error instanceof Error ? error.message : "Projekt konnte nicht aus Supabase geloescht werden.");
+    deleteNeonProject(projectId).catch((error) => {
+      console.error("[Neon] Projekt konnte nicht geloescht werden:", error);
+      setMessage(error instanceof Error ? error.message : "Projekt konnte nicht aus Neon geloescht werden.");
     });
     setProjects((current) => current.filter((project) => project.id !== projectId));
     setAssignments((current) => {
@@ -1912,13 +1929,12 @@ export function AnalysisDashboard() {
       Object.keys(next).forEach((documentId) => {
         if (next[documentId] === projectId) {
           next[documentId] = null;
-          saveSupabaseAssignment(documentId, null).catch((error) => {
-            console.error("[Supabase] Zuordnung konnte nicht aktualisiert werden:", error);
-            setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase aktualisiert werden.");
-          });
         }
       });
-      saveAssignments(next);
+      saveNeonAssignments(next).catch((error) => {
+        console.error("[Neon] Zuordnung konnte nicht aktualisiert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Neon aktualisiert werden.");
+      });
       return next;
     });
     setSelectedProjectId(null);
@@ -1933,26 +1949,26 @@ export function AnalysisDashboard() {
         let updatedProject: ProjectRecord;
         if (field === "objectId") {
           const object = objects.find((entry) => entry.id === value);
-          updatedProject = updateStoredProject({ ...project, objectId: value, object: object ? objectLabel(object) : "", entranceId: "", entrance: "" });
-          upsertSupabaseProject(updatedProject).catch((error) => {
-            console.error("[Supabase] Projekt konnte nicht aktualisiert werden:", error);
-            setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase aktualisiert werden.");
+          updatedProject = { ...project, objectId: value, object: object ? objectLabel(object) : "", entranceId: "", entrance: "", updatedAt: new Date().toISOString() };
+          saveNeonProject(updatedProject).catch((error) => {
+            console.error("[Neon] Projekt konnte nicht aktualisiert werden:", error);
+            setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Neon aktualisiert werden.");
           });
           return updatedProject;
         }
         if (field === "entranceId") {
           const entrance = entrances.find((entry) => entry.id === value);
-          updatedProject = updateStoredProject({ ...project, entranceId: value, entrance: entrance ? entranceLabel(entrance) : "" });
-          upsertSupabaseProject(updatedProject).catch((error) => {
-            console.error("[Supabase] Projekt konnte nicht aktualisiert werden:", error);
-            setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase aktualisiert werden.");
+          updatedProject = { ...project, entranceId: value, entrance: entrance ? entranceLabel(entrance) : "", updatedAt: new Date().toISOString() };
+          saveNeonProject(updatedProject).catch((error) => {
+            console.error("[Neon] Projekt konnte nicht aktualisiert werden:", error);
+            setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Neon aktualisiert werden.");
           });
           return updatedProject;
         }
-        updatedProject = updateStoredProject({ ...project, [field]: value });
-        upsertSupabaseProject(updatedProject).catch((error) => {
-          console.error("[Supabase] Projekt konnte nicht aktualisiert werden:", error);
-          setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Supabase aktualisiert werden.");
+        updatedProject = { ...project, [field]: value, updatedAt: new Date().toISOString() };
+        saveNeonProject(updatedProject).catch((error) => {
+          console.error("[Neon] Projekt konnte nicht aktualisiert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Projekt konnte nicht in Neon aktualisiert werden.");
         });
         return updatedProject;
       })
@@ -1962,7 +1978,15 @@ export function AnalysisDashboard() {
   function updateDocument(documentId: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) {
     if (!canEdit) return;
     setAnalysis((current) => {
-      const documents = current.objects.map((document) => document.id === documentId ? updateStoredDocument(updater(document)) : document);
+      const documents = current.objects.map((document) => {
+        if (document.id !== documentId) return document;
+        const updated = updater(document);
+        saveNeonDocument(updated).catch((error) => {
+          console.error("[Neon] Dokument konnte nicht aktualisiert werden:", error);
+          setMessage(error instanceof Error ? error.message : "Dokument konnte nicht in Neon aktualisiert werden.");
+        });
+        return updated;
+      });
       return buildAnalysisFromDocuments(documents, current);
     });
     logActivity({ action: "Kostenposition geaendert", area: "Dokumente", targetType: "document", targetId: documentId });
@@ -1970,19 +1994,14 @@ export function AnalysisDashboard() {
 
   function deleteDocument(documentId: string) {
     if (!canEdit) return;
-    deleteStoredDocument(documentId);
-    deleteSupabaseDocument(documentId).catch((error) => {
-      console.error("[Supabase] Dokument konnte nicht geloescht werden:", error);
-      setMessage(error instanceof Error ? error.message : "Dokument konnte nicht aus Supabase geloescht werden.");
-    });
+    void deleteNeonDocument(documentId);
     setAnalysis((current) => buildAnalysisFromDocuments(current.objects.filter((document) => document.id !== documentId), current));
     setAssignments((current) => {
       const next = { ...current };
       delete next[documentId];
-      saveAssignments(next);
-      deleteSupabaseAssignment(documentId).catch((error) => {
-        console.error("[Supabase] Zuordnung konnte nicht geloescht werden:", error);
-        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht aus Supabase geloescht werden.");
+      saveNeonAssignments(next).catch((error) => {
+        console.error("[Neon] Zuordnung konnte nicht geloescht werden:", error);
+        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht aus Neon geloescht werden.");
       });
       return next;
     });
@@ -1997,7 +2016,12 @@ export function AnalysisDashboard() {
       const imageToRemove = images[imageIndex];
       if (!imageToRemove) return current;
       if (imageToRemove.startsWith("blob:")) URL.revokeObjectURL(imageToRemove);
-      return { ...current, [objectId]: images.filter((_, index) => index !== imageIndex) };
+      const next = { ...current, [objectId]: images.filter((_, index) => index !== imageIndex) };
+      saveNeonObjectImages(next).catch((error) => {
+        console.error("[Neon] Objektbilder konnten nicht gespeichert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Objektbilder konnten nicht in Neon gespeichert werden.");
+      });
+      return next;
     });
   }
 
@@ -2008,7 +2032,12 @@ export function AnalysisDashboard() {
       const nextIndex = imageIndex + direction;
       if (!images[imageIndex] || nextIndex < 0 || nextIndex >= images.length) return current;
       [images[imageIndex], images[nextIndex]] = [images[nextIndex], images[imageIndex]];
-      return { ...current, [objectId]: images };
+      const next = { ...current, [objectId]: images };
+      saveNeonObjectImages(next).catch((error) => {
+        console.error("[Neon] Objektbilder konnten nicht gespeichert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Objektbilder konnten nicht in Neon gespeichert werden.");
+      });
+      return next;
     });
   }
 
@@ -2016,10 +2045,9 @@ export function AnalysisDashboard() {
     if (!canEdit) return;
     setAssignments((current) => {
       const next = { ...current, [documentId]: projectId };
-      saveAssignments(next);
-      saveSupabaseAssignment(documentId, projectId).catch((error) => {
-        console.error("[Supabase] Zuordnung konnte nicht gespeichert werden:", error);
-        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Supabase gespeichert werden.");
+      saveNeonAssignments(next).catch((error) => {
+        console.error("[Neon] Zuordnung konnte nicht gespeichert werden:", error);
+        setMessage(error instanceof Error ? error.message : "Zuordnung konnte nicht in Neon gespeichert werden.");
       });
       return next;
     });
@@ -2073,9 +2101,9 @@ export function AnalysisDashboard() {
         await new Promise((resolve) => window.setTimeout(resolve, 0));
       }
 
-      nextDocuments.forEach(saveDocument);
+      await Promise.all(nextDocuments.map((document) => saveNeonDocument(document)));
       const nextAssignments = autoAssignDocuments(nextDocuments, projects, assignments);
-      saveAssignments(nextAssignments);
+      await saveNeonAssignments(nextAssignments);
       const nextAnalysis = buildAnalysisFromDocuments(nextDocuments, analysis);
       const summary = buildReanalysisSummary({
         backupId: backupResult.id,
@@ -2226,8 +2254,19 @@ export function AnalysisDashboard() {
                 onUpdateEntrance={updateEntrance}
                 onUpdateDocument={updateDocument}
                 onAddObjectImages={(objectId, files) => {
-                  const urls = Array.from(files).map((file) => URL.createObjectURL(file));
-                  setObjectImages((current) => ({ ...current, [objectId]: [...(current[objectId] ?? []), ...urls] }));
+                  Promise.all(Array.from(files).map(readFileAsDataUrl)).then((urls) => {
+                    setObjectImages((current) => {
+                      const next = { ...current, [objectId]: [...(current[objectId] ?? []), ...urls] };
+                      saveNeonObjectImages(next).catch((error) => {
+                        console.error("[Neon] Objektbilder konnten nicht gespeichert werden:", error);
+                        setMessage(error instanceof Error ? error.message : "Objektbilder konnten nicht in Neon gespeichert werden.");
+                      });
+                      return next;
+                    });
+                  }).catch((error) => {
+                    console.error("[Bilder] Dateien konnten nicht gelesen werden:", error);
+                    setMessage(error instanceof Error ? error.message : "Objektbilder konnten nicht gelesen werden.");
+                  });
                 }}
                 onRemoveObjectImage={removeObjectImage}
                 onMoveObjectImage={moveObjectImage}
@@ -6663,6 +6702,17 @@ function Kpi({ label, value, accent, warning }: { label: string; value: string; 
       <strong>{value}</strong>
     </article>
   );
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Bild konnte nicht gelesen werden."));
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Bild konnte nicht gelesen werden.")));
+    reader.readAsDataURL(file);
+  });
 }
 
 function objectFromDocument(document?: ObjectAnalysis): ObjectRecord {
