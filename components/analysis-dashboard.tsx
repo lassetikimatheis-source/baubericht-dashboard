@@ -7378,7 +7378,10 @@ function formatUploadError(error: unknown, files: File[]): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/Failed to fetch|NetworkError|Load failed|fetch/i.test(message)) {
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-    return `Upload konnte den Server nicht erreichen. Haeufige Ursache: Datei zu gross (${formatFileSize(totalBytes)}) oder Vercel hat die Analyse abgebrochen. Bitte zuerst eine kleinere/komprimierte PDF-Datei testen.`;
+    if (totalBytes > maxDirectUploadBytes) {
+      return `Upload konnte den Server nicht erreichen. Die ausgewaehlten Dateien sind fuer den direkten Upload wahrscheinlich zu gross (${formatFileSize(totalBytes)}). Bitte komprimieren oder einzeln testen.`;
+    }
+    return `Upload konnte den Server nicht erreichen, obwohl die Datei nur ${formatFileSize(totalBytes)} gross ist. Wahrscheinlich wurde die Serveranalyse durch Timeout/OCR/KI abgebrochen. Bitte nach dem naechsten Deployment erneut testen.`;
   }
   return message || "Analyse fehlgeschlagen.";
 }

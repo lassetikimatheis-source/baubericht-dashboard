@@ -3,7 +3,7 @@ import { parseUploadedFiles } from "../../../lib/server/document-ingestion";
 import { extractPortfolioData } from "../../../lib/server/ai-extraction";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {

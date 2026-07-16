@@ -151,7 +151,11 @@ export async function extractPortfolioData(
 async function runOpenAiExtractionPerDocument(
   documents: ParsedDocument[]
 ): Promise<Array<{ document: ParsedDocument; result: AiExtractionResult }>> {
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    maxRetries: 0,
+    timeout: Number(process.env.OPENAI_TIMEOUT_MS ?? 25000)
+  });
   const results: Array<{ document: ParsedDocument; result: AiExtractionResult }> = [];
 
   for (const document of documents) {
