@@ -425,8 +425,8 @@ const emptyFilters: Filters = {
 };
 
 const navItems: Array<{ key: ViewKey; label: string; locked?: boolean }> = [
-  { key: "dashboard", label: "Dashboard", locked: true },
-  { key: "map", label: "Karte", locked: true },
+  { key: "dashboard", label: "Dashboard" },
+  { key: "map", label: "Karte" },
   { key: "objects", label: "Objekte" },
   { key: "upload", label: "Dokumente" },
   { key: "reports", label: "Auswertungen" },
@@ -2206,22 +2206,21 @@ export function AnalysisDashboard() {
           <DashboardView
             kpis={kpis}
             objects={objects}
-            entrances={entrances}
             projects={projects}
             documents={filteredDocuments}
             allDocuments={analysis.objects}
             assignments={assignments}
-            overviewGroup={overviewGroup}
-            selectedDocument={selectedDocument}
-            filters={filters}
-            setFilters={setFilters}
-            onSetOverviewGroup={setOverviewGroup}
+            objectImages={objectImages}
             onSelectDocument={setSelectedDocumentId}
             onOpenObject={(objectId) => {
               openObjectDetail(objectId);
             }}
-            onOpenProjects={() => setView("projects")}
             onOpenObjects={() => setView("objects")}
+            onOpenUpload={() => setView("upload")}
+            onOpenReview={() => setView("unassigned")}
+            onCreateObject={() => createObject()}
+            onReanalyze={reanalyzeAllObjects}
+            onExportReport={exportOverallPdf}
           />
         ) : (
           <section className={`${showDocumentEditor || showUploadPanel ? "workspaceGrid" : "workspaceGrid workspaceGridFull"}${showDocumentEditor || showUploadReview ? " documentAnalysisGrid" : ""}`}>
@@ -2282,6 +2281,7 @@ export function AnalysisDashboard() {
                 projects={projects}
                 documents={filteredDocuments}
                 assignments={assignments}
+                objectImages={objectImages}
                 onOpenObject={(objectId) => {
                   openObjectDetail(objectId);
                 }}
@@ -2422,111 +2422,177 @@ export function AnalysisDashboard() {
 function DashboardView({
   kpis,
   objects,
-  entrances,
   projects,
   documents,
   allDocuments,
   assignments,
-  overviewGroup,
-  selectedDocument,
-  filters,
-  setFilters,
-  onSetOverviewGroup,
+  objectImages,
   onSelectDocument,
   onOpenObject,
-  onOpenProjects,
-  onOpenObjects
+  onOpenObjects,
+  onOpenUpload,
+  onOpenReview,
+  onCreateObject,
+  onReanalyze,
+  onExportReport
 }: {
   kpis: KpiShape;
   objects: ObjectRecord[];
-  entrances: EntranceRecord[];
   projects: ProjectRecord[];
   documents: ObjectAnalysis[];
   allDocuments: ObjectAnalysis[];
   assignments: Record<string, string | null>;
-  overviewGroup: OverviewGroup;
-  selectedDocument: ObjectAnalysis | null;
-  filters: Filters;
-  setFilters: (value: Filters) => void;
-  onSetOverviewGroup: (value: OverviewGroup) => void;
+  objectImages: Record<string, string[]>;
   onSelectDocument: (id: string) => void;
   onOpenObject: (id: string) => void;
-  onOpenProjects: () => void;
   onOpenObjects: () => void;
+  onOpenUpload: () => void;
+  onOpenReview: () => void;
+  onCreateObject: () => void;
+  onReanalyze: () => void;
+  onExportReport: () => void;
 }) {
-  const hasActiveFilters = hasFilters(filters);
-  const dashboardObjects = hasActiveFilters
-    ? objects.filter((object) => documents.some((document) => documentBelongsToObject(document, object, projects, assignments)))
-    : objects;
-  const dashboardProjects = hasActiveFilters
-    ? projects.filter((project) => documents.some((document) => assignments[document.id] === project.id))
-    : projects;
+  const [objectFilter, setObjectFilter] = useState("");
+  const [periodFilter, setPeriodFilter] = useState("");
+  const [tradeFilter, setTradeFilter] = useState("");
+  const [tableQuery, setTableQuery] = useState("");
+  const [sortKey, setSortKey] = useState<PortfolioSortKey>("priority");
+  const rows = buildPortfolioObjectRows(objects, projects, documents, assignments, objectImages);
+  const filteredRows = filterPortfolioRows(rows, objectFilter, periodFilter, tradeFilter);
+  const filteredDocuments = filteredRows.flatMap((row) => row.documents);
+  const portfolioKpis = buildPortfolioKpis(kpis, filteredRows, filteredDocuments);
+  const actionItems = buildPortfolioActionItems(filteredRows, allDocuments, projects, assignments, onOpenObject, onSelectDocument, onOpenReview);
+  const activities = buildRecentActivities(objects, projects, allDocuments, assignments, onOpenObject, onSelectDocument);
+  const costRows = buildPortfolioCostRows(filteredRows, filteredDocuments);
+  const tradeRows = buildPortfolioTradeRows(filteredDocuments);
+  const tableRows = sortPortfolioRows(
+    filteredRows.filter((row) => `${row.objectNumber} ${row.address} ${row.statusLabel} ${row.topIssue}`.toLowerCase().includes(tableQuery.toLowerCase())),
+    sortKey
+  );
+  const dataStatus = latestDataStatus([...objects.map((object) => object.updatedAt), ...projects.map((project) => project.updatedAt)]);
 
   return (
     <section className="portfolioDashboard">
-      <div className="dashboardToolbar">
+      <div className="portfolioHero">
         <div>
-          <h2>UEBERSICHT</h2>
-          <p>Portfolio Baukosten und Dokumentanalyse</p>
+          <p className="eyebrow">Portfolio</p>
+          <h2>Portfolioübersicht</h2>
+          <p>{dataStatus}</p>
         </div>
-        <div className="headerActions">
-          <label className="periodSelect">
-            <span>Zeitraum</span>
-            <select value={filters.year} onChange={(event) => setFilters({ ...filters, year: event.target.value })}>
-              <option value="">Alle Jahre</option>
-              <option value="2024">2024</option>
-              <option value="2025">2025</option>
-              <option value="2026">2026</option>
-            </select>
-          </label>
-          <button type="button" onClick={onOpenProjects}>Projekte</button>
-          <button type="button" onClick={onOpenObjects}>Objekte</button>
-        </div>
+        <button type="button" onClick={onOpenObjects}>Objekte öffnen</button>
       </div>
 
-      <KpiGrid kpis={kpis} />
-
-      <DashboardFilterPanel
-        filters={filters}
-        setFilters={setFilters}
-        documents={allDocuments}
-        filteredCount={documents.length}
-        projects={projects}
-        assignments={assignments}
-      />
-
-      <section className="mapObjectGrid dashboardMapGrid">
-        <PortfolioMap
-          objects={dashboardObjects}
-          projects={dashboardProjects}
-          documents={documents}
-          assignments={assignments}
-          selectedDocument={selectedDocument}
-          onSelectDocument={onSelectDocument}
-          onOpenObject={onOpenObject}
-        />
-        <ObjectSideList
-          objects={dashboardObjects}
-          projects={dashboardProjects}
-          documents={documents}
-          assignments={assignments}
-          selectedDocument={selectedDocument}
-          onSelectDocument={onSelectDocument}
-          onOpenObject={onOpenObject}
-        />
+      <section className="portfolioKpiGrid" aria-label="Kennzahlen">
+        {portfolioKpis.map((item) => (
+          <article key={item.label} className={`portfolioKpiCard ${item.tone ? `portfolioKpi${item.tone}` : ""}`}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            {item.detail ? <small>{item.detail}</small> : null}
+          </article>
+        ))}
       </section>
 
-      <PortfolioOverviewTable
-        group={overviewGroup}
-        objects={dashboardObjects}
-        entrances={entrances}
-        projects={dashboardProjects}
+      <section className="portfolioSection">
+        <div className="portfolioSectionHeader">
+          <div>
+            <h3>Handlungsbedarf</h3>
+            <p>Auffällige Objekte und Dokumente, nach Dringlichkeit sortiert.</p>
+          </div>
+          <span>{actionItems.length} offen</span>
+        </div>
+        <div className="portfolioActionList">
+          {actionItems.length === 0 ? <p className="portfolioEmpty">Keine offenen Prüfungen aus den vorhandenen Daten erkennbar.</p> : null}
+          {actionItems.slice(0, 6).map((item) => (
+            <button key={item.id} type="button" className={`portfolioActionItem severity-${item.severity}`} onClick={item.onClick}>
+              <span>{item.label}</span>
+              <strong>{item.title}</strong>
+              <small>{item.detail}</small>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <PortfolioMap
+        objects={objects}
+        projects={projects}
         documents={documents}
         assignments={assignments}
-        selectedDocumentId={selectedDocument?.id ?? null}
-        onSetGroup={onSetOverviewGroup}
-        onSelectDocument={onSelectDocument}
+        objectImages={objectImages}
+        onOpenObject={onOpenObject}
       />
+
+      <section className="portfolioSection">
+        <div className="portfolioSectionHeader">
+          <div>
+            <h3>Kostenentwicklung</h3>
+            <p>Filter wirken auf Diagramme, Kennzahlen und Objektliste.</p>
+          </div>
+        </div>
+        <div className="portfolioFilterBar">
+          <label>
+            <span>Objekt</span>
+            <select value={objectFilter} onChange={(event) => setObjectFilter(event.target.value)}>
+              <option value="">Alle Objekte</option>
+              {rows.map((row) => <option key={row.object.id} value={row.object.id}>{row.objectNumber} - {row.address}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Zeitraum</span>
+            <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}>
+              <option value="">Alle Jahre</option>
+              {uniqueOptions(documents.map((document) => String(document.year.value ?? ""))).map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Gewerk</span>
+            <select value={tradeFilter} onChange={(event) => setTradeFilter(event.target.value)}>
+              <option value="">Alle Gewerke</option>
+              {portfolioTradeCatalog.map((trade) => <option key={trade} value={trade}>{displayTradeName(trade)}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="portfolioChartGrid">
+          <PortfolioCostChart data={costRows} />
+          <PortfolioTradeChart data={tradeRows} selectedTrade={tradeFilter} onSelectTrade={setTradeFilter} />
+        </div>
+      </section>
+
+      <PortfolioObjectOverview rows={tableRows} query={tableQuery} sortKey={sortKey} onQuery={setTableQuery} onSort={setSortKey} onOpenObject={onOpenObject} />
+
+      <section className="portfolioSection">
+        <div className="portfolioSectionHeader">
+          <div>
+            <h3>Zuletzt bearbeitet</h3>
+            <p>Aus Objekt-, Projekt- und Dokumentdaten abgeleitet.</p>
+          </div>
+        </div>
+        <div className="portfolioActivityList">
+          {activities.length === 0 ? <p className="portfolioEmpty">Noch keine Aktivitäten vorhanden.</p> : null}
+          {activities.slice(0, 8).map((activity) => (
+            <button key={activity.id} type="button" onClick={activity.onClick}>
+              <span>{activity.date}</span>
+              <strong>{activity.title}</strong>
+              <small>{activity.detail}</small>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="portfolioSection">
+        <div className="portfolioSectionHeader">
+          <div>
+            <h3>Schnellaktionen</h3>
+            <p>Bestehende Arbeitsbereiche direkt öffnen.</p>
+          </div>
+        </div>
+        <div className="portfolioQuickActions">
+          <button type="button" onClick={onOpenUpload}>Dokument hochladen</button>
+          <button type="button" onClick={onCreateObject}>Neues Objekt anlegen</button>
+          <button type="button" onClick={onOpenReview}>Dokumente prüfen</button>
+          <button type="button" onClick={onReanalyze}>Portfolio neu auswerten</button>
+          <button type="button" onClick={onExportReport}>Gesamtreport erstellen</button>
+        </div>
+      </section>
     </section>
   );
 }
@@ -2576,12 +2642,14 @@ function MapView({
   projects,
   documents,
   assignments,
+  objectImages,
   onOpenObject
 }: {
   objects: ObjectRecord[];
   projects: ProjectRecord[];
   documents: ObjectAnalysis[];
   assignments: Record<string, string | null>;
+  objectImages: Record<string, string[]>;
   onOpenObject: (id: string) => void;
 }) {
   return (
@@ -2593,26 +2661,14 @@ function MapView({
           <p>Die Karte zeigt nur Objekte mit gepflegten Koordinaten. Latitude und Longitude bearbeitest du direkt im Objektformular.</p>
         </div>
       </div>
-      <section className="mapObjectGrid">
-        <PortfolioMap
-          objects={objects}
-          projects={projects}
-          documents={documents}
-          assignments={assignments}
-          selectedDocument={null}
-          onSelectDocument={() => undefined}
-          onOpenObject={onOpenObject}
-        />
-        <ObjectSideList
-          objects={objects}
-          projects={projects}
-          documents={documents}
-          assignments={assignments}
-          selectedDocument={null}
-          onSelectDocument={() => undefined}
-          onOpenObject={onOpenObject}
-        />
-      </section>
+      <PortfolioMap
+        objects={objects}
+        projects={projects}
+        documents={documents}
+        assignments={assignments}
+        objectImages={objectImages}
+        onOpenObject={onOpenObject}
+      />
     </section>
   );
 }
@@ -2622,88 +2678,65 @@ function PortfolioMap({
   projects,
   documents,
   assignments,
-  selectedDocument,
-  onSelectDocument,
+  objectImages,
   onOpenObject
 }: {
   objects: ObjectRecord[];
   projects: ProjectRecord[];
   documents: ObjectAnalysis[];
   assignments: Record<string, string | null>;
-  selectedDocument: ObjectAnalysis | null;
-  onSelectDocument: (id: string) => void;
+  objectImages: Record<string, string[]>;
   onOpenObject: (id: string) => void;
 }) {
+  const rows = buildPortfolioObjectRows(objects, projects, documents, assignments, objectImages);
   const entries = buildMapEntries(objects, projects, documents, assignments);
   const [query, setQuery] = useState("");
-  const [geocodedCoordinates, setGeocodedCoordinates] = useState<Record<string, { latitude: number; longitude: number }>>({});
-  const [geocodeStatus, setGeocodeStatus] = useState<Record<string, "loading" | "found" | "missing">>({});
   const filteredEntries = entries.filter((entry) =>
     `${entry.title} ${entry.fund} ${entry.address}`.toLowerCase().includes(query.toLowerCase())
   );
-  useEffect(() => {
-    const unresolved = filteredEntries.filter((entry) =>
-      entry.latitude === null &&
-      entry.longitude === null &&
-      entry.address &&
-      entry.address !== "k.A." &&
-      !geocodedCoordinates[entry.key] &&
-      geocodeStatus[entry.key] !== "loading" &&
-      geocodeStatus[entry.key] !== "missing"
-    );
-
-    unresolved.slice(0, 5).forEach((entry) => {
-      setGeocodeStatus((current) => ({ ...current, [entry.key]: "loading" }));
-      fetch(`/api/geocode?address=${encodeURIComponent(entry.address)}`)
-        .then((response) => response.json())
-        .then((data) => {
-          if (!data.ok || typeof data.latitude !== "number" || typeof data.longitude !== "number") {
-            setGeocodeStatus((current) => ({ ...current, [entry.key]: "missing" }));
-            return;
-          }
-          setGeocodedCoordinates((current) => ({
-            ...current,
-            [entry.key]: { latitude: data.latitude, longitude: data.longitude }
-          }));
-          setGeocodeStatus((current) => ({ ...current, [entry.key]: "found" }));
-        })
-        .catch(() => setGeocodeStatus((current) => ({ ...current, [entry.key]: "missing" })));
-    });
-  }, [filteredEntries, geocodedCoordinates, geocodeStatus]);
-
   const mappedEntries = filteredEntries.filter((entry) =>
-    (entry.latitude !== null && entry.longitude !== null) || Boolean(geocodedCoordinates[entry.key])
+    entry.latitude !== null && entry.longitude !== null
   );
-  const objectMapEntries: ObjectMapEntry[] = mappedEntries.map((entry) => ({
-    key: entry.key,
-    objectId: entry.objectId,
-    title: entry.title,
-    objectNumber: entry.objectNumber,
-    address: entry.address,
-    fund: entry.fund,
-    projectCount: entry.projectCount,
-    documentCount: entry.documents.length,
-    totalCost: entry.totalCost,
-    latitude: entry.latitude ?? geocodedCoordinates[entry.key]?.latitude ?? 0,
-    longitude: entry.longitude ?? geocodedCoordinates[entry.key]?.longitude ?? 0
-  }));
+  const objectMapEntries: ObjectMapEntry[] = mappedEntries.map((entry) => {
+    const row = rows.find((candidate) => candidate.object.id === entry.objectId);
+    return {
+      key: entry.key,
+      objectId: entry.objectId,
+      title: entry.title,
+      objectNumber: entry.objectNumber,
+      address: entry.address,
+      fund: entry.fund,
+      projectCount: entry.projectCount,
+      documentCount: entry.documents.length,
+      totalCost: row?.actualCost ?? entry.totalCost,
+      latitude: entry.latitude ?? 0,
+      longitude: entry.longitude ?? 0,
+      status: row?.status ?? "attention",
+      statusLabel: row?.statusLabel ?? "Koordinaten geprüft",
+      budget: row?.budget ?? null,
+      budgetDeviation: row?.deviation ?? null,
+      budgetDeviationPercent: row?.deviationPercent ?? null,
+      progress: row?.progress ?? 0,
+      openIssues: row?.issues.length ?? 0,
+      topIssue: row?.topIssue ?? "Keine Objektkennzahlen vorhanden",
+      unitCount: row?.unitCount ?? "k.A.",
+      imageUrl: row?.imageUrl ?? null
+    };
+  });
   const missingCount = filteredEntries.length - mappedEntries.length;
-  const loadingCount = Object.values(geocodeStatus).filter((status) => status === "loading").length;
   return (
     <section className="portfolioMap panel">
       <div className="mapSearchBar">
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Objekt oder Adresse suchen..." />
         <span>
-          {loadingCount > 0
-            ? "Adressen werden markiert..."
-            : missingCount > 0
-              ? `${missingCount} Objekt(e): Adresse/Koordinaten nicht gefunden`
-              : "Alle Objekte markiert"}
+          {missingCount > 0
+            ? `${missingCount} Objekt(e): gespeicherte Koordinaten fehlen`
+            : "Alle Objekte mit Koordinaten markiert"}
         </span>
       </div>
       <div className="leafletCard">
         {objectMapEntries.length === 0 ? (
-          <div className="mapEmpty">Koordinaten fehlen. Bitte latitude und longitude im Objektformular ergaenzen.</div>
+          <div className="mapEmpty">Keine Objekte mit Koordinaten vorhanden. Adressen werden nur bei fehlenden gespeicherten Koordinaten einmalig über den bestehenden Geocode-Endpunkt geprüft.</div>
         ) : (
           <ObjectMap
             entries={objectMapEntries}
@@ -2863,6 +2896,287 @@ function InfoLine({ label, value }: { label: string; value: string }) {
 }
 
 const chartPalette = ["#466389", "#6E8CB0", "#92A9C4", "#FF6E42", "#8AB17D", "#D9A441", "#7A8590", "#A6B2BF"];
+const portfolioTradeCatalog = [
+  "Heizung und Sanitär",
+  "Elektroarbeiten",
+  "Malerarbeiten",
+  "Bodenbelagsarbeiten",
+  "Schadstoffsanierung / Asbest",
+  "Rückbau / Entsorgung",
+  "Fliesen und Estricharbeiten",
+  "Tischlerarbeiten",
+  "Reinigung",
+  "Sonstige"
+];
+
+type PortfolioStatus = "ok" | "attention" | "overBudget" | "done";
+type PortfolioSortKey = "priority" | "objectNumber" | "actualCost" | "deviation" | "progress";
+
+interface PortfolioObjectRow {
+  object: ObjectRecord;
+  objectNumber: string;
+  address: string;
+  documents: ObjectAnalysis[];
+  projects: ProjectRecord[];
+  budget: number | null;
+  actualCost: number | null;
+  deviation: number | null;
+  deviationPercent: number | null;
+  progress: number;
+  status: PortfolioStatus;
+  statusLabel: string;
+  issues: string[];
+  topIssue: string;
+  unitCount: string;
+  imageUrl: string | null;
+}
+
+interface PortfolioActionItem {
+  id: string;
+  severity: "high" | "medium" | "low";
+  label: string;
+  title: string;
+  detail: string;
+  onClick: () => void;
+}
+
+function buildPortfolioObjectRows(
+  objects: ObjectRecord[],
+  projects: ProjectRecord[],
+  documents: ObjectAnalysis[],
+  assignments: Record<string, string | null>,
+  objectImages: Record<string, string[]>
+): PortfolioObjectRow[] {
+  return objects.map((object) => {
+    const objectDocuments = documents.filter((document) => documentBelongsToObject(document, object, projects, assignments));
+    const objectProjects = projects.filter((project) => project.objectId === object.id);
+    const budget = sumValues(objectProjects.map((project) => parseGermanNumber(project.budgetGross || project.budgetNet)));
+    const actualCost = sumValues(objectDocuments.map((document) => document.totalCost.value));
+    const deviation = budget !== null && actualCost !== null ? roundMoney(actualCost - budget) : null;
+    const deviationPercent = budget && deviation !== null ? roundMoney((deviation / budget) * 100) : null;
+    const progress = calculatePortfolioProgress(objectDocuments);
+    const issues = collectPortfolioIssues(objectDocuments, budget, actualCost, deviation);
+    const status = progress >= 100 && issues.length === 0 ? "done" : deviation !== null && deviation > 0 ? "overBudget" : issues.length > 0 ? "attention" : "ok";
+    return {
+      object,
+      objectNumber: object.objectNumber || "k.A.",
+      address: formatPortfolioAddress(object),
+      documents: objectDocuments,
+      projects: objectProjects,
+      budget,
+      actualCost,
+      deviation,
+      deviationPercent,
+      progress,
+      status,
+      statusLabel: portfolioStatusLabel(status),
+      issues,
+      topIssue: issues[0] ?? "Kein akuter Handlungsbedarf",
+      unitCount: object.unitCount || "k.A.",
+      imageUrl: objectImages[object.id]?.[0] ?? null
+    };
+  });
+}
+
+function calculatePortfolioProgress(documents: ObjectAnalysis[]): number {
+  if (documents.length === 0) return 0;
+  if (documents.some(isFinalInvoiceDocument)) return 100;
+  if (documents.some(isInvoiceLikeDocument)) return 70;
+  if (documents.some(isOrderDocument)) return 45;
+  if (documents.some(isOfferDocument)) return 25;
+  return 10;
+}
+
+function collectPortfolioIssues(documents: ObjectAnalysis[], budget: number | null, actualCost: number | null, deviation: number | null): string[] {
+  const issues: string[] = [];
+  if (documents.length === 0) issues.push("Keine Dokumente zugeordnet");
+  if (deviation !== null && deviation > 0) issues.push(`Budgetüberschreitung ${formatNullableCurrency(deviation)}`);
+  if (documents.some((document) => countUnknownFields([document]) > 3 || /prüfung|pruefung|unsicher|manuell/i.test(formatKiStatus(document)))) {
+    issues.push("KI-Auswertung prüfen");
+  }
+  const offerTotal = sumValues(documents.filter(isOfferDocument).map((document) => document.totalCost.value));
+  const finalTotal = finalGrossCost(documents);
+  if (offerTotal && finalTotal && Math.abs(finalTotal - offerTotal) / offerTotal > 0.2) {
+    issues.push("Starke Abweichung Angebot zu Rechnung");
+  }
+  if (budget === null && actualCost !== null) issues.push("Budget fehlt");
+  return issues;
+}
+
+function portfolioStatusLabel(status: PortfolioStatus): string {
+  if (status === "done") return "Sanierung abgeschlossen";
+  if (status === "overBudget") return "Budgetüberschreitung";
+  if (status === "attention") return "Handlungsbedarf";
+  return "Planmäßig";
+}
+
+function formatPortfolioAddress(object: ObjectRecord): string {
+  const cityLine = [object.postalCode, object.city].filter(Boolean).join(" ").trim();
+  return [object.address, cityLine].filter(Boolean).join(", ") || objectLabel(object) || "k.A.";
+}
+
+function filterPortfolioRows(rows: PortfolioObjectRow[], objectId: string, year: string, trade: string): PortfolioObjectRow[] {
+  return rows
+    .filter((row) => !objectId || row.object.id === objectId)
+    .map((row) => {
+      const documents = row.documents.filter((document) =>
+        (!year || String(document.year.value ?? "") === year) &&
+        (!trade || documentMatchesTrade(document, trade))
+      );
+      if (!year && !trade) return row;
+      const actualCost = sumValues(documents.map((document) => document.totalCost.value));
+      const deviation = row.budget !== null && actualCost !== null ? roundMoney(actualCost - row.budget) : null;
+      return { ...row, documents, actualCost, deviation, deviationPercent: row.budget && deviation !== null ? roundMoney((deviation / row.budget) * 100) : null };
+    });
+}
+
+function buildPortfolioKpis(kpis: KpiShape, rows: PortfolioObjectRow[], documents: ObjectAnalysis[]) {
+  const budget = sumValues(rows.map((row) => row.budget));
+  const actual = sumValues(rows.map((row) => row.actualCost));
+  const deviation = budget !== null && actual !== null ? roundMoney(actual - budget) : null;
+  const deviationPercent = budget && deviation !== null ? roundMoney((deviation / budget) * 100) : null;
+  const openReviews = rows.reduce((sum, row) => sum + row.issues.length, 0) + documents.filter((document) => !documentAssignedToObject(document, rows)).length;
+  return [
+    { label: "Objekte", value: formatNumber(rows.length), detail: `${formatNumber(kpis.projects)} Projekte` },
+    { label: "Dokumente", value: formatNumber(documents.length), detail: "aus echten Analysen" },
+    { label: "Gesamtkosten", value: formatNullableCurrency(actual), detail: "Brutto" },
+    { label: "Budgetabweichung", value: formatNullableCurrency(deviation), detail: deviationPercent === null ? "Budget k.A." : `${formatNumber(deviationPercent)} %`, tone: deviation === null ? undefined : deviation > 0 ? "Negative" : "Positive" },
+    { label: "Offene Prüfungen", value: formatNumber(openReviews), detail: "Objekte und Dokumente", tone: openReviews > 0 ? "Negative" : "Positive" }
+  ];
+}
+
+function documentAssignedToObject(document: ObjectAnalysis, rows: PortfolioObjectRow[]): boolean {
+  return rows.some((row) => row.documents.some((entry) => entry.id === document.id));
+}
+
+function buildPortfolioActionItems(
+  rows: PortfolioObjectRow[],
+  documents: ObjectAnalysis[],
+  projects: ProjectRecord[],
+  assignments: Record<string, string | null>,
+  onOpenObject: (id: string) => void,
+  onSelectDocument: (id: string) => void,
+  onOpenReview: () => void
+): PortfolioActionItem[] {
+  const items: PortfolioActionItem[] = [];
+  rows.forEach((row) => {
+    row.issues.forEach((issue, index) => items.push({
+      id: `${row.object.id}-${index}`,
+      severity: row.status === "overBudget" ? "high" : "medium",
+      label: row.objectNumber,
+      title: issue,
+      detail: row.address,
+      onClick: () => onOpenObject(row.object.id)
+    }));
+  });
+  documents
+    .filter((document) => !projects.some((project) => project.id === assignments[document.id]))
+    .forEach((document) => items.push({
+      id: `unassigned-${document.id}`,
+      severity: "high",
+      label: "Dokument",
+      title: "Dokument ohne Objektzuordnung",
+      detail: fieldOrUnknown(document.documentNumber) !== "k.A." ? fieldOrUnknown(document.documentNumber) : fieldOrUnknown(document.provider),
+      onClick: () => {
+        onSelectDocument(document.id);
+        onOpenReview();
+      }
+    }));
+  return items.sort((left, right) => severityWeight(right.severity) - severityWeight(left.severity));
+}
+
+function severityWeight(value: PortfolioActionItem["severity"]): number {
+  return value === "high" ? 3 : value === "medium" ? 2 : 1;
+}
+
+function buildPortfolioCostRows(rows: PortfolioObjectRow[], documents: ObjectAnalysis[]) {
+  return [
+    { label: "Budget", value: sumValues(rows.map((row) => row.budget)) ?? 0 },
+    { label: "Beauftragt", value: sumValues(documents.filter((document) => isOfferDocument(document) || isOrderDocument(document)).map((document) => document.totalCost.value)) ?? 0 },
+    { label: "Abgerechnet", value: sumValues(documents.filter(isInvoiceLikeDocument).map((document) => document.totalCost.value)) ?? 0 },
+    { label: "Bezahlt", value: 0 }
+  ];
+}
+
+function buildPortfolioTradeRows(documents: ObjectAnalysis[]) {
+  const rows = new Map<string, number>();
+  documents.forEach((document) => {
+    document.clusters.forEach((cluster) => {
+      const trade = normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description));
+      const value = reliableClusterCost(document, cluster);
+      if (value !== null) rows.set(trade, roundMoney((rows.get(trade) ?? 0) + value));
+    });
+  });
+  return portfolioTradeCatalog.map((trade) => ({ trade: displayTradeName(trade), rawTrade: trade, cost: rows.get(trade) ?? 0 }));
+}
+
+function sortPortfolioRows(rows: PortfolioObjectRow[], sortKey: PortfolioSortKey): PortfolioObjectRow[] {
+  return [...rows].sort((left, right) => {
+    if (sortKey === "priority") return statusWeight(right) - statusWeight(left);
+    if (sortKey === "objectNumber") return left.objectNumber.localeCompare(right.objectNumber, "de", { numeric: true });
+    if (sortKey === "actualCost") return (right.actualCost ?? -1) - (left.actualCost ?? -1);
+    if (sortKey === "deviation") return (right.deviation ?? -Infinity) - (left.deviation ?? -Infinity);
+    return right.progress - left.progress;
+  });
+}
+
+function statusWeight(row: PortfolioObjectRow): number {
+  if (row.status === "overBudget") return 40 + row.issues.length;
+  if (row.status === "attention") return 20 + row.issues.length;
+  if (row.status === "ok") return 10;
+  return 0;
+}
+
+function buildRecentActivities(
+  objects: ObjectRecord[],
+  projects: ProjectRecord[],
+  documents: ObjectAnalysis[],
+  assignments: Record<string, string | null>,
+  onOpenObject: (id: string) => void,
+  onSelectDocument: (id: string) => void
+) {
+  const objectActivities = objects.map((object) => ({
+    id: `object-${object.id}`,
+    timestamp: object.updatedAt || object.createdAt || "",
+    title: "Objekt aktualisiert",
+    detail: formatPortfolioAddress(object),
+    onClick: () => onOpenObject(object.id)
+  }));
+  const projectActivities = projects.map((project) => ({
+    id: `project-${project.id}`,
+    timestamp: project.updatedAt || project.createdAt || "",
+    title: "Projekt aktualisiert",
+    detail: project.projectName || project.object || "Projekt",
+    onClick: () => project.objectId && onOpenObject(project.objectId)
+  }));
+  const documentActivities = documents.map((document) => ({
+    id: `document-${document.id}`,
+    timestamp: document.documentDate.value ?? "",
+    title: isOfferDocument(document) ? "Angebot ausgewertet" : isInvoiceLikeDocument(document) ? "Rechnung geprüft" : "Dokument analysiert",
+    detail: fieldOrUnknown(document.documentNumber) !== "k.A." ? fieldOrUnknown(document.documentNumber) : fieldOrUnknown(document.provider),
+    onClick: () => {
+      const project = projects.find((entry) => entry.id === assignments[document.id]);
+      if (project?.objectId) onOpenObject(project.objectId);
+      else onSelectDocument(document.id);
+    }
+  }));
+  return [...objectActivities, ...projectActivities, ...documentActivities]
+    .filter((activity) => activity.timestamp)
+    .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+    .map((activity) => ({ ...activity, date: formatActivityDate(activity.timestamp) }));
+}
+
+function formatActivityDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "k.A.";
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function latestDataStatus(values: Array<string | undefined>): string {
+  const latest = values.map((value) => value ? Date.parse(value) : NaN).filter(Number.isFinite).sort((a, b) => b - a)[0];
+  if (!latest) return "Datenstand: noch keine gespeicherten Änderungen";
+  return `Datenstand: ${new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(latest))}`;
+}
 
 function tradeChartColor(index: number): string {
   return index === 0 ? "#FF6E42" : chartPalette[index % chartPalette.length];
@@ -3704,6 +4018,128 @@ function ObjectRenovationHeader({
         </div>
       </div>
     </div>
+  );
+}
+
+function PortfolioCostChart({ data }: { data: Array<{ label: string; value: number }> }) {
+  return (
+    <section className="portfolioChartCard">
+      <div className="portfolioMiniHeader">
+        <h4>Budget / Auftrag / Rechnung</h4>
+        <span>Bezahlt: keine Zahlungsdaten hinterlegt</span>
+      </div>
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={data} margin={{ top: 16, right: 20, left: 8, bottom: 0 }}>
+          <XAxis dataKey="label" tick={{ fill: "#5d6570", fontSize: 12 }} tickLine={false} axisLine={false} />
+          <YAxis tick={{ fill: "#5d6570", fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={(value) => formatShortEuroAxis(Number(value))} />
+          <Tooltip formatter={(value) => formatNullableCurrency(Number(value))} />
+          <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#466389" />
+        </BarChart>
+      </ResponsiveContainer>
+    </section>
+  );
+}
+
+function PortfolioTradeChart({
+  data,
+  selectedTrade,
+  onSelectTrade
+}: {
+  data: Array<{ trade: string; rawTrade: string; cost: number }>;
+  selectedTrade: string;
+  onSelectTrade: (value: string) => void;
+}) {
+  return (
+    <section className="portfolioChartCard">
+      <div className="portfolioMiniHeader">
+        <h4>Kosten nach Gewerken</h4>
+        {selectedTrade ? <button type="button" onClick={() => onSelectTrade("")}>Filter lösen</button> : <span>Klick filtert das Dashboard</span>}
+      </div>
+      <ResponsiveContainer width="100%" height={260}>
+        <BarChart data={data} layout="vertical" margin={{ top: 8, right: 20, left: 88, bottom: 0 }}>
+          <XAxis type="number" tick={{ fill: "#5d6570", fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={(value) => formatShortEuroAxis(Number(value))} />
+          <YAxis type="category" dataKey="trade" width={88} tick={{ fill: "#26313d", fontSize: 11 }} tickLine={false} axisLine={false} />
+          <Tooltip formatter={(value) => formatNullableCurrency(Number(value))} />
+          <Bar dataKey="cost" radius={[0, 6, 6, 0]} onClick={(entry) => onSelectTrade((entry as { rawTrade?: string }).rawTrade ?? "")}>
+            {data.map((row, index) => (
+              <Cell key={row.rawTrade} fill={row.rawTrade === selectedTrade ? "#ff6e42" : tradeChartColor(index)} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </section>
+  );
+}
+
+function PortfolioObjectOverview({
+  rows,
+  query,
+  sortKey,
+  onQuery,
+  onSort,
+  onOpenObject
+}: {
+  rows: PortfolioObjectRow[];
+  query: string;
+  sortKey: PortfolioSortKey;
+  onQuery: (value: string) => void;
+  onSort: (value: PortfolioSortKey) => void;
+  onOpenObject: (id: string) => void;
+}) {
+  return (
+    <section className="portfolioSection">
+      <div className="portfolioSectionHeader">
+        <div>
+          <h3>Objektübersicht</h3>
+          <p>Probleme und Budgetüberschreitungen stehen automatisch oben.</p>
+        </div>
+        <input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Objekt, Adresse oder Status suchen..." />
+      </div>
+      <div className="portfolioTableWrap">
+        <table className="portfolioObjectTable">
+          <thead>
+            <tr>
+              <th><button type="button" onClick={() => onSort("objectNumber")}>Objektnummer</button></th>
+              <th>Adresse</th>
+              <th>Status</th>
+              <th>Budget</th>
+              <th><button type="button" onClick={() => onSort("actualCost")}>Aktuelle Kosten</button></th>
+              <th><button type="button" onClick={() => onSort("deviation")}>Abweichung</button></th>
+              <th><button type="button" onClick={() => onSort("progress")}>Fortschritt</button></th>
+              <th><button type="button" onClick={() => onSort("priority")}>Handlungsbedarf</button></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={8}>Keine passenden Objekte vorhanden.</td></tr>
+            ) : rows.map((row) => (
+              <tr key={row.object.id} onClick={() => onOpenObject(row.object.id)}>
+                <td>{row.objectNumber}</td>
+                <td>{row.address}</td>
+                <td><span className={`portfolioStatus ${row.status}`}>{row.statusLabel}</span></td>
+                <td>{formatNullableCurrency(row.budget)}</td>
+                <td>{formatNullableCurrency(row.actualCost)}</td>
+                <td className={row.deviation !== null && row.deviation > 0 ? "portfolioNegative" : "portfolioPositive"}>
+                  {formatNullableCurrency(row.deviation)}
+                  {row.deviationPercent !== null ? <small>{formatNumber(row.deviationPercent)} %</small> : null}
+                </td>
+                <td><ProgressMeter value={row.progress} /></td>
+                <td>{row.topIssue}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function ProgressMeter({ value }: { value: number }) {
+  return (
+    <span className="portfolioProgress">
+      <i style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+      <b>{formatNumber(value)} %</b>
+    </span>
   );
 }
 

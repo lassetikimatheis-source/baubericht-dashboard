@@ -28,26 +28,26 @@ export function ObjectMap({
   return (
     <LeafletMapContainer center={mapCenter(entries)} zoom={entries.length === 1 ? 15 : 6} scrollWheelZoom dragging className="leafletMap">
       <LeafletTileLayer
-        attribution='Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community'
-        url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-      />
-      <LeafletTileLayer
-        attribution='Labels &copy; Esri'
-        url="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-        pane="overlayPane"
-        opacity={0.95}
-      />
-      <LeafletTileLayer
-        attribution='Roads &copy; Esri'
-        url="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"
-        pane="overlayPane"
-        opacity={0.95}
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <FitBounds entries={entries} />
       {entries.map((entry) => (
         <ObjectMarker key={entry.key} entry={entry} onOpenObject={onOpenObject} />
       ))}
+      <MapLegend />
     </LeafletMapContainer>
+  );
+}
+
+function MapLegend() {
+  return (
+    <div className="mapLegend">
+      <span><i className="ok" /> Planmäßig</span>
+      <span><i className="attention" /> Handlungsbedarf</span>
+      <span><i className="overBudget" /> Budgetüberschreitung</span>
+      <span><i className="done" /> Abgeschlossen</span>
+    </div>
   );
 }
 

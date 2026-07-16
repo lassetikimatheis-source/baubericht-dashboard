@@ -19,15 +19,27 @@ export interface ObjectMapEntry {
   totalCost: number | null;
   latitude: number;
   longitude: number;
+  status: "ok" | "attention" | "overBudget" | "done";
+  statusLabel: string;
+  budget: number | null;
+  budgetDeviation: number | null;
+  budgetDeviationPercent: number | null;
+  progress: number;
+  openIssues: number;
+  topIssue: string;
+  unitCount: string;
+  imageUrl: string | null;
 }
 
-const paribusMarkerIcon = L.divIcon({
-  className: "paribusPinMarker",
-  html: "<span></span>",
-  iconSize: [28, 34],
-  iconAnchor: [14, 34],
-  popupAnchor: [0, -30]
-});
+function markerIcon(status: ObjectMapEntry["status"]) {
+  return L.divIcon({
+    className: `paribusPinMarker paribusPinMarker_${status}`,
+    html: "<span></span>",
+    iconSize: [30, 36],
+    iconAnchor: [15, 36],
+    popupAnchor: [0, -30]
+  });
+}
 
 export function ObjectMarker({
   entry,
@@ -37,17 +49,24 @@ export function ObjectMarker({
   onOpenObject: (id: string) => void;
 }) {
   return (
-    <LeafletMarker position={[entry.latitude, entry.longitude]} icon={paribusMarkerIcon}>
+    <LeafletMarker position={[entry.latitude, entry.longitude]} icon={markerIcon(entry.status)}>
       <LeafletPopup>
         <div className="mapPopup">
+          {entry.imageUrl ? <img className="mapPopupImage" src={entry.imageUrl} alt="" /> : null}
           <strong>{entry.objectNumber || "k.A."}</strong>
           <span>{entry.address || entry.title || "k.A."}</span>
-          <span>Fonds: {entry.fund || "k.A."}</span>
-          <span>Brutto: {formatEuro(entry.totalCost)}</span>
-          <span>Projekte: {formatNumber(entry.projectCount)}</span>
-          <span>Dokumente: {formatNumber(entry.documentCount)}</span>
+          <em className={`mapPopupStatus ${entry.status}`}>{entry.statusLabel}</em>
+          <dl>
+            <div><dt>Wohneinheiten</dt><dd>{entry.unitCount || "k.A."}</dd></div>
+            <div><dt>Budget</dt><dd>{formatEuro(entry.budget)}</dd></div>
+            <div><dt>Aktuelle Kosten</dt><dd>{formatEuro(entry.totalCost)}</dd></div>
+            <div><dt>Abweichung</dt><dd>{formatEuro(entry.budgetDeviation)}{entry.budgetDeviationPercent !== null ? ` (${formatNumber(entry.budgetDeviationPercent)} %)` : ""}</dd></div>
+            <div><dt>Fortschritt</dt><dd>{formatNumber(entry.progress)} %</dd></div>
+            <div><dt>Offene Vorgänge</dt><dd>{formatNumber(entry.openIssues)}</dd></div>
+          </dl>
+          <span className="mapPopupIssue">{entry.topIssue}</span>
           <button type="button" onClick={() => onOpenObject(entry.objectId)}>
-            Objekt öffnen
+            Objekt ansehen
           </button>
         </div>
       </LeafletPopup>
@@ -56,7 +75,7 @@ export function ObjectMarker({
 }
 
 function formatNumber(value: number): string {
-  return new Intl.NumberFormat("de-DE").format(value);
+  return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(value);
 }
 
 function formatEuro(value: number | null): string {

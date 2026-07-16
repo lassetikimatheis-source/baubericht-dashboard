@@ -6923,3 +6923,485 @@ video {
     padding: 28px;
   }
 }
+
+/* Portfolio dashboard */
+.portfolioDashboard {
+  display: grid;
+  gap: 18px;
+}
+
+.portfolioHero,
+.portfolioSection,
+.portfolioMap,
+.portfolioChartCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(23, 39, 55, 0.06);
+}
+
+.portfolioHero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+}
+
+.portfolioHero h2,
+.portfolioSection h3,
+.portfolioChartCard h4 {
+  color: var(--navy);
+  margin: 0;
+}
+
+.portfolioHero p,
+.portfolioSectionHeader p,
+.portfolioMiniHeader span {
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+.portfolioKpiGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.portfolioKpiCard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 16px;
+  box-shadow: 0 8px 20px rgba(23, 39, 55, 0.05);
+}
+
+.portfolioKpiCard span,
+.portfolioKpiCard small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.portfolioKpiCard strong {
+  display: block;
+  color: var(--navy);
+  font-size: 24px;
+  margin: 6px 0 3px;
+}
+
+.portfolioKpiPositive strong,
+.portfolioPositive {
+  color: #157347;
+}
+
+.portfolioKpiNegative strong,
+.portfolioNegative {
+  color: #b42318;
+}
+
+.portfolioSection {
+  padding: 18px;
+}
+
+.portfolioSectionHeader,
+.portfolioMiniHeader,
+.mapSearchBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.portfolioSectionHeader input,
+.portfolioFilterBar select,
+.mapSearchBar input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.portfolioActionList,
+.portfolioActivityList,
+.portfolioQuickActions {
+  display: grid;
+  gap: 10px;
+}
+
+.portfolioActionItem,
+.portfolioActivityList button,
+.portfolioQuickActions button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.portfolioActionItem {
+  border-left: 4px solid #d9a441;
+}
+
+.portfolioActionItem.severity-high {
+  border-left-color: #b42318;
+  background: #fff8f7;
+}
+
+.portfolioActionItem.severity-low {
+  border-left-color: #157347;
+}
+
+.portfolioActionItem span,
+.portfolioActivityList span,
+.portfolioActionItem small,
+.portfolioActivityList small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.portfolioActionItem strong,
+.portfolioActivityList strong {
+  display: block;
+  color: var(--navy);
+  margin: 3px 0;
+}
+
+.portfolioFilterBar {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.portfolioFilterBar label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.portfolioChartGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.portfolioChartCard {
+  padding: 16px;
+}
+
+.portfolioMiniHeader button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  padding: 7px 10px;
+}
+
+.portfolioTableWrap {
+  overflow: auto;
+}
+
+.portfolioObjectTable {
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 1120px;
+  width: 100%;
+}
+
+.portfolioObjectTable th,
+.portfolioObjectTable td {
+  border-bottom: 1px solid var(--line);
+  padding: 11px 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.portfolioObjectTable th {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.portfolioObjectTable th button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+
+.portfolioObjectTable tbody tr {
+  cursor: pointer;
+}
+
+.portfolioObjectTable tbody tr:hover {
+  background: #f7f9fb;
+}
+
+.portfolioStatus {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 5px 9px;
+}
+
+.portfolioStatus.ok,
+.mapPopupStatus.ok {
+  background: #eaf6ef;
+  color: #157347;
+}
+
+.portfolioStatus.attention,
+.mapPopupStatus.attention {
+  background: #fff7e6;
+  color: #9a6200;
+}
+
+.portfolioStatus.overBudget,
+.mapPopupStatus.overBudget {
+  background: #fff1f0;
+  color: #b42318;
+}
+
+.portfolioStatus.done,
+.mapPopupStatus.done {
+  background: #edf4ff;
+  color: #2457a6;
+}
+
+.portfolioProgress {
+  display: grid;
+  gap: 4px;
+  min-width: 100px;
+}
+
+.portfolioProgress {
+  background: linear-gradient(#e8edf2, #e8edf2) 0 11px / 100% 6px no-repeat;
+}
+
+.portfolioProgress i {
+  background: #ff6e42;
+  border-radius: 999px;
+  display: block;
+  height: 6px;
+  margin-top: 8px;
+}
+
+.portfolioProgress b {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.portfolioEmpty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  margin: 0;
+  padding: 18px;
+  text-align: center;
+}
+
+.portfolioQuickActions {
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+}
+
+.portfolioQuickActions button {
+  background: #fff;
+  color: var(--navy);
+  font-weight: 900;
+  text-align: center;
+}
+
+.leafletCard {
+  min-height: 520px;
+  overflow: hidden;
+}
+
+.leafletMap {
+  min-height: 520px;
+  width: 100%;
+}
+
+.mapLegend {
+  bottom: 18px;
+  display: grid;
+  gap: 6px;
+  left: 18px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 500;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 10px 12px;
+  box-shadow: 0 8px 20px rgba(23, 39, 55, 0.12);
+}
+
+.mapLegend span {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  color: var(--navy);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mapLegend i,
+.paribusPinMarker span {
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.mapLegend i {
+  height: 10px;
+  width: 10px;
+}
+
+.mapLegend .ok,
+.paribusPinMarker_ok span {
+  background: #157347;
+}
+
+.mapLegend .attention,
+.paribusPinMarker_attention span {
+  background: #d98c00;
+}
+
+.mapLegend .overBudget,
+.paribusPinMarker_overBudget span {
+  background: #b42318;
+}
+
+.mapLegend .done,
+.paribusPinMarker_done span {
+  background: #2457a6;
+}
+
+.paribusPinMarker span {
+  border: 3px solid #fff;
+  box-shadow: 0 8px 18px rgba(23, 39, 55, 0.28);
+  height: 24px;
+  position: relative;
+  width: 24px;
+}
+
+.paribusPinMarker span::after {
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 10px solid currentColor;
+  bottom: -10px;
+  content: "";
+  left: 3px;
+  position: absolute;
+}
+
+.paribusPinMarker_ok span::after { color: #157347; }
+.paribusPinMarker_attention span::after { color: #d98c00; }
+.paribusPinMarker_overBudget span::after { color: #b42318; }
+.paribusPinMarker_done span::after { color: #2457a6; }
+
+.mapPopup {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+}
+
+.mapPopupImage {
+  border-radius: 8px;
+  height: 120px;
+  object-fit: cover;
+  width: 100%;
+}
+
+.mapPopup strong {
+  color: var(--navy);
+  font-size: 16px;
+}
+
+.mapPopup > span {
+  color: var(--muted);
+}
+
+.mapPopupStatus {
+  border-radius: 999px;
+  display: inline-flex;
+  font-style: normal;
+  font-weight: 900;
+  padding: 5px 9px;
+  width: fit-content;
+}
+
+.mapPopup dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.mapPopup dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mapPopup dt {
+  color: var(--muted);
+}
+
+.mapPopup dd {
+  color: var(--navy);
+  font-weight: 800;
+  margin: 0;
+}
+
+.mapPopupIssue {
+  border-radius: 6px;
+  background: #f6f8fa;
+  padding: 8px;
+}
+
+.mapPopup button {
+  border: 0;
+  border-radius: 6px;
+  background: #ff6e42;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 900;
+  min-height: 36px;
+}
+
+@media (max-width: 1280px) {
+  .portfolioKpiGrid,
+  .portfolioQuickActions {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .portfolioChartGrid,
+  .portfolioFilterBar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .portfolioHero,
+  .portfolioSectionHeader,
+  .portfolioMiniHeader,
+  .mapSearchBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portfolioKpiGrid,
+  .portfolioQuickActions {
+    grid-template-columns: 1fr;
+  }
+}
