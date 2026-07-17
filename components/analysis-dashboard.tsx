@@ -2395,6 +2395,7 @@ export function AnalysisDashboard() {
                 projects={projects}
                 assignedProjectId={selectedDocument ? assignments[selectedDocument.id] ?? null : null}
                 onAssign={(projectId) => selectedDocument && assignDocument(selectedDocument.id, projectId)}
+                onCreateObject={() => selectedDocument && createObject(selectedDocument)}
                 onDelete={() => selectedDocument && deleteDocument(selectedDocument.id)}
                 onReanalyze={reanalyzeAllObjects}
                 onUpdate={updateDocument}
@@ -2407,6 +2408,7 @@ export function AnalysisDashboard() {
                 projects={projects}
                 assignedProjectId={uploadDocument ? assignments[uploadDocument.id] ?? null : null}
                 onAssign={(projectId) => uploadDocument && assignDocument(uploadDocument.id, projectId)}
+                onCreateObject={() => uploadDocument && createObject(uploadDocument)}
                 onDelete={() => uploadDocument && deleteDocument(uploadDocument.id)}
                 onReanalyze={reanalyzeAllObjects}
                 onUpdate={updateDocument}
@@ -6532,6 +6534,7 @@ function DocumentReviewPanel({
   projects,
   assignedProjectId,
   onAssign,
+  onCreateObject,
   onDelete,
   onReanalyze,
   onUpdate,
@@ -6541,6 +6544,7 @@ function DocumentReviewPanel({
   projects: ProjectRecord[];
   assignedProjectId: string | null;
   onAssign: (projectId: string | null) => void;
+  onCreateObject: () => void;
   onDelete: () => void;
   onReanalyze: () => void;
   onUpdate: (id: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) => void;
@@ -6573,6 +6577,8 @@ function DocumentReviewPanel({
     onReanalyze();
   };
   const tradeRows = buildTradeReviewRows(document);
+  const summary = buildDocumentReviewSummary(document, tradeRows);
+  const assignedProject = projects.find((project) => project.id === assignedProjectId) ?? null;
   const objectOptions = uniqueStrings([
     fieldOrUnknown(document.objectNumber),
     fieldOrUnknown(document.objectAddress),
@@ -6634,6 +6640,26 @@ function DocumentReviewPanel({
         </div>
       </section>
 
+      <section className={`reviewSection reviewSummarySection ${summary.hasRelevantDifference ? "reviewSummaryWarning" : ""}`}>
+        <div className="reviewSectionTitle">
+          <h3>Summenkontrolle</h3>
+          <span>{summary.selectedCount} Position(en) uebernommen</span>
+        </div>
+        <div className="reviewSummaryGrid">
+          <InfoLine label="Positionensumme" value={formatNullableCurrency(summary.selectedTotal)} />
+          <InfoLine label="Netto erkannt" value={formatNullableCurrency(document.netCost.value)} />
+          <InfoLine label="Umsatzsteuer" value={formatNullableCurrency(document.vatCost.value)} />
+          <InfoLine label="Brutto erkannt" value={formatNullableCurrency(document.totalCost.value)} />
+          <InfoLine label="Differenz" value={formatNullableCurrency(summary.difference)} />
+          <InfoLine label="Zuordnung" value={assignedProject ? assignedProject.projectName || assignedProject.object || "Projekt" : "Noch nicht zugeordnet"} />
+        </div>
+        {summary.hasRelevantDifference ? (
+          <p className="summaryWarning">Die Summe der ausgewaehlten Positionen weicht um {formatNullableCurrency(Math.abs(summary.difference ?? 0))} von der Dokumentensumme ab.</p>
+        ) : (
+          <p className="muted">Ausgewaehlte Positionen und Dokumentensumme sind innerhalb der Toleranz plausibel.</p>
+        )}
+      </section>
+
       <section className="reviewSection">
         <h3>Gesamtkosten</h3>
         <div className="totalCostGrid">
@@ -6650,7 +6676,9 @@ function DocumentReviewPanel({
 
       {!readOnly ? (
         <div className="reviewActionBar">
-          <button className="buttonPrimary" type="button" onClick={saveCurrentEdits}>Aenderungen speichern</button>
+          <button className="buttonPrimary" type="button" onClick={saveCurrentEdits}>Entwurf speichern</button>
+          <button type="button" onClick={saveCurrentEdits}>Speichern und Objekt zuordnen</button>
+          <button type="button" onClick={onCreateObject}>Neues Objekt aus Dokument erstellen</button>
           <button type="button" onClick={restartAnalysis}>Analyse erneut starten</button>
           <button type="button" onClick={releaseDocument}>Dokument freigeben</button>
           <button type="button" onClick={onDelete}>Loeschen</button>
@@ -8926,34 +8954,30 @@ function getDocumentTradeNames(document: ObjectAnalysis): string[] {
 }
 
 function getTradeAllocations(document: ObjectAnalysis): TradeAllocation[] {
+  if (document.clusters.length > 0) {
+    return document.clusters.map((cluster) => ({
+      cluster: normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description)),
+      value: reliableClusterCost(document, cluster),
+      document
+    }));
+  }
+
   if (document.measureDetails?.length) {
     const detailCount = document.measureDetails.length;
     return document.measureDetails.map((detail) => {
-      const matchingCluster = document.clusters.find((entry) =>
-        normalizeTradeCluster(fieldOrUnknown(entry.cluster), fieldOrUnknown(entry.description)) === normalizeTradeCluster(detail.cluster, detail.beschreibung)
-        || fieldOrUnknown(entry.description) === detail.abschnitt
-      );
       return {
         cluster: normalizeTradeCluster(detail.cluster, detail.beschreibung),
-        value: reliableMeasureDetailCost(document, detail, matchingCluster ?? null, detailCount),
+        value: reliableMeasureDetailCost(document, detail, null, detailCount),
         document
       };
     });
   }
 
-  if (document.clusters.length === 0) {
-    return [{
-      cluster: normalizeTradeCluster("Sonstige", fieldOrUnknown(document.measureDescription)),
-      value: document.totalCost.value,
-      document
-    }];
-  }
-
-  return document.clusters.map((cluster) => ({
-    cluster: normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description)),
-    value: reliableClusterCost(document, cluster),
+  return [{
+    cluster: normalizeTradeCluster("Sonstige", fieldOrUnknown(document.measureDescription)),
+    value: document.totalCost.value,
     document
-  }));
+  }];
 }
 
 function reliableClusterCost(
@@ -9486,17 +9510,45 @@ function buildTradeReviewRows(document: ObjectAnalysis): TradeReviewRow[] {
   });
 }
 
+function buildDocumentReviewSummary(document: ObjectAnalysis, rows: TradeReviewRow[]) {
+  const selectedAmounts = rows
+    .filter((row) => row.active)
+    .map((row) => parseGermanNumber(row.amount))
+    .filter((value): value is number => value !== null);
+  const selectedTotal = sumValues(selectedAmounts);
+  const documentTotal = document.totalCost.value;
+  const difference = selectedTotal !== null && documentTotal !== null ? roundMoney(selectedTotal - documentTotal) : null;
+  return {
+    selectedCount: selectedAmounts.length,
+    selectedTotal,
+    difference,
+    hasRelevantDifference: difference !== null && Math.abs(difference) > 0.05
+  };
+}
+
 function collectTradeEntries(document: ObjectAnalysis, trade: DocumentReviewTrade): Array<{ amount: number | null; confidence: number | null }> {
-  const entries: Array<{ amount: number | null; confidence: number | null }> = [];
+  const clusterEntries: Array<{ amount: number | null; confidence: number | null }> = [];
   document.clusters.forEach((cluster) => {
     if (reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) !== trade) return;
-    entries.push({ amount: cluster.totalCost.value, confidence: cluster.cluster.confidence ?? cluster.totalCost.confidence ?? null });
+    clusterEntries.push({ amount: reliableClusterCost(document, cluster), confidence: cluster.cluster.confidence ?? cluster.totalCost.confidence ?? null });
   });
+  if (clusterEntries.length > 0) return dedupeTradeEntries(clusterEntries);
+  const detailEntries: Array<{ amount: number | null; confidence: number | null }> = [];
   document.measureDetails?.forEach((detail) => {
     if (reviewTradeFromValue(detail.cluster, detail.beschreibung) !== trade) return;
-    entries.push({ amount: detail.summe, confidence: null });
+    detailEntries.push({ amount: detail.summe, confidence: null });
   });
-  return entries;
+  return dedupeTradeEntries(detailEntries);
+}
+
+function dedupeTradeEntries(entries: Array<{ amount: number | null; confidence: number | null }>): Array<{ amount: number | null; confidence: number | null }> {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = entry.amount === null ? "null" : entry.amount.toFixed(2);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function updateTradeReviewRow(
@@ -9515,9 +9567,7 @@ function updateTradeReviewRow(
         if (reviewTradeFromValue(String(cluster.cluster.value ?? ""), String(cluster.description.value ?? "")) !== trade) return cluster;
         return { ...cluster, totalCost: manualNumberField(amountValue), cluster: manualField(reviewTradeToCluster(trade)) as ExtractedField<MeasureCluster> };
       });
-    const nextMeasureDetails = active
-      ? current.measureDetails
-      : current.measureDetails?.filter((detail) => reviewTradeFromValue(detail.cluster, detail.beschreibung) !== trade);
+    const nextMeasureDetails = current.measureDetails?.filter((detail) => reviewTradeFromValue(detail.cluster, detail.beschreibung) !== trade);
     if (active && !hasExisting) {
       nextClusters.push({
         id: `${current.id}-${trade.toLowerCase().replace(/[^a-z0-9]+/gi, "-")}`,
@@ -9572,7 +9622,8 @@ function updateTradeReviewAmount(
         sourceDocumentId: current.id
       });
     }
-    return appendManualChange({ ...current, clusters: nextClusters }, `trade:${trade}:amount`, "", amountValue);
+    const nextMeasureDetails = current.measureDetails?.filter((detail) => reviewTradeFromValue(detail.cluster, detail.beschreibung) !== trade);
+    return appendManualChange({ ...current, clusters: nextClusters, measureDetails: nextMeasureDetails }, `trade:${trade}:amount`, "", amountValue);
   });
 }
 
