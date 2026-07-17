@@ -1996,10 +1996,11 @@ export function AnalysisDashboard() {
 
   function updateDocument(documentId: string, updater: (document: ObjectAnalysis) => ObjectAnalysis) {
     if (!canEdit) return;
+    const updateMatchingDocument = (document: ObjectAnalysis) => document.id === documentId ? updater(document) : document;
     setAnalysis((current) => {
       const documents = current.objects.map((document) => {
-        if (document.id !== documentId) return document;
-        const updated = updater(document);
+        const updated = updateMatchingDocument(document);
+        if (updated === document) return document;
         saveNeonDocument(updated).catch((error) => {
           console.error("[Neon] Dokument konnte nicht aktualisiert werden:", error);
           setMessage(error instanceof Error ? error.message : "Dokument konnte nicht in Neon aktualisiert werden.");
@@ -2008,6 +2009,8 @@ export function AnalysisDashboard() {
       });
       return buildAnalysisFromDocuments(documents, current);
     });
+    setUploadDocument((current) => current && current.id === documentId ? updater(current) : current);
+    setUploadDocuments((current) => current.map(updateMatchingDocument));
     logActivity({ action: "Kostenposition geaendert", area: "Dokumente", targetType: "document", targetId: documentId });
   }
 
