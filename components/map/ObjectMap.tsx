@@ -20,7 +20,7 @@ export function ObjectMap({
   if (entries.length === 0) {
     return (
       <div className="mapEmpty">
-        Für dieses Objekt fehlen Koordinaten. Bitte Latitude und Longitude im Objekt bearbeiten.
+        Für dieses Objekt ist noch keine Kartenposition verfügbar. Die Karte wird später über die Adresse aufgebaut.
       </div>
     );
   }

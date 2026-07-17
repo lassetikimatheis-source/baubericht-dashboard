@@ -2677,7 +2677,7 @@ function MapView({
         <div>
           <p className="eyebrow">Kartenansicht</p>
           <h2>Objekte auf OpenStreetMap</h2>
-          <p>Die Karte zeigt nur Objekte mit gepflegten Koordinaten. Latitude und Longitude bearbeitest du direkt im Objektformular.</p>
+          <p>Die Karte wird kuenftig ueber die Objektadresse aufgebaut. In der Objektansicht werden nur noch Adressdaten gepflegt.</p>
         </div>
       </div>
       <PortfolioMap
@@ -2731,7 +2731,7 @@ function PortfolioMap({
       latitude: entry.latitude ?? 0,
       longitude: entry.longitude ?? 0,
       status: row?.status ?? "attention",
-      statusLabel: row?.statusLabel ?? "Koordinaten geprüft",
+      statusLabel: row?.statusLabel ?? "Adresse geprüft",
       budget: row?.budget ?? null,
       budgetDeviation: row?.deviation ?? null,
       budgetDeviationPercent: row?.deviationPercent ?? null,
@@ -2749,13 +2749,13 @@ function PortfolioMap({
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Objekt oder Adresse suchen..." />
         <span>
           {missingCount > 0
-            ? `${missingCount} Objekt(e): gespeicherte Koordinaten fehlen`
-            : "Alle Objekte mit Koordinaten markiert"}
+            ? `${missingCount} Objekt(e): Kartenposition noch nicht verfuegbar`
+            : "Alle verfuegbaren Objekte markiert"}
         </span>
       </div>
       <div className="leafletCard">
         {objectMapEntries.length === 0 ? (
-          <div className="mapEmpty">Keine Objekte mit Koordinaten vorhanden. Adressen werden nur bei fehlenden gespeicherten Koordinaten einmalig über den bestehenden Geocode-Endpunkt geprüft.</div>
+          <div className="mapEmpty">Noch keine Kartenpositionen vorhanden. Die Karte wird spaeter ueber die Objektadressen aufgebaut.</div>
         ) : (
           <ObjectMap
             entries={objectMapEntries}
@@ -2814,7 +2814,7 @@ function ObjectSideList({
                 <em>{entry.address}</em>
               </span>
               <span className="sideObjectMeta">{entry.projectCount} P / {entry.documents.length} D</span>
-              <span className="sideObjectCost">{entry.latitude === null || entry.longitude === null ? "Koordinaten fehlen" : formatNullableCurrency(entry.totalCost)}</span>
+              <span className="sideObjectCost">{entry.latitude === null || entry.longitude === null ? "Kartenposition offen" : formatNullableCurrency(entry.totalCost)}</span>
             </button>
           );
         })}
@@ -4202,7 +4202,7 @@ function ObjectOverviewTab({
         <div className="panelHeader compactHeader">
           <div>
             <h3>Stammdaten</h3>
-            <p>Koordinaten für die Karte werden hier gepflegt.</p>
+            <p>Adresse, Energieklasse und Sanierungskennzahlen des Objekts.</p>
           </div>
         </div>
         <ObjectForm object={object} onChange={onUpdateObject} readOnly={readOnly} />
@@ -6979,8 +6979,6 @@ function UploadObjectPanel({
             <EditInput label="Baujahr" value={draft.constructionYear} placeholder="Nicht erkannt" onChange={(value) => onChange("constructionYear", value)} />
             <EditInput label="Anzahl Wohneinheiten" value={draft.unitCount} placeholder="Nicht erkannt" onChange={(value) => onChange("unitCount", value)} />
             <EditInput label="Gesamtwohnfläche m2" value={draft.totalLivingAreaSqm} placeholder="Nicht erkannt" onChange={(value) => onChange("totalLivingAreaSqm", value)} />
-            <EditInput label="Latitude" value={draft.latitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("latitude", value)} />
-            <EditInput label="Longitude" value={draft.longitude ?? ""} placeholder="Nicht erkannt" onChange={(value) => onChange("longitude", value)} />
             <EditInput label="Wohnfläche sanierte Wohnung m²" value={draft.wohnflaecheSanierteWohnung ?? ""} type="number" placeholder="Nicht erkannt" onChange={(value) => onChange("wohnflaecheSanierteWohnung", value)} />
           </div>
 
@@ -7065,8 +7063,6 @@ function ObjectForm({ object, onChange, readOnly = false }: { object: ObjectReco
         ["energyClass", "Energieklasse"],
         ["unitCount", "Anzahl Wohneinheiten"],
         ["totalLivingAreaSqm", "Gesamtwohnflaeche m2"],
-        ["latitude", "Latitude"],
-        ["longitude", "Longitude"],
         ["wohnflaecheSanierteWohnung", "Wohnfläche sanierte Wohnung m²"]
       ] as Array<[keyof ObjectRecord, string]>).map(([field, label]) => (
         <EditInput
@@ -7078,7 +7074,7 @@ function ObjectForm({ object, onChange, readOnly = false }: { object: ObjectReco
           readOnly={readOnly}
         />
       ))}
-      <p className="formHint">Geocoding ist vorbereitet. Bis zur automatischen Adressaufloesung bitte Koordinaten manuell eintragen.</p>
+      <p className="formHint">Die Kartenansicht wird spaeter ueber die Adresse aufgebaut. Manuelle Kartenwerte werden hier nicht mehr gepflegt.</p>
     </div>
   );
 }
