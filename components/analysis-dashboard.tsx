@@ -18,6 +18,7 @@ import {
 import { UploadPanel } from "./upload-panel";
 import { FundsQuarterlyWorkspace } from "./funds-quarterly-workspace";
 import { AdminPanel } from "./admin-panel";
+import { AssistantChat, ExplainValueButton, assistantContextEvent } from "./assistant-chat";
 import { useAuth } from "./auth-gate";
 import type { ObjectMapEntry } from "./map/ObjectMap";
 import { TradeCostBarChart, type TradeCostChartRow } from "./charts/TradeCostBarChart";
@@ -47,7 +48,35 @@ import {
   type SupabaseBackfillTableSummary,
   type SupabaseTableLoadDiagnostic
 } from "../lib/supabase";
-import { isDisposalDemolitionTrade, isHazardousMaterialTrade, normalizeDocumentTrades, normalizeTradeName } from "../lib/trades";
+import {
+  isDisposalDemolitionTrade,
+  isHazardousMaterialTrade,
+  normalizeDocumentTrades,
+  PAINTING_TRADE
+} from "../lib/trades";
+import {
+  documentTypeValue,
+  documentUniqueKey,
+  finalCostDocuments,
+  finalGrossCost,
+  getTradeAllocations,
+  isCreditDocument,
+  isFinalInvoiceDocument,
+  isIncomingInvoiceDocument,
+  isInvoiceDocument,
+  isInvoiceLikeDocument,
+  isOfferDocument,
+  isOrderDocument,
+  isProgressInvoiceDocument,
+  normalizeTradeCluster,
+  reliableClusterCost,
+  reliableMeasureDetailCost,
+  roundMoney,
+  safeDivide,
+  selectEffectiveCostDocuments,
+  standardTradeCatalog,
+  sumValues
+} from "../lib/cost-calculations";
 import {
   clearLegacyBrowserPersistence,
   createAnalysisBackup,
@@ -99,6 +128,7 @@ import {
   saveNeonProject
 } from "../lib/neon-client";
 import type { CostAllocation, ExtractedField, MeasureCluster, ObjectAnalysis, PortfolioAnalysisState, SourceDocument } from "../types/analysis";
+import type { AssistantExplainTarget } from "../types/assistant";
 
 const ObjectMap = dynamic<{ entries: ObjectMapEntry[]; onOpenObject: (id: string) => void }>(
   () => import("./map/ObjectMap").then((module) => module.ObjectMap),
@@ -380,12 +410,6 @@ interface TradeGroupRow {
   status: string;
 }
 
-interface TradeAllocation {
-  cluster: MeasureCluster;
-  value: number | null;
-  document: ObjectAnalysis;
-}
-
 interface LineItemView {
   position: string;
   description: string | null;
@@ -475,25 +499,6 @@ const emptyObjectPageFilters: ObjectPageFilters = {
   documentType: "",
   object: ""
 };
-
-const standardTradeCatalog: MeasureCluster[] = [
-  "Schadstoffsanierung / Asbest",
-  "Asbestarbeiten",
-  "Bodenbelagsarbeiten",
-  "Malerarbeiten",
-  "Fliesen und Estricharbeiten",
-  "Heizung und Sanitär",
-  "Elektroarbeiten",
-  "Tischlerarbeiten",
-  "Fassadenarbeiten",
-  "Dacharbeiten",
-  "Fensterarbeiten",
-  "Rückbau / Entsorgung",
-  "Außenanlagen",
-  "Reinigung",
-  "Planung / Dokumentation",
-  "Sonstige"
-];
 
 export function AnalysisDashboard() {
   const auth = useAuth();
@@ -2439,6 +2444,23 @@ export function AnalysisDashboard() {
           </section>
         )}
       </section>
+      <AssistantChat
+        context={{
+          view,
+          objectTab,
+          objectId: view === "objects" || view === "map" ? selectedObject?.id ?? null : null,
+          projectId: view === "projects" ? selectedProject?.id ?? null : null,
+          documentId: showDocumentEditor
+            ? selectedDocument?.id ?? null
+            : showUploadReview
+              ? uploadDocument?.id ?? null
+              : view === "unassigned"
+                ? selectedDocument?.id ?? null
+                : null,
+          reportId: null,
+          trade: null
+        }}
+      />
     </main>
   );
 }
@@ -2512,6 +2534,19 @@ function DashboardView({
             <span>{item.label}</span>
             <strong>{item.value}</strong>
             {item.detail ? <small>{item.detail}</small> : null}
+            {item.label === "Gesamtkosten" && item.value !== "k.A." ? (
+              <ExplainValueButton
+                target={{
+                  label: item.label,
+                  displayedValue: item.value,
+                  calculation: "sum",
+                  documentIds: filteredDocuments.map((document) => document.id),
+                  objectId: null,
+                  projectId: null,
+                  documentId: null
+                }}
+              />
+            ) : null}
           </article>
         ))}
       </section>
@@ -2923,7 +2958,7 @@ const chartPalette = ["#466389", "#6E8CB0", "#92A9C4", "#FF6E42", "#8AB17D", "#D
 const portfolioTradeCatalog = [
   "Heizung und Sanitär",
   "Elektroarbeiten",
-  "Malerarbeiten",
+  PAINTING_TRADE,
   "Bodenbelagsarbeiten",
   "Schadstoffsanierung / Asbest",
   "Rückbau / Entsorgung",
@@ -3977,10 +4012,22 @@ function ObjectDetailHeader({
           <InfoLine label="Wohnfläche sanierte Wohnung" value={object.wohnflaecheSanierteWohnung ? `${object.wohnflaecheSanierteWohnung} m2` : "k.A."} />
         </div>
         <div className="objectHeaderMetrics">
-          <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
-          <CostMetric label="Ø Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
+          <CostMetric
+            label="Gesamtkosten"
+            value={formatNullableCurrency(grossCost)}
+            explain={{ label: "Gesamtkosten", calculation: "sum", documentIds: documents.map((document) => document.id), objectId: object.id }}
+          />
+          <CostMetric
+            label="Ø Kosten pro WE"
+            value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))}
+            explain={{ label: "Ø Kosten pro WE", calculation: "costPerApartment", documentIds: documents.map((document) => document.id), objectId: object.id }}
+          />
           <CostMetric label="Ø Kosten / Wohnung" value={formatNullableCurrency(averageCostPerDocument)} />
-          <CostMetric label="Kosten pro m²" value={formatEuroPerSqm(costPerSqmForObject(object, grossCost))} />
+          <CostMetric
+            label="Kosten pro m²"
+            value={formatEuroPerSqm(costPerSqmForObject(object, grossCost))}
+            explain={{ label: "Kosten pro m²", calculation: "costPerSqm", documentIds: documents.map((document) => document.id), objectId: object.id }}
+          />
           <CostMetric label="Dokumente" value={`${formatNumber(documents.length)} / ${formatNumber(totalDocuments)}`} />
           <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
           <CostMetric label="Datenqualität" value={dataQuality} />
@@ -4034,9 +4081,21 @@ function ObjectRenovationHeader({
           <InfoLine label="Wohnflaeche" value={object.totalLivingAreaSqm ? `${object.totalLivingAreaSqm} m2` : "Keine Wohnflaeche hinterlegt"} />
         </div>
         <div className="objectHeaderMetrics">
-          <CostMetric label="Gesamtkosten" value={formatNullableCurrency(grossCost)} />
-          <CostMetric label="Kosten pro WE" value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))} />
-          <CostMetric label="Kosten je m2" value={formatEuroPerSqm(costPerSqmForObject(object, grossCost))} />
+          <CostMetric
+            label="Gesamtkosten"
+            value={formatNullableCurrency(grossCost)}
+            explain={{ label: "Gesamtkosten", calculation: "sum", documentIds: documents.map((document) => document.id), objectId: object.id }}
+          />
+          <CostMetric
+            label="Kosten pro WE"
+            value={formatNullableCurrency(costPerRenovatedUnit(documents, grossCost))}
+            explain={{ label: "Kosten pro WE", calculation: "costPerApartment", documentIds: documents.map((document) => document.id), objectId: object.id }}
+          />
+          <CostMetric
+            label="Kosten je m2"
+            value={formatEuroPerSqm(costPerSqmForObject(object, grossCost))}
+            explain={{ label: "Kosten je m2", calculation: "costPerSqm", documentIds: documents.map((document) => document.id), objectId: object.id }}
+          />
           <CostMetric label="Gewerke" value={formatNumber(measureCount)} />
           <CostMetric label="Dokumente" value={`${formatNumber(documents.length)} / ${formatNumber(totalDocuments)}`} />
         </div>
@@ -4352,7 +4411,19 @@ function ObjectDocumentsTab({
               {documentWarningItems(document).map((item) => <span key={item}>{item}</span>)}
             </div>
             {isProgressInvoiceDocument(document) ? <p>{fieldOrUnknown(document.installmentNumber ?? emptyField<string>())}</p> : null}
-            <strong>{formatCurrency(document.totalCost)}</strong>
+            <div className="documentValueWithAction">
+              <strong>{formatCurrency(document.totalCost)}</strong>
+              {document.totalCost.value !== null ? (
+                <ExplainValueButton
+                  target={{
+                    label: "Bruttobetrag des Dokuments",
+                    calculation: "documentTotal",
+                    documentId: document.id,
+                    documentIds: [document.id]
+                  }}
+                />
+              ) : null}
+            </div>
             <em>{formatKiStatus(document)}</em>
             <div className="documentCardActions">
               <button type="button">PDF ansehen</button>
@@ -4966,6 +5037,16 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
   const donutRows = groups.filter((entry) => entry.total > 0);
   const selectedGroup = groups.find((row) => row.cluster === selectedMeasureId) ?? null;
   const selectedRow = selectedGroup ? measureRowFromTradeGroup(selectedGroup) : null;
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(assistantContextEvent, {
+      detail: { trade: selectedGroup?.cluster ?? null }
+    }));
+  }, [selectedGroup?.cluster]);
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent(assistantContextEvent, { detail: { trade: null } }));
+    };
+  }, []);
 
   return (
     <div className="tradesBoard">
@@ -5022,7 +5103,21 @@ function ObjectTradesTab({ documents }: { documents: ObjectAnalysis[] }) {
                 <tr key={entry.cluster} onClick={() => setSelectedMeasureId(entry.cluster)}>
                   <td>{tradeIcon(entry.cluster)} {displayTradeName(entry.cluster)}</td>
                   <td>{formatNumber(entry.count)}</td>
-                  <td>{formatNullableCurrency(entry.total)}</td>
+                  <td>
+                    <div className="tableValueWithAction">
+                      <span>{formatNullableCurrency(entry.total)}</span>
+                      {entry.total > 0 ? (
+                        <ExplainValueButton
+                          target={{
+                            label: `Gesamtkosten ${displayTradeName(entry.cluster)}`,
+                            calculation: "tradeTotal",
+                            trade: entry.cluster,
+                            documentIds: documents.map((document) => document.id)
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="averageCostColumn">{entry.averagePerDocument === null ? "0 €" : formatNullableCurrency(entry.averagePerDocument)}</td>
                   <td>{entry.share === null ? "0 %" : `${formatNullableNumber(roundMoney(entry.share))} %`}</td>
                   <td>{formatNullableCurrency(entry.offer)}</td>
@@ -7208,11 +7303,22 @@ function EditInput({
   );
 }
 
-function CostMetric({ label, value }: { label: string; value: string }) {
+function CostMetric({
+  label,
+  value,
+  explain
+}: {
+  label: string;
+  value: string;
+  explain?: AssistantExplainTarget;
+}) {
   return (
     <div className="costLine">
       <span>{label}</span>
       <strong>{value}</strong>
+      {explain && value !== "k.A." ? (
+        <ExplainValueButton target={{ ...explain, label, displayedValue: value }} />
+      ) : null}
     </div>
   );
 }
@@ -7700,28 +7806,6 @@ function documentCompletenessScore(document: ObjectAnalysis): number {
     fieldOrUnknown(document.objectNumber) !== "k.A." ? 1 : 0,
     fieldOrUnknown(document.objectAddress) !== "k.A." ? 1 : 0
   ].reduce((sum, value) => sum + Number(value), 0);
-}
-
-function selectEffectiveCostDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
-  const groups = new Map<string, ObjectAnalysis[]>();
-  documents.forEach((document) => {
-    const key = firstKnown(
-      fieldOrUnknown(document.objectNumber),
-      fieldOrUnknown(document.objectAddress),
-      fieldOrUnknown(document.assignmentSuggestion),
-      document.sourceDocumentIds?.[0] ?? document.id
-    );
-    groups.set(key, [...(groups.get(key) ?? []), document]);
-  });
-
-  return Array.from(groups.values()).flatMap((group) => {
-    const finalDocuments = group.filter((document) => isFinalInvoiceDocument(document) || isInvoiceDocument(document) || isCreditDocument(document));
-    if (finalDocuments.length > 0) return finalDocuments;
-    const progressDocuments = group.filter(isProgressInvoiceDocument);
-    if (progressDocuments.length > 0) return progressDocuments;
-    const offerDocuments = group.filter((document) => isOfferDocument(document) || isOrderDocument(document));
-    return offerDocuments.length > 0 ? offerDocuments : group;
-  });
 }
 
 function reanalyzeStoredDocument(document: ObjectAnalysis): ObjectAnalysis {
@@ -8878,40 +8962,6 @@ function buildObjectPageFilterOptions(documents: ObjectAnalysis[]) {
   };
 }
 
-function normalizeTradeCluster(value: string, description = ""): MeasureCluster {
-  const text = `${value} ${description}`.toLowerCase();
-  const normalizedName = normalizeTradeName(value, description);
-  if (standardTradeCatalog.includes(normalizedName as MeasureCluster)) return normalizedName as MeasureCluster;
-  if (standardTradeCatalog.includes(value as MeasureCluster)) return value as MeasureCluster;
-  if (isHazardousMaterialTrade(text)) return "Schadstoffsanierung / Asbest";
-  if (isDisposalDemolitionTrade(text)) return "Rückbau / Entsorgung";
-  if (/dacharbeiten|dachsanierung|dachentw[aä]sser|regenrinne|fallrohr|ziegel|abdichtung|attika/.test(text)) return "Dacharbeiten";
-  if (/fassadenarbeiten|fassadensanierung|\bwdvs\b|außenfassade|aussenfassade/.test(text)) return "Fassadenarbeiten";
-  if (/w[aä]rmed[aä]mm|dämm|daemm/.test(text)) return "Fassadenarbeiten";
-  if (/fensterarbeiten|fenstersanierung|fenstertausch/.test(text)) return "Fensterarbeiten";
-  if (/tischler/.test(text)) return "Tischlerarbeiten";
-  if (/t[uü]r|tuer|tischler/.test(text)) return "Tischlerarbeiten";
-  if (/balkon|loggia/.test(text)) return "Außenanlagen";
-  if (/heizung|therme|kessel|radiator|fernw[aä]rme|sanit[aä]r|\b(hls|shk|san)\b/.test(text)) return "Heizung und Sanitär";
-  if (/trinkwasser/.test(text)) return "Trinkwasser";
-  if (/abwasser|kanal/.test(text)) return "Abwasser";
-  if (/bad\s*\/\s*fliesen|fliesen|estrich|badboden|bodenaufbau/.test(text)) return "Fliesen und Estricharbeiten";
-  if (/elektro|z[aä]hler|installation|leitung/.test(text)) return "Elektroarbeiten";
-  if (/trockenbau|gipskarton|rigips/.test(text)) return "Sonstige";
-  if (/brand|rauchmelder|rwa|feuer/.test(text)) return "Sonstige";
-  if (/aufzug|lift/.test(text)) return "Sonstige";
-  if (/treppenhaus|treppe|gel[aä]nder/.test(text)) return "Sonstige";
-  if (/keller/.test(text)) return "Sonstige";
-  if (/außen|aussen|garten|hof|pflaster|gr[uü]n/.test(text)) return "Außenanlagen";
-  if (/tiefgarage|garage|stellplatz/.test(text)) return "Außenanlagen";
-  if (/maler|anstrich|tapezier/.test(text)) return "Malerarbeiten";
-  if (/boden|belag|parkett|vinyl|sockel/.test(text)) return "Bodenbelagsarbeiten";
-  if (/schornstein|kamin/.test(text)) return "Sonstige";
-  if (/l[uü]ftung|ventilat/.test(text)) return "Sonstige";
-  if (/photovoltaik|solar|pv\b/.test(text)) return "Sonstige";
-  return "Sonstige";
-}
-
 function documentMatchesTrade(document: ObjectAnalysis, trade: string): boolean {
   const normalizedTrade = normalizeTradeCluster(trade, "");
   return getDocumentTradeNames(document).some((name) => normalizeTradeCluster(name, name) === normalizedTrade);
@@ -8954,75 +9004,6 @@ function getDocumentTradeNames(document: ObjectAnalysis): string[] {
     fieldOrUnknown(document.measureDescription)
   ].filter((value) => value && value !== "k.A.");
   return names.length ? names : ["Sonstige"];
-}
-
-function getTradeAllocations(document: ObjectAnalysis): TradeAllocation[] {
-  if (document.clusters.length > 0) {
-    return document.clusters.map((cluster) => ({
-      cluster: normalizeTradeCluster(fieldOrUnknown(cluster.cluster), fieldOrUnknown(cluster.description)),
-      value: reliableClusterCost(document, cluster),
-      document
-    }));
-  }
-
-  if (document.measureDetails?.length) {
-    const detailCount = document.measureDetails.length;
-    return document.measureDetails.map((detail) => {
-      return {
-        cluster: normalizeTradeCluster(detail.cluster, detail.beschreibung),
-        value: reliableMeasureDetailCost(document, detail, null, detailCount),
-        document
-      };
-    });
-  }
-
-  return [{
-    cluster: normalizeTradeCluster("Sonstige", fieldOrUnknown(document.measureDescription)),
-    value: document.totalCost.value,
-    document
-  }];
-}
-
-function reliableClusterCost(
-  document: ObjectAnalysis,
-  cluster: ObjectAnalysis["clusters"][number] | null
-): number | null {
-  if (!cluster) return null;
-  const clusterValue = cluster.totalCost.value;
-  if (clusterValue === null) return document.clusters.length <= 1 ? document.totalCost.value : null;
-  if (document.totalCost.value === null || document.clusters.length <= 1) return clusterValue;
-
-  const repeatedDocumentTotalCount = document.clusters.filter((entry) =>
-    entry.totalCost.value !== null && Math.abs(entry.totalCost.value - document.totalCost.value!) < 0.01
-  ).length;
-  if (repeatedDocumentTotalCount > 1 && Math.abs(clusterValue - document.totalCost.value) < 0.01) {
-    return roundMoney(document.totalCost.value / repeatedDocumentTotalCount);
-  }
-
-  const clusterSum = sumValues(document.clusters.map((entry) => entry.totalCost.value));
-  if (clusterSum !== null && clusterSum > document.totalCost.value * 1.03) {
-    if (Math.abs(clusterValue - document.totalCost.value) < 0.01 && repeatedDocumentTotalCount > 1) {
-      return roundMoney(document.totalCost.value / repeatedDocumentTotalCount);
-    }
-    return Math.abs(clusterValue - document.totalCost.value) < 0.01 ? null : clusterValue;
-  }
-
-  return clusterValue;
-}
-
-function reliableMeasureDetailCost(
-  document: ObjectAnalysis,
-  detail: NonNullable<ObjectAnalysis["measureDetails"]>[number],
-  matchingCluster: ObjectAnalysis["clusters"][number] | null,
-  detailCount: number
-): number | null {
-  if (detail.summe !== null && detail.summe !== undefined) return detail.summe;
-  const clusterCost = reliableClusterCost(document, matchingCluster);
-  if (clusterCost !== null) return clusterCost;
-  if (document.totalCost.value !== null && detailCount > 0) {
-    return roundMoney(document.totalCost.value / detailCount);
-  }
-  return null;
 }
 
 function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
@@ -9085,12 +9066,6 @@ function groupByCluster(documents: ObjectAnalysis[]): TradeGroupRow[] {
     .sort((a, b) => b.total - a.total || standardTradeCatalog.indexOf(a.cluster) - standardTradeCatalog.indexOf(b.cluster));
 }
 
-function safeDivide(value: number | null | undefined, divisor: number | null | undefined): number | null {
-  if (value === null || value === undefined || divisor === null || divisor === undefined || divisor === 0) return null;
-  if (!Number.isFinite(value) || !Number.isFinite(divisor)) return null;
-  return roundMoney(value / divisor);
-}
-
 function formatArea(value: number | null): string {
   if (value === null) return "k.A.";
   return `${formatNullableNumber(value)} m²`;
@@ -9111,21 +9086,6 @@ function calculateAverageCostPerTrade(trade: TradeGroupRow): number | null {
 
 function getDocumentCountByTrade(trade: TradeGroupRow): number {
   return trade.uniqueDocumentIds?.length ?? trade.count;
-}
-
-function documentUniqueKey(document: ObjectAnalysis): string {
-  const sourceFileNames = document.totalCost.sources
-    .map((source) => source.fileName)
-    .filter(Boolean);
-  const sourceKey = sourceFileNames[0] ?? "";
-  const documentNumber = fieldOrUnknown(document.documentNumber);
-  return firstKnown(
-    sourceKey && documentNumber !== "k.A." ? `${sourceKey}-${documentNumber}` : "",
-    sourceKey ? `${sourceKey}-${fieldOrUnknown(document.documentDate)}-${fieldOrUnknown(document.totalCost)}` : "",
-    documentNumber !== "k.A." ? `${fieldOrUnknown(document.provider)}-${documentNumber}-${fieldOrUnknown(document.totalCost)}` : "",
-    document.sourceDocumentIds?.[0] ?? "",
-    document.id
-  );
 }
 
 function debugAverageCostPerTrade(objectId: string, rows: TradeGroupRow[]): void {
@@ -9479,7 +9439,7 @@ function setCluster(
 
 const documentReviewTrades = [
   "Asbest",
-  "Malerarbeiten",
+  PAINTING_TRADE,
   "Bodenbelaege",
   "Sanitaer",
   "Elektro",
@@ -9633,7 +9593,7 @@ function updateTradeReviewAmount(
 function reviewTradeFromValue(value: string, description = ""): DocumentReviewTrade {
   const normalized = `${value} ${description}`.toLowerCase();
   if (/asbest|schadstoff|trgs\s*519|gefahrstoff|pcb|kmf/.test(normalized)) return "Asbest";
-  if (/maler|anstrich|tapezier/.test(normalized)) return "Malerarbeiten";
+  if (/maler|lackier|anstrich|tapezier/.test(normalized)) return PAINTING_TRADE;
   if (/boden|belag|parkett|vinyl|teppich/.test(normalized)) return "Bodenbelaege";
   if (/sanit|bad|wc|wasser|abwasser/.test(normalized)) return "Sanitaer";
   if (/elektro|strom|kabel|schalter/.test(normalized)) return "Elektro";
@@ -9647,7 +9607,7 @@ function reviewTradeFromValue(value: string, description = ""): DocumentReviewTr
 function reviewTradeToCluster(trade: DocumentReviewTrade): MeasureCluster {
   const mapping: Record<DocumentReviewTrade, MeasureCluster> = {
     Asbest: "Schadstoffsanierung / Asbest",
-    Malerarbeiten: "Malerarbeiten",
+    [PAINTING_TRADE]: PAINTING_TRADE,
     Bodenbelaege: "Bodenbelagsarbeiten",
     Sanitaer: "Sanitär",
     Elektro: "Elektroarbeiten",
@@ -9772,43 +9732,6 @@ function firstNumber(...values: Array<number | null>): number | null {
   return values.find((value): value is number => typeof value === "number") ?? null;
 }
 
-function documentTypeValue(document: ObjectAnalysis): string {
-  return germanizeUiText(fieldOrUnknown(document.documentType));
-}
-
-function isOfferDocument(document: ObjectAnalysis): boolean {
-  return /angebot/i.test(documentTypeValue(document));
-}
-
-function isOrderDocument(document: ObjectAnalysis): boolean {
-  return /auftrag/i.test(documentTypeValue(document));
-}
-
-function isProgressInvoiceDocument(document: ObjectAnalysis): boolean {
-  return /abschlag|teilrechnung|teilzahlung|akonto|vorauszahlung/i.test(documentTypeValue(document));
-}
-
-function isFinalInvoiceDocument(document: ObjectAnalysis): boolean {
-  return /schlussrechnung|schluss|final/i.test(documentTypeValue(document));
-}
-
-function isCreditDocument(document: ObjectAnalysis): boolean {
-  return /gutschrift/i.test(documentTypeValue(document));
-}
-
-function isInvoiceDocument(document: ObjectAnalysis): boolean {
-  const type = documentTypeValue(document);
-  return /rechnung|eingangsrechnung/i.test(type) && !isProgressInvoiceDocument(document) && !isFinalInvoiceDocument(document);
-}
-
-function isInvoiceLikeDocument(document: ObjectAnalysis): boolean {
-  return isInvoiceDocument(document) || isIncomingInvoiceDocument(document) || isFinalInvoiceDocument(document) || isProgressInvoiceDocument(document);
-}
-
-function isIncomingInvoiceDocument(document: ObjectAnalysis): boolean {
-  return isInvoiceDocument(document) || /eingangsrechnung/i.test(documentTypeValue(document));
-}
-
 function documentTypeBadgeClass(document: ObjectAnalysis): string {
   if (isFinalInvoiceDocument(document)) return "documentTypeFinal";
   if (isProgressInvoiceDocument(document)) return "documentTypeProgress";
@@ -9837,18 +9760,6 @@ function applyCostBasis(
   if (basis === "withoutProgress") return documents.filter((document) => !isProgressInvoiceDocument(document));
   if (basis === "manual") return documents.filter((document) => manualIds.has(document.id));
   return documents;
-}
-
-function finalCostDocuments(documents: ObjectAnalysis[]): ObjectAnalysis[] {
-  const finalInvoices = documents.filter(isFinalInvoiceDocument);
-  if (finalInvoices.length > 0) return finalInvoices;
-  const invoices = documents.filter((document) => isInvoiceDocument(document) || isCreditDocument(document));
-  if (invoices.length > 0) return invoices;
-  return [];
-}
-
-function finalGrossCost(documents: ObjectAnalysis[]): number | null {
-  return sumValues(finalCostDocuments(documents).map((document) => document.totalCost.value));
 }
 
 function emptyIfUnknown(value: string): string {
@@ -9934,16 +9845,6 @@ function germanizeUiText(value: string): string {
     .replace(/Flaeche/g, "Fläche")
     .replace(/Haeuser/g, "Häuser")
     .replace(/Hauseingaenge/g, "Hauseingänge");
-}
-
-function sumValues(values: Array<number | null>): number | null {
-  const numericValues = values.filter((value): value is number => typeof value === "number");
-  if (numericValues.length === 0) return null;
-  return numericValues.reduce((sum, value) => sum + value, 0);
-}
-
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 function countReviewCases(documents: ObjectAnalysis[]): number {
@@ -10756,7 +10657,7 @@ function reportTradeOrder(): Array<{ key: string; label: string }> {
     { key: "heizung-sanitaer", label: "Heizung Sanitär" },
     { key: "fliesen-estrich", label: "Fliesen und Estrich" },
     { key: "boden", label: "Bodenbelagsarbeiten" },
-    { key: "maler", label: "Maler" },
+    { key: "maler", label: PAINTING_TRADE },
     { key: "tischler", label: "Tischler" },
     { key: "reinigung", label: "Reinigung" },
     { key: "sonstiges", label: "Sonstiges" }
@@ -10771,7 +10672,7 @@ function reportTradeDisplay(cluster: string): { key: string; label: string } {
   if (normalized === "Heizung und Sanitär") return { key: "heizung-sanitaer", label: "Heizung Sanitär" };
   if (normalized === "Fliesen und Estricharbeiten") return { key: "fliesen-estrich", label: "Fliesen und Estrich" };
   if (normalized === "Bodenbelagsarbeiten") return { key: "boden", label: "Bodenbelagsarbeiten" };
-  if (normalized === "Malerarbeiten") return { key: "maler", label: "Maler" };
+  if (normalized === PAINTING_TRADE) return { key: "maler", label: PAINTING_TRADE };
   if (normalized === "Tischlerarbeiten") return { key: "tischler", label: "Tischler" };
   if (normalized === "Rückbau / Entsorgung") return { key: "rueckbau-entsorgung", label: "Rückbau Entsorgung" };
   if (normalized === "Reinigung") return { key: "reinigung", label: "Reinigung" };

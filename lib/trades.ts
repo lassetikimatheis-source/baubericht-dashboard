@@ -6,6 +6,7 @@ export const ASBESTOS_TRADE: MeasureCluster = "Asbestarbeiten";
 export const HAZARDOUS_ASBEST_TRADE: MeasureCluster = "Schadstoffsanierung / Asbest";
 export const FACADE_TRADE: MeasureCluster = "Fassadenarbeiten";
 export const FLOORING_TRADE: MeasureCluster = "Bodenbelagsarbeiten";
+export const PAINTING_TRADE = "Malerarbeiten" as const satisfies MeasureCluster;
 export const CARPENTRY_TRADE: MeasureCluster = "Tischlerarbeiten";
 export const ROOF_TRADE: MeasureCluster = "Dacharbeiten";
 export const WINDOW_TRADE: MeasureCluster = "Fensterarbeiten";
@@ -72,6 +73,10 @@ export function normalizeTradeName(value: string | null | undefined, description
     return FLOORING_TRADE;
   }
 
+  if (/maler(?:arbeiten)?|lackier(?:arbeiten)?|anstrich|tapezier(?:arbeiten)?/.test(text)) {
+    return PAINTING_TRADE;
+  }
+
   if (/elektro|elektrik|z[aä]hler|installation|leitung|elektroschlitz/.test(text)) {
     return ELECTRICAL_TRADE;
   }
@@ -112,7 +117,13 @@ function normalizeExplicitTradeValue(value: string | null | undefined): MeasureC
     bodenbelagsarbeiten: FLOORING_TRADE,
     bodenbelaege: FLOORING_TRADE,
     bodenbelage: FLOORING_TRADE,
-    malerarbeiten: "Malerarbeiten",
+    maler: PAINTING_TRADE,
+    malerarbeiten: PAINTING_TRADE,
+    malerundlackierarbeiten: PAINTING_TRADE,
+    lackierarbeiten: PAINTING_TRADE,
+    anstrich: PAINTING_TRADE,
+    anstricharbeiten: PAINTING_TRADE,
+    tapezierarbeiten: PAINTING_TRADE,
     fliesenundestricharbeiten: TILING_SCREED_TRADE,
     fliesen: TILING_SCREED_TRADE,
     fliesenarbeiten: TILING_SCREED_TRADE,

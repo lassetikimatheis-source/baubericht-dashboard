@@ -14,6 +14,8 @@ import type {
   LineItem
 } from "../../types/analysis";
 import { emptyAnalysisState, emptyField } from "../analysis-state";
+import { selectFinalInvoiceCostDocuments } from "../cost-calculations";
+import { PAINTING_TRADE } from "../trades";
 import type { ParsedDocument } from "./document-ingestion";
 import { detectDuplicates, toSourceDocuments } from "./duplicates";
 
@@ -1060,7 +1062,7 @@ function detectMeasures(text: string): DetectedMeasure[] {
     { pattern: /Elektro(?:arbeiten)?/i, cluster: "Elektroarbeiten", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
     { pattern: /Trockenbau(?:arbeiten)?|Gipskarton|Rigips/i, cluster: "Sonstige", description: "Trockenbauarbeiten", projectType: "Sonstige" },
     { pattern: /Fliesen(?:arbeiten)?|Fliesenspiegel|Estrich(?:arbeiten)?|Badboden|Bodenaufbau/i, cluster: "Fliesen und Estricharbeiten", description: "Fliesen- und Estricharbeiten", projectType: "Fliesen und Estricharbeiten" },
-    { pattern: /Maler(?:arbeiten)?/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
+    { pattern: /Maler(?:arbeiten)?|Lackier(?:arbeiten)?|Anstrich|Tapezier(?:arbeiten)?/i, cluster: PAINTING_TRADE, description: PAINTING_TRADE, projectType: PAINTING_TRADE },
     { pattern: /Boden(?:belag|belagsarbeiten|arbeiten)?/i, cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten", projectType: "Bodenbelagsarbeiten" },
     { pattern: /Tischler(?:arbeiten)?/i, cluster: "Tischlerarbeiten", description: "Tischlerarbeiten", projectType: "Tischlerarbeiten" },
     { pattern: /T(?:ue|\u00fc)ren/i, cluster: "Tischlerarbeiten", description: "Türen / Tischlerarbeiten", projectType: "Tischlerarbeiten" },
@@ -1127,7 +1129,7 @@ function detectPrimaryMeasure(text: string): { cluster: MeasureCluster; descript
     { pattern: /Elektro/i, cluster: "Elektroarbeiten", description: "Elektroarbeiten", projectType: "Elektroarbeiten" },
     { pattern: /Trockenbau|Gipskarton|Rigips/i, cluster: "Sonstige", description: "Trockenbauarbeiten", projectType: "Sonstige" },
     { pattern: /Fliesen|Fliesenspiegel|Estrich|Badboden|Bodenaufbau/i, cluster: "Fliesen und Estricharbeiten", description: "Fliesen- und Estricharbeiten", projectType: "Fliesen und Estricharbeiten" },
-    { pattern: /Maler/i, cluster: "Malerarbeiten", description: "Malerarbeiten", projectType: "Malerarbeiten" },
+    { pattern: /Maler|Lackier|Anstrich|Tapezier/i, cluster: PAINTING_TRADE, description: PAINTING_TRADE, projectType: PAINTING_TRADE },
     { pattern: /Boden/i, cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten", projectType: "Bodenbelagsarbeiten" },
     { pattern: /Tischler/i, cluster: "Tischlerarbeiten", description: "Tischlerarbeiten", projectType: "Tischlerarbeiten" },
     { pattern: /T[uü]r/i, cluster: "Tischlerarbeiten", description: "Türen / Tischlerarbeiten", projectType: "Tischlerarbeiten" },
@@ -1339,7 +1341,7 @@ function offerMeasureDefinitions(): Array<{
   return [
     { section: 1, heading: "Erstbegehung", aliases: [/Erstbegehung/i], cluster: "Planung / Dokumentation", description: "Erstbegehung und Dokumentation" },
     { section: 2, heading: "Bodenbelagsarbeiten", aliases: [/Bodenbelag(?:sarbeiten)?/i, /Bodenarbeiten/i], cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten" },
-    { section: 3, heading: "Malerarbeiten", aliases: [/Malerarbeiten/i], cluster: "Malerarbeiten", description: "Malerarbeiten" },
+    { section: 3, heading: PAINTING_TRADE, aliases: [/Malerarbeiten/i], cluster: PAINTING_TRADE, description: PAINTING_TRADE },
     { section: 4, heading: "Fliesenarbeiten und Estrich", aliases: [/Fliesen(?:arbeiten)?(?:\s*(?:und|\/|-)\s*Estrich(?:arbeiten)?)?/i, /Estrich(?:arbeiten)?/i, /Fliesenspiegel/i], cluster: "Fliesen und Estricharbeiten", description: "Fliesen und Estricharbeiten" },
     { section: 5, heading: "Sanitär - Heizungsarbeiten", aliases: [/Sanit\S*r\s*-\s*Heizungsarbeiten/i, /Sanit\S*r.*Heizung/i, /\b(?:HLS|SHK|San)\b/i], cluster: "Heizung und Sanitär", description: "Heizung und Sanitär" },
     { section: 6, heading: "Elektroarbeiten", aliases: [/Elektroarbeiten/i], cluster: "Elektroarbeiten", description: "Elektroarbeiten" },
@@ -1349,7 +1351,7 @@ function offerMeasureDefinitions(): Array<{
     { section: 10, heading: "Dacharbeiten", aliases: [/Dacharbeiten|Dachsanierung/i], cluster: "Dacharbeiten", description: "Dacharbeiten" },
     { section: 11, heading: "Fassadenarbeiten", aliases: [/Fassadenarbeiten|Fassadensanierung|\bWDVS\b|Au(?:ß|ss)enfassade/i], cluster: "Fassadenarbeiten", description: "Fassadenarbeiten" },
     { section: 12, heading: "Trockenbauarbeiten", aliases: [/Trockenbauarbeiten|Trockenbau/i], cluster: "Sonstige", description: "Trockenbauarbeiten" },
-    { section: 13, heading: "Maler- und Lackierarbeiten", aliases: [/Maler-\s*und\s*Lackierarbeiten|Lackierarbeiten/i], cluster: "Malerarbeiten", description: "Maler- und Lackierarbeiten" },
+    { section: 13, heading: "Maler- und Lackierarbeiten", aliases: [/Maler-\s*und\s*Lackierarbeiten|Lackierarbeiten/i], cluster: PAINTING_TRADE, description: "Maler- und Lackierarbeiten" },
     { section: 14, heading: "Asbestsanierung", aliases: [/(?:Summe\s*2\.?\s*)?Asbest(?:\s*sanierung|sanierung|arbeiten)?|Schadstoff(?:sanierung|entsorgung|arbeiten)?|Gefahrstoff(?:arbeiten)?|TRGS\s*519|\bPCB\b|\bKMF\b|\bBT\s*(?:11|17\.45)\b|Flexplatten|asbesthaltig|Beprobung\s+auf\s+Asbest/i], cluster: "Schadstoffsanierung / Asbest", description: "Summe 2. Asbestsanierung" },
     { section: 15, heading: "Rückbau / Entsorgung", aliases: [/Entsorgung|Demontage(?:arbeiten)?|R[üu]ckbau(?:arbeiten)?|Rueckbau(?:arbeiten)?|Abbruch(?:arbeiten)?|Ausbauarbeiten/i], cluster: "Rückbau / Entsorgung", description: "Rückbau / Entsorgung" }
   ];
@@ -1439,7 +1441,7 @@ function parseOfferMeasuresLegacy(text: string): AiMeasureResult[] {
   const mappings: Array<{ section: number; heading: RegExp; cluster: MeasureCluster; description: string }> = [
     { section: 1, heading: /Summe\s+1\.\s+Erstbegehung\s+([\d.]+,\d{2})\s*€/i, cluster: "Planung / Dokumentation", description: "Erstbegehung und Dokumentation" },
     { section: 2, heading: /Summe\s+2\.\s+Bodenbelagsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Bodenbelagsarbeiten", description: "Bodenbelagsarbeiten" },
-    { section: 3, heading: /Summe\s+3\.\s+Malerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Malerarbeiten", description: "Malerarbeiten" },
+    { section: 3, heading: /Summe\s+3\.\s+Malerarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: PAINTING_TRADE, description: PAINTING_TRADE },
     { section: 4, heading: /Summe\s+4\.\s+Fliesenarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Fliesen und Estricharbeiten", description: "Fliesen und Estricharbeiten" },
     { section: 5, heading: /Summe\s+5\.\s+Sanit[aä]r\s*-\s*Heizungsarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Heizung und Sanitär", description: "Heizung und Sanitär" },
     { section: 6, heading: /Summe\s+6\.\s+Elektroarbeiten\s+([\d.]+,\d{2})\s*€/i, cluster: "Elektroarbeiten", description: "Elektroarbeiten" },
@@ -1530,7 +1532,7 @@ function calculatePortfolioTotals(objects: ObjectAnalysis[]): Pick<
   PortfolioAnalysisState,
   "year" | "fund" | "totalCost" | "averageCostPerApartment" | "averageCostPerSqm"
 > {
-  const costObjects = finalCostObjects(objects);
+  const costObjects = selectFinalInvoiceCostDocuments(objects);
   const totalCost = sumField(costObjects.map((object) => object.totalCost));
   const renovatedApartments = sumField(objects.map((object) => object.renovatedApartmentCount));
   const renovatedArea = sumField(objects.map((object) => object.renovatedAreaSqm));
@@ -1549,15 +1551,6 @@ function calculatePortfolioTotals(objects: ObjectAnalysis[]): Pick<
         ? field(totalCost / renovatedArea, source)
         : emptyField<number>()
   };
-}
-
-function finalCostObjects(objects: ObjectAnalysis[]): ObjectAnalysis[] {
-  const finalInvoices = objects.filter((object) => /schlussrechnung|schluss|final/i.test(String(object.documentType.value ?? "")));
-  if (finalInvoices.length > 0) return finalInvoices;
-  return objects.filter((object) => {
-    const type = String(object.documentType.value ?? "");
-    return /rechnung/i.test(type) && !/abschlag|teilrechnung|teilzahlung|akonto|vorauszahlung/i.test(type);
-  });
 }
 
 function field<T>(value: T | null, source: FieldSource): ExtractedField<T> {

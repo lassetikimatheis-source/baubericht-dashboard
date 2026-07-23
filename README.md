@@ -20,6 +20,8 @@ Wichtig: Es werden nur Werte angezeigt, die aus den hochgeladenen Dokumenten ext
 - Textvorschau vor der KI-Analyse, damit PDF-/Excel-Auslesung kontrolliert werden kann
 - Export nach Excel
 - Export nach PDF
+- Integrierter Baukosten-Assistent mit serverseitigen, belegbaren Berechnungserklärungen
+- „Wert erklären“-Aktionen für Objekt-, Dokument- und Gewerkekosten
 - Dashboard, Upload-Bereich, Objektbereich, Projekte, unzugeordnete Dokumente und Auswertungen
 
 ## PARIBUS Baukosten KI
@@ -64,9 +66,23 @@ Datei `.env.example` kopieren und als `.env` speichern:
 ```env
 OPENAI_API_KEY=dein_api_key
 OPENAI_MODEL=gpt-4o-mini
+OPENAI_CHAT_MODEL=gpt-4o-mini
+DATABASE_URL=deine_neon_verbindung
 ```
 
-Ohne `OPENAI_API_KEY` werden Dokumente zwar gelesen, aber keine KI-Extraktion ausgefuehrt. Die Oberflaeche zeigt dann `k.A.` und einen entsprechenden Hinweis.
+Ohne `OPENAI_API_KEY` werden Dokumente zwar gelesen, aber keine KI-Extraktion ausgefuehrt. Die Oberflaeche zeigt dann `k.A.` und einen entsprechenden Hinweis. Der Assistent beantwortet allgemeine Bedienfragen weiterhin aus seiner lokalen Wissensgrundlage; konkrete Werte benötigen die serverseitige Datenbankverbindung.
+
+## Baukosten-Assistent
+
+Die feste Schaltfläche „KI-Assistent“ öffnet ein Seitenpanel. Der aktuelle Objekt-, Projekt- oder Dokumentkontext wird automatisch mitgegeben. Konkrete Zahlen werden nicht vom Sprachmodell berechnet, sondern serverseitig über dieselben zentralen Regeln wie die Oberfläche aufgeschlüsselt.
+
+Mathematische Prüfungen:
+
+```bash
+npm run test:calculations
+```
+
+Die dokumentierten Daten- und Rechenwege stehen in `docs/assistant-architecture.md`.
 
 ## Warum Werte verworfen werden koennen
 
@@ -98,7 +114,7 @@ Cluster-Mapping:
 
 - Erstbegehung -> Planung / Dokumentation
 - Bodenbelagsarbeiten -> Boden
-- Malerarbeiten -> Maler
+- Malerarbeiten -> Malerarbeiten
 - Fliesenarbeiten und Estrich -> Bad / Fliesen
 - Sanitaer - Heizungsarbeiten -> Sanitaer / Heizung
 - Elektroarbeiten -> Elektro

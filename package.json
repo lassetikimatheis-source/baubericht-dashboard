@@ -12,7 +12,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "start": "next start",
-    "lint": "next lint || true"
+    "lint": "next lint",
+    "test:calculations": "tsc -p tests/tsconfig.json && node tests/.compiled/tests/cost-calculations.test.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

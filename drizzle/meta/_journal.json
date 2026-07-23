@@ -8,6 +8,13 @@
       "when": 1783941602847,
       "tag": "0000_initial_neon_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784813293286,
+      "tag": "0001_ensure_malerarbeiten_standard_trade",
+      "breakpoints": true
     }
   ]
 }
